@@ -1,7 +1,7 @@
 // ======= GRIMSTONE SERVICE WORKER =======
 // Update SW_CACHE with every release — changing this string triggers the
 // browser's SW update flow and shows the in-game "Update Available" banner.
-const SW_CACHE = 'grimstone-0.6.0';
+const SW_CACHE = 'grimstone-0.6.1';
 
 const GAME_ASSETS = [
   './',
@@ -21,6 +21,7 @@ const GAME_ASSETS = [
   './js/activities.js',
   './js/effects.js',
   './js/multiplayer.js',
+  './js/devconsole.js',
 ];
 
 // Install: cache all game assets, then immediately become active
