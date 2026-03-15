@@ -538,6 +538,7 @@ function findSafeSpawn(preferX, preferY) {
 }
 
 function makeZoneMap(z) {
+  groundBags = []; // clear dropped bags when changing zones
   if(z===0) return makeAshenveil();
   // Existing zones shifted: z=1→Ashwood Vale, z=2→Iron Peaks, etc.
   const W=MAP_W, H=MAP_H;

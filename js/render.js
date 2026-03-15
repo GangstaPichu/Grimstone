@@ -2202,6 +2202,67 @@ function drawPlayer(realX,realY,isP2,remoteConf=null){
   ctx2.restore();
 }
 
+function drawGroundBags() {
+  if(!groundBags.length) return;
+  const s = TILE;
+  const now = frameNow;
+  for(const bag of groundBags) {
+    const px = bag.x * s;
+    const py = bag.y * s;
+    const cx = px + s * 0.5;
+    // Gentle bob
+    const bob = Math.sin(now * 0.002 + bag.id) * s * 0.02;
+    const cy  = py + s * 0.6 + bob;
+
+    const bw = s * 0.34, bh = s * 0.26;
+
+    // Shadow
+    ctx2.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx2.beginPath();
+    ctx2.ellipse(cx, py + s * 0.88, bw * 0.45, s * 0.05, 0, 0, Math.PI * 2);
+    ctx2.fill();
+
+    // Bag body
+    ctx2.fillStyle = '#6b3d12';
+    ctx2.beginPath();
+    ctx2.roundRect(cx - bw/2, cy - bh/2, bw, bh, s * 0.06);
+    ctx2.fill();
+
+    // Highlight stripe
+    ctx2.fillStyle = '#8a5220';
+    ctx2.beginPath();
+    ctx2.roundRect(cx - bw/2 + s*0.03, cy - bh/2 + s*0.03, bw - s*0.06, bh * 0.38, s*0.04);
+    ctx2.fill();
+
+    // Strap / tie knot
+    ctx2.fillStyle = '#4a2808';
+    ctx2.fillRect(cx - s*0.04, cy - bh/2 - s*0.07, s*0.08, s*0.09);
+
+    // Flap top
+    ctx2.fillStyle = '#7a4818';
+    ctx2.beginPath();
+    ctx2.roundRect(cx - bw*0.36, cy - bh/2 - s*0.11, bw*0.72, s*0.13, s*0.04);
+    ctx2.fill();
+
+    // Item count badge (if more than 1 total)
+    const total = bag.items.reduce((t, i) => t + i.qty, 0);
+    if(total > 1) {
+      const bx = cx + bw * 0.36, by = cy + bh * 0.36;
+      ctx2.fillStyle = 'rgba(0,0,0,0.75)';
+      ctx2.beginPath();
+      ctx2.arc(bx, by, s * 0.13, 0, Math.PI * 2);
+      ctx2.fill();
+      ctx2.fillStyle = '#ffd070';
+      ctx2.font = `bold ${Math.round(s * 0.15)}px monospace`;
+      ctx2.textAlign = 'center';
+      ctx2.textBaseline = 'middle';
+      ctx2.fillText(total > 99 ? '99+' : String(total), bx, by);
+      ctx2.textAlign = 'left';
+      ctx2.textBaseline = 'alphabetic';
+    }
+  }
+}
+
 function renderMap(){
   if(!currentMap) return;
   updateCamera();
@@ -2256,6 +2317,7 @@ function renderMap(){
       });
     }
   }
+  drawGroundBags();
   drawNpcs();
   drawPlayer(playerReal.x,playerReal.y,false);
   drawEnemies();

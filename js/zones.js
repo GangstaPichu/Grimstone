@@ -1933,6 +1933,7 @@ function enterInterior(makeMapFn, entryName) {
     });
 
     // Load interior
+    groundBags = []; // clear dropped bags when entering/leaving interiors
     currentMap = makeMapFn();
     minimapDirty = true; _dirtCache = null;
     Weather.forceChange();
