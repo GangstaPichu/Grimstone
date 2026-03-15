@@ -453,7 +453,7 @@ function beginAdventure(){
   if(cl){
     Object.entries(cl.bonus).forEach(([k,v])=>{
       if(!p.skills[k]) p.skills[k] = {lvl:1, xp:0};  // init new skills if missing
-      p.skills[k].lvl = Math.max(1, 1+v);
+      p.skills[k].lvl = Math.max(1, (p.skills[k].lvl||1) + v);
     });
     cl.gear.forEach(itemId=>{ const slot=p.inventory.indexOf(null); if(slot>=0) p.inventory[slot]={id:itemId,qty:1}; });
     if(cl.startEquip) {
@@ -495,7 +495,7 @@ function beginAdventure(){
       Object.values(state.players[1].skills).forEach(s=>{s.lvl=1;s.xp=0;});
     }
     // Reset char create state for P2
-    charCreate.name=''; charCreate.classId='warrior'; charCreate.originId='drifter';
+    charCreate.name=''; charCreate.classId='warrior'; charCreate.originId='valley';
     charCreate.skinIdx=1; charCreate.hairColorIdx=2; charCreate.hairStyleIdx=1;
     document.getElementById('char-name-input').value='';
     document.getElementById('char-mode-label').textContent='PLAYER 2 — CO-OP REALM';
