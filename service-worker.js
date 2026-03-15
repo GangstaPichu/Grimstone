@@ -1,7 +1,7 @@
 // ======= GRIMSTONE SERVICE WORKER =======
 // Update SW_CACHE with every release — changing this string triggers the
 // browser's SW update flow and shows the in-game "Update Available" banner.
-const SW_CACHE = 'grimstone-0.6.2';
+const SW_CACHE = 'grimstone-0.6.3';
 
 const GAME_ASSETS = [
   './',
