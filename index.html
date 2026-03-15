@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GRIMSTONE — A Dark Fantasy RPG</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/15.3.5/Tone.js"></script>
+<!-- Firebase REST API used directly via fetch — no SDK needed -->
+<body>
+
+<!-- TITLE SCREEN -->
+<div id="title-screen">
+  <canvas id="title-canvas"></canvas>
+  <div class="title-content">
+    <div class="title-rune">⚔ DARK FANTASY RPG ⚔</div>
+    <div class="title-main">GRIMSTONE</div>
+    <div class="title-sub">FORGE YOUR LEGEND IN SHADOW</div>
+    <div class="title-divider"></div>
+    <button class="title-btn" onclick="goToCharCreate('solo')">⚔ New Journey (Solo)</button><br>
+    <button class="title-btn" onclick="openCoopMenu()" style="margin-top:4px">⚔⚔ Co-Op Realm (2 Players)</button>
+    <div id="save-slots"></div>
+    <div style="margin-top:14px; font-size:12px; color:var(--text-dim); font-family:'Cinzel',serif; letter-spacing:1px;">
+      WASD / Click to move &nbsp;·&nbsp; Right-click to interact
+    </div>
+  </div>
+</div>
+
+<!-- CO-OP MODE SUBMENU -->
+<div id="coop-menu" style="display:none;position:fixed;inset:0;z-index:800;background:rgba(5,6,8,0.93);backdrop-filter:blur(4px);align-items:center;justify-content:center;flex-direction:column;">
+  <div class="coop-menu-title">CO-OP REALM</div>
+  <div class="coop-menu-sub">CHOOSE YOUR PATH</div>
+  <button class="coop-menu-btn" onclick="openOnlineLobby()">🌐 Online Co-Op</button>
+  <button class="coop-menu-btn gold" onclick="closeCoopMenu(); goToCharCreate('coop')">⚔⚔ Split Screen</button>
+  <div class="coop-back-link" onclick="backFromCoopMenu()">← Back</div>
+</div>
+
+<!-- ONLINE LOBBY SCREEN -->
+<div id="online-lobby" style="display:none;position:fixed;inset:0;z-index:810;background:#050608;align-items:center;justify-content:center;flex-direction:column;">
+  <div class="lobby-panel">
+    <div class="lobby-title">ONLINE CO-OP</div>
+    <div class="lobby-divider"></div>
+    <div class="lobby-tab-row">
+      <div class="lobby-tab active" id="tab-host" onclick="lobbySetTab('host')">Host Game</div>
+      <div class="lobby-tab" id="tab-join" onclick="lobbySetTab('join')">Join Game</div>
+    </div>
+    <!-- HOST panel -->
+    <div id="lobby-host-panel">
+      <div class="lobby-section-label">Your Room Code</div>
+      <div class="lobby-room-code" id="lobby-code-display">—</div>
+      <div class="lobby-section-label">Share this code with your friend</div>
+      <div class="lobby-divider" style="margin:12px 0"></div>
+      <div class="lobby-section-label">Players</div>
+      <div class="lobby-players">
+        <div class="lobby-player-slot filled" id="slot-p1">
+          <div class="slot-label">PLAYER 1 — YOU</div>
+          <div class="slot-name" id="slot-p1-name">—</div>
+        </div>
+        <div class="lobby-player-slot" id="slot-p2">
+          <div class="slot-label">PLAYER 2</div>
+          <div class="slot-name" id="slot-p2-name">Waiting...</div>
+        </div>
+      </div>
+      <div class="lobby-status waiting" id="lobby-host-status">⏳ Waiting for a friend to join...</div>
+      <button class="lobby-btn" id="lobby-start-btn" onclick="onlineLobbyStart()" disabled>Create My Character First →</button>
+    </div>
+    <!-- JOIN panel -->
+    <div id="lobby-join-panel" style="display:none">
+      <div class="lobby-section-label">Enter Room Code</div>
+      <input class="lobby-input" id="join-code-input" maxlength="4" placeholder="XXXX"
+        oninput="this.value=this.value.toUpperCase().replace(/[^A-Z]/g,'')"
+        onkeydown="if(event.key==='Enter') lobbyJoinRoom()">
+      <button class="lobby-btn" onclick="lobbyJoinRoom()">Join Room</button>
+      <div class="lobby-status waiting" id="lobby-join-status"></div>
+    </div>
+    <div class="coop-back-link" onclick="closeOnlineLobby()">← Back</div>
+  </div>
+</div>
+
+<!-- SAVE INDICATOR -->
+<div id="save-indicator">✦ SAVED</div>
+
+<!-- CHARACTER CREATION SCREEN -->
+<div id="char-create-screen" style="display:none; position:fixed; inset:0; z-index:900; background:#050608; overflow:hidden;">
+  <canvas id="char-bg-canvas" style="position:absolute;inset:0;opacity:0.12;"></canvas>
+
+  <!-- Decorative corner runes -->
+  <div style="position:absolute;top:16px;left:20px;font-family:'Cinzel',serif;font-size:11px;color:var(--gold-dim);letter-spacing:3px;opacity:0.7;">✦ GRIMSTONE ✦</div>
+  <div style="position:absolute;top:16px;right:20px;font-family:'Cinzel',serif;font-size:11px;color:var(--gold-dim);letter-spacing:3px;opacity:0.7;" id="char-mode-label">SOLO JOURNEY</div>
+
+  <div style="position:relative;z-index:2;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:40px 20px 20px;overflow-y:auto;">
+
+    <div style="font-family:'Cinzel Decorative',serif;font-size:clamp(20px,3vw,30px);color:var(--gold-bright);letter-spacing:4px;margin-bottom:4px;text-shadow:0 0 40px rgba(200,146,42,0.4);">FORGE YOUR LEGEND</div>
+    <div style="font-family:'Cinzel',serif;font-size:11px;letter-spacing:6px;color:var(--text-dim);margin-bottom:28px;">CHARACTER CREATION</div>
+
+    <div style="display:flex;gap:20px;width:100%;max-width:900px;align-items:flex-start;flex-wrap:wrap;justify-content:center;">
+
+      <!-- LEFT: Avatar Preview -->
+      <div style="flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:12px;">
+        <canvas id="avatar-canvas" width="160" height="200" style="border:1px solid var(--gold-dim);background:#0a0c10;box-shadow:0 0 40px rgba(0,0,0,0.8),0 0 20px rgba(200,146,42,0.08);"></canvas>
+
+        <!-- Appearance controls -->
+        <div style="background:var(--bg-panel);border:1px solid var(--border);padding:12px;width:160px;">
+          <div style="font-family:'Cinzel',serif;font-size:9px;letter-spacing:2px;color:var(--gold-dim);margin-bottom:8px;text-align:center;">APPEARANCE</div>
+
+          <div style="margin-bottom:8px;">
+            <div style="font-family:'Cinzel',serif;font-size:9px;color:var(--text-dim);margin-bottom:4px;letter-spacing:1px;">SKIN TONE</div>
+            <div style="display:flex;gap:5px;" id="skin-swatches"></div>
+          </div>
+          <div style="margin-bottom:8px;">
+            <div style="font-family:'Cinzel',serif;font-size:9px;color:var(--text-dim);margin-bottom:4px;letter-spacing:1px;">HAIR</div>
+            <div style="display:flex;gap:5px;" id="hair-swatches"></div>
+          </div>
+          <div>
+            <div style="font-family:'Cinzel',serif;font-size:9px;color:var(--text-dim);margin-bottom:4px;letter-spacing:1px;">HAIR STYLE</div>
+            <div style="display:flex;gap:5px;flex-wrap:wrap;" id="hair-style-btns"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- MIDDLE: Name + Class -->
+      <div style="flex:1;min-width:220px;max-width:360px;display:flex;flex-direction:column;gap:14px;">
+
+        <!-- Name -->
+        <div style="background:var(--bg-panel);border:1px solid var(--border);padding:14px;">
+          <div style="font-family:'Cinzel',serif;font-size:9px;letter-spacing:3px;color:var(--gold-dim);margin-bottom:8px;">YOUR NAME</div>
+          <input id="char-name-input" type="text" maxlength="16" placeholder="Enter your name..."
+            style="width:100%;background:#0a0c10;border:1px solid var(--border-bright);color:var(--gold-bright);
+            font-family:'Cinzel',serif;font-size:15px;padding:8px 10px;letter-spacing:2px;outline:none;
+            caret-color:var(--gold);"
+            oninput="updateCharPreview()"
+          />
+          <button onclick="rollRandomName()" style="margin-top:6px;width:100%;background:transparent;border:1px solid var(--border);
+            color:var(--text-dim);font-family:'Cinzel',serif;font-size:9px;letter-spacing:2px;padding:5px;cursor:pointer;
+            transition:all 0.15s;" onmouseover="this.style.borderColor='var(--gold-dim)';this.style.color='var(--gold)';"
+            onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-dim)';">
+            ✦ RANDOM NAME
+          </button>
+        </div>
+
+        <!-- Class selection -->
+        <div style="background:var(--bg-panel);border:1px solid var(--border);padding:14px;">
+          <div style="font-family:'Cinzel',serif;font-size:9px;letter-spacing:3px;color:var(--gold-dim);margin-bottom:10px;">CHOOSE YOUR PATH</div>
+          <div id="class-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+        </div>
+
+        <!-- Origin -->
+        <div style="background:var(--bg-panel);border:1px solid var(--border);padding:14px;">
+          <div style="font-family:'Cinzel',serif;font-size:9px;letter-spacing:3px;color:var(--gold-dim);margin-bottom:10px;">YOUR ORIGIN</div>
+          <div id="origin-list" style="display:flex;flex-direction:column;gap:5px;"></div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Stat Summary -->
+      <div style="flex-shrink:0;width:200px;display:flex;flex-direction:column;gap:12px;">
+
+        <div style="background:var(--bg-panel);border:1px solid var(--border);padding:14px;">
+          <div style="font-family:'Cinzel',serif;font-size:9px;letter-spacing:3px;color:var(--gold-dim);margin-bottom:10px;">STARTING STATS</div>
+          <div id="stat-preview" style="display:flex;flex-direction:column;gap:5px;"></div>
+        </div>
+
+        <div style="background:var(--bg-panel);border:1px solid var(--border);padding:14px;">
+          <div style="font-family:'Cinzel',serif;font-size:9px;letter-spacing:3px;color:var(--gold-dim);margin-bottom:6px;">CLASS LORE</div>
+          <div id="class-lore" style="font-family:'Crimson Text',serif;font-style:italic;font-size:13px;color:var(--text-dim);line-height:1.5;">
+            Select a path to learn your fate...
+          </div>
+        </div>
+
+        <div style="background:var(--bg-panel);border:1px solid var(--border);padding:14px;">
+          <div style="font-family:'Cinzel',serif;font-size:9px;letter-spacing:3px;color:var(--gold-dim);margin-bottom:6px;">STARTING GEAR</div>
+          <div id="gear-preview" style="display:flex;flex-wrap:wrap;gap:4px;"></div>
+        </div>
+
+        <!-- Begin button -->
+        <button id="begin-btn" onclick="beginAdventure()"
+          style="background:linear-gradient(180deg,#2a1f0a 0%,#1a1206 100%);
+          border:1px solid var(--gold-dim);color:var(--gold-bright);
+          font-family:'Cinzel',serif;font-size:13px;letter-spacing:3px;
+          padding:14px;cursor:pointer;transition:all 0.2s;width:100%;text-transform:uppercase;"
+          onmouseover="this.style.boxShadow='0 0 20px rgba(200,146,42,0.4)';this.style.borderColor='var(--gold-bright)';"
+          onmouseout="this.style.boxShadow='none';this.style.borderColor='var(--gold-dim)';">
+          ⚔ BEGIN ADVENTURE
+        </button>
+        <button onclick="backToTitle()"
+          style="background:transparent;border:1px solid var(--border);color:var(--text-dim);
+          font-family:'Cinzel',serif;font-size:9px;letter-spacing:2px;
+          padding:8px;cursor:pointer;transition:all 0.15s;width:100%;"
+          onmouseover="this.style.color='var(--text-bright)';"
+          onmouseout="this.style.color='var(--text-dim)';">
+          ← BACK
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ZONE FLASH -->
+<div id="zone-flash"></div>
+
+<!-- LEVEL UP POPUP -->
+<div id="levelup-popup">
+  <div class="lvlup-title">LEVEL UP</div>
+  <div class="lvlup-skill" id="lvlup-skill-name">Mining</div>
+  <div class="lvlup-level" id="lvlup-level-num">2</div>
+</div>
+
+<!-- GAME CONTAINER -->
+<div id="game-container">
+  <!-- TOP BAR -->
+  <div id="topbar">
+    <div class="topbar-title">GRIMSTONE</div>
+    <div class="topbar-sep"></div>
+    <div class="stat-pill"><span class="label">NAME</span><span class="val" id="player-name-hud">Wanderer</span></div>
+    <div class="stat-pill"><span class="label">COMBAT</span><span class="val" id="combat-lvl-hud">3</span></div>
+    <div class="stat-pill"><span class="label">GOLD</span><span class="val" id="gold-hud">0</span><span style="color:var(--gold);font-size:12px">⬡</span></div>
+    <div class="bar-wrap">
+      <span class="bar-label">HP</span>
+      <div class="mini-bar hp-bar"><div class="mini-bar-fill" id="hp-bar-fill" style="width:100%"></div></div>
+      <span id="hp-text" style="font-size:11px;color:var(--text-dim);">30/30</span>
+      <div style="width:12px"></div>
+      <span class="bar-label">XP</span>
+      <div class="mini-bar xp-bar"><div class="mini-bar-fill" id="xp-bar-fill" style="width:0%"></div></div>
+      <span id="co-op-indicator" style="display:none">CO-OP ACTIVE</span>
+    </div>
+    <!-- P2 HUD — only visible in co-op -->
+    <div id="p2-hud" style="display:none;align-items:center;gap:6px;padding:0 10px;border-left:1px solid var(--border);">
+      <span class="bar-label" style="color:var(--cyan)">P2</span>
+      <span class="val" id="p2-name-hud" style="color:var(--cyan-bright);font-size:11px;min-width:60px"></span>
+      <span class="bar-label">HP</span>
+      <div class="mini-bar hp-bar" style="width:70px"><div class="mini-bar-fill" id="p2-hp-bar-fill" style="width:100%;background:linear-gradient(90deg,#104a6a,#2a8aaa)"></div></div>
+      <span id="p2-hp-text" style="font-size:11px;color:var(--text-dim);">30/30</span>
+      <span style="font-size:9px;color:var(--text-dim);padding-left:4px">IJKL</span>
+    </div>
+    <div class="topbar-sep"></div>
+    <div id="ui-scale-control" style="display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0;">
+      <span style="font-family:'Cinzel',serif;font-size:9px;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase;">Scale</span>
+      <input type="range" id="ui-scale-slider" min="60" max="130" value="100" step="5"
+        style="-webkit-appearance:none;appearance:none;width:70px;height:4px;background:var(--border);border-radius:2px;outline:none;cursor:pointer;">
+      <span id="ui-scale-label" style="font-family:'Cinzel',serif;font-size:9px;color:var(--gold);min-width:28px;">100%</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+      <span style="font-family:'Cinzel',serif;font-size:9px;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase;">SFX</span>
+      <input type="range" id="sfx-vol-slider" min="0" max="100" value="60" step="5"
+        style="-webkit-appearance:none;appearance:none;width:60px;height:4px;background:var(--border);border-radius:2px;outline:none;cursor:pointer;">
+    </div>
+    <div id="music-controls">
+      <button class="action-btn" id="music-toggle-btn" onclick="toggleMusic()" title="Toggle Music" style="font-size:14px;padding:4px 10px;">🎵</button>
+      <div id="music-vol-wrap">
+        <span id="music-vol-label">VOL</span>
+        <input id="music-vol-slider" type="range" min="0" max="100" value="35" oninput="setMusicVolume(this.value)">
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN AREA -->
+  <div id="main-area">
+    <!-- SKILLS PANEL -->
+    <div id="skills-panel" style="position:relative;">
+      <div class="panel-header panel-header-row">
+        <span>Skills</span>
+        <button class="panel-toggle-btn" id="skills-toggle-btn" title="Hide Skills">◀</button>
+      </div>
+      <button class="panel-collapsed-tab" id="skills-expand-btn" title="Show Skills">Skills</button>
+      <div id="skills-list"></div>
+      <div id="skill-tooltip" style="display:none;"></div>
+    </div>
+
+    <!-- MAP -->
+    <div id="map-container">
+      <canvas id="game-canvas"></canvas>
+      <div id="action-tooltip"></div>
+      <div id="activity-bar">
+        <div id="activity-name">MINING...</div>
+        <div id="activity-progress-track"><div id="activity-progress-fill"></div></div>
+      </div>
+    </div>
+
+    <!-- RIGHT PANELS -->
+    <div id="right-panels">
+      <!-- Collapsed tab (shown only when panel is hidden) -->
+      <button class="panel-collapsed-tab" id="inv-expand-btn" title="Show panels">Panels</button>
+      <!-- Toggle strip (shown when panel is open) -->
+      <div class="panel-header panel-header-row" style="border-bottom:1px solid var(--border);">
+        <button class="panel-toggle-btn" id="inv-toggle-btn" title="Hide panels">▶</button>
+        <span>Inv &amp; Skills</span>
+      </div>
+      <div id="equip-panel">
+        <div class="panel-header">Equipment</div>
+        <div class="equip-slots" id="equip-slots"></div>
+      </div>
+      <div id="inv-panel">
+        <div class="panel-header">Inventory (<span id="inv-count">0</span>/28)</div>
+        <div id="inv-grid"></div>
+      </div>
+      <div id="log-panel">
+        <div class="panel-header">Log</div>
+        <div id="log-messages"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BOTTOM BAR -->
+  <div id="bottombar">
+    <button class="action-btn" id="btn-mine" onclick="setMode('mine')">⛏ Mine</button>
+    <button class="action-btn" id="btn-chop" onclick="setMode('chop')">🪓 Chop</button>
+    <button class="action-btn" id="btn-fish" onclick="setMode('fish')">🎣 Fish</button>
+    <button class="action-btn" id="btn-combat" onclick="setMode('combat')">⚔ Fight</button>
+    <button class="action-btn" id="btn-smelt" onclick="openSmelter()">🔥 Smelt</button>
+    <button class="action-btn" id="btn-cook" onclick="openCooker()">🍖 Cook</button>
+    <div class="topbar-sep"></div>
+    <button class="action-btn" onclick="doZoneTransition()">→ Next Zone</button>
+    <div id="zone-name">ASHENVEIL</div>
+  </div>
+</div>
+
+<!-- CONTEXT MENU -->
+<div id="ctx-menu"></div>
+
+<!-- NPC DIALOGUE PANEL -->
+<div id="dialogue-panel">
+  <div id="dialogue-inner">
+    <div id="dialogue-header">
+      <div id="dialogue-portrait"></div>
+      <div id="dialogue-npc-name"></div>
+    </div>
+    <div id="dialogue-body">
+      <div id="dialogue-text"></div>
+    </div>
+    <div id="dialogue-options"></div>
+    <div id="dialogue-footer">
+      <button class="dlg-btn" id="dialogue-close">Farewell</button>
+    </div>
+  </div>
+</div>
+
+<!-- MERCHANT SHOP PANEL -->
+<div id="shop-panel">
+  <div id="shop-inner">
+    <div id="shop-header">
+      <div id="shop-portrait"></div>
+      <div>
+        <div id="shop-title">The Wandering Merchant</div>
+        <div id="shop-gold-display"></div>
+      </div>
+      <button class="dlg-btn" id="shop-close" style="margin-left:auto">✕ Close</button>
+    </div>
+    <div id="shop-tabs">
+      <button class="shop-tab active" id="tab-buy" onclick="switchShopTab('buy')">⚒ Buy</button>
+      <button class="shop-tab" id="tab-sell" onclick="switchShopTab('sell')">💰 Sell</button>
+    </div>
+    <div id="shop-content"></div>
+  </div>
+</div>
+
+<!-- QUEST BOARD PANEL -->
+<div id="quest-panel">
+  <div id="quest-inner">
+    <div id="quest-header">
+      <div id="quest-board-icon">📜</div>
+      <div>
+        <div id="quest-board-title">ASHENVEIL NOTICE BOARD</div>
+        <div id="quest-board-sub">CONTRACTS · BOUNTIES · NOTICES</div>
+      </div>
+      <button class="dlg-btn" id="quest-close" style="margin-left:auto">✕ Close</button>
+    </div>
+    <div id="quest-tabs">
+      <button class="quest-tab active" id="qtab-active"    onclick="switchQuestTab('active')">⚔ Active</button>
+      <button class="quest-tab"        id="qtab-complete"  onclick="switchQuestTab('complete')">✦ Completed</button>
+      <button class="quest-tab"        id="qtab-all"       onclick="switchQuestTab('all')">📜 All</button>
+    </div>
+    <div id="quest-list"></div>
+    <div id="quest-detail"></div>
+    <div id="quest-footer">
+      <button class="dlg-btn" id="quest-close2">✕ Close</button>
+    </div>
+  </div>
+</div>
+
+
+<script src="js/particles.js"></script>
+<script src="js/character.js"></script>
+<script src="js/save-load.js"></script>
+<script src="js/world.js"></script>
+<script src="js/zones.js"></script>
+<script src="js/npcs.js"></script>
+<script src="js/quests.js"></script>
+<script src="js/render.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/input.js"></script>
+<script src="js/activities.js"></script>
+<script src="js/effects.js"></script>
+<script src="js/multiplayer.js"></script>
+</body>
+</html>
