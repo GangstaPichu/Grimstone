@@ -11,6 +11,14 @@
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <body>
 
+<!-- UPDATE BANNER — shown when a newer version is detected on GitHub -->
+<div id="update-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:linear-gradient(90deg,#0e2a06,#1a4a0a);border-bottom:2px solid #4a8a20;padding:7px 16px;align-items:center;justify-content:center;gap:14px;font-family:'Cinzel',serif;">
+  <span style="color:#8aff50;font-size:10px;letter-spacing:1px;">NEW VERSION</span>
+  <span id="update-banner-text" style="color:#c8ffa0;font-size:11px;letter-spacing:1px;"></span>
+  <button onclick="applyUpdate()" style="background:#3a7a18;color:#c8ffa0;border:1px solid #6aaa30;border-radius:3px;padding:4px 14px;font-family:'Cinzel',serif;font-size:10px;cursor:pointer;letter-spacing:1px;">UPDATE NOW</button>
+  <button onclick="this.closest('#update-banner').style.display='none'" style="background:transparent;color:#5a8a30;border:1px solid #3a5a18;border-radius:3px;padding:4px 10px;font-family:'Cinzel',serif;font-size:10px;cursor:pointer;">LATER</button>
+</div>
+
 <!-- TITLE SCREEN -->
 <div id="title-screen">
   <canvas id="title-canvas"></canvas>
@@ -432,5 +440,26 @@
 <script src="js/activities.js"></script>
 <script src="js/effects.js"></script>
 <script src="js/multiplayer.js"></script>
+
+<script>
+// ── Service Worker registration ───────────────────────────────────────────────
+if('serviceWorker' in navigator && window.location.protocol !== 'file:') {
+  navigator.serviceWorker.register('./service-worker.js').then(reg => {
+    // If a new SW installs while the game is open, show the update banner
+    reg.addEventListener('updatefound', () => {
+      const sw = reg.installing;
+      sw.addEventListener('statechange', () => {
+        if(sw.state === 'installed' && navigator.serviceWorker.controller) {
+          // New version is cached and waiting — show banner
+          if(typeof showUpdateBanner === 'function') showUpdateBanner('new version ready');
+        }
+      });
+    });
+  }).catch(e => console.warn('[SW] Registration failed:', e));
+
+  // When the SW swaps (after skipWaiting), reload to pick up new files
+  navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
+}
+</script>
 </body>
 </html>

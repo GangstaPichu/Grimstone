@@ -1,6 +1,42 @@
 // ========== SAVE / LOAD SYSTEM ==========
-const SAVE_VERSION = 1;
+// Increment CURRENT_SAVE_VERSION when the save format changes.
+// Add a migration function below so older saves auto-upgrade.
+const CURRENT_SAVE_VERSION = 2;
 const MAX_SAVES = 5;
+
+// ── Save Migrations ──────────────────────────────────────────────────────────
+// Each key is the save version being migrated FROM.
+// Functions receive the raw save object and return the upgraded object.
+const SAVE_MIGRATIONS = {
+  // v1 → v2: add farmPlots, questFlags, player appearance (added in 0.4.0)
+  1: data => {
+    if(!data.questFlags) data.questFlags = {};
+    if(!data.farmPlots)  data.farmPlots  = {};
+    if(!data.gameMode)   data.gameMode   = 'solo';
+    if(!data.worldSeed)  data.worldSeed  = Math.floor(Math.random()*99999);
+    data.players.forEach(p => {
+      if(!p.appearance) p.appearance = { skinIdx:0, hairColorIdx:0, hairStyleIdx:0, classId:'warrior' };
+    });
+    return data;
+  },
+  // Future migrations:
+  // 2: data => { ...; return data; },
+};
+
+function migrateSave(data) {
+  // Support both old 'version' key and new 'saveVersion' key
+  let v = data.saveVersion || data.version || 1;
+  while(v < CURRENT_SAVE_VERSION) {
+    if(SAVE_MIGRATIONS[v]) {
+      data = SAVE_MIGRATIONS[v](data);
+      console.log(`[Save] Migrated v${v} → v${v+1}`);
+    }
+    v++;
+  }
+  data.saveVersion = CURRENT_SAVE_VERSION;
+  return data;
+}
+// ─────────────────────────────────────────────────────────────────────────────
 const SAVE_PREFIX = 'grimstone_save_';
 let activeSaveSlot = null; // which slot this session is using
 let autoSaveTimer = null;
@@ -12,7 +48,7 @@ function getSaveKey(slot) { return SAVE_PREFIX + slot; }
 function buildSaveData() {
   const p = state.players[0];
   return {
-    version: SAVE_VERSION,
+    saveVersion: CURRENT_SAVE_VERSION,
     slot: activeSaveSlot,
     name: p.name,
     gameMode,
@@ -57,8 +93,9 @@ function saveGame(slot) {
 
 function loadGame(slot) {
   try {
-    const data = getSaveMeta(slot);
+    let data = getSaveMeta(slot);
     if(!data) return false;
+    data = migrateSave(data);
 
     // Restore game state
     activeSaveSlot = slot;
@@ -213,6 +250,10 @@ let pendingSaveSlot = null;
 function showTitleScreen() {
   document.getElementById('title-screen').style.display = 'flex';
   renderSaveSlots();
+  // Check for newer version on GitHub in the background
+  if(typeof checkForUpdate === 'function') {
+    checkForUpdate().then(latest => { if(latest) showUpdateBanner(latest); });
+  }
 }
 
 // Render save slots when title screen loads initially
