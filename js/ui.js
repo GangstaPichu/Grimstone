@@ -141,6 +141,7 @@ function startGame(mode) {
     Weather.initParticles();
     Fireflies.init();
     startAutoSave();
+    startHomeGrowthTick();
     initScaleSlider(); initPanelToggles();
     gameLoop();
     window.addEventListener('resize',()=>{ applyUIScale(uiScale); Weather.initParticles(); });
@@ -176,6 +177,7 @@ function startGameFromSave(savedPos) {
     Weather.initParticles();
     Fireflies.init();
     startAutoSave();
+    startHomeGrowthTick();
     initScaleSlider(); initPanelToggles();
     gameLoop();
     window.addEventListener('resize',()=>{ applyUIScale(uiScale); Weather.initParticles(); });
@@ -680,6 +682,11 @@ const WORLD_ZONES = [
     label: 'Dungeon Depths', sub: 'Perilous Below',
     x:258, y:378, w:184, h:58, color:'#111116', border:'#505060',
   },
+  {
+    id: ['YOUR HOMESTEAD'],
+    label: 'Your Homestead', sub: 'Personal Plot',
+    x:487, y:378, w:158, h:58, color:'#1a2e10', border:'#6aaa30',
+  },
 ];
 
 // Path connections between zone centres [x1,y1, x2,y2]
@@ -689,6 +696,7 @@ const MAP_PATHS = [
   [213, 257, 258, 257],   // Greenfield → Ashenveil
   [442, 257, 487, 257],   // Ashenveil → Whisperwood
   [350, 286, 350, 378],   // Ashenveil → Dungeons
+  [442, 407, 487, 407],   // Ashenveil → Homestead (via sigil)
 ];
 
 function drawWorldMap() {

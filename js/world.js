@@ -124,6 +124,8 @@ const state = {
     }
   ],
   activePlayer: 0,
+  // Homestead farm plots — keyed "x,y": {state:'tilled'|'planted', cropItem, cropTile, plantedAt, growTime}
+  farmPlots: {},
 };
 
 
@@ -415,6 +417,18 @@ const ITEMS = {
   wheat:       {name:'Wheat',        icon:'🌾', type:'material', desc:'A bundle of harvested wheat.'},
   turnip:      {name:'Turnip',       icon:'🥕', type:'food', healAmt:3, desc:'A firm turnip. Not exciting, but filling. Restores 3 HP.'},
   egg:         {name:'Egg',          icon:'🥚', type:'food', healAmt:2, desc:'A fresh egg from the farm. Restores 2 HP.'},
+  carrot:      {name:'Carrot',       icon:'🥕', type:'food', healAmt:5, desc:'A freshly pulled carrot. Crisp and sweet. Restores 5 HP.'},
+  potato:      {name:'Potato',       icon:'🥔', type:'food', healAmt:7, desc:'A hearty potato. Plain but filling. Restores 7 HP.'},
+  onion:       {name:'Onion',        icon:'🧅', type:'food', healAmt:2, desc:'A pungent onion. Not the best alone. Restores 2 HP.'},
+  // Homestead quest + tools
+  home_sigil:  {name:'Homestead Sigil', icon:'🏡', type:'special', desc:'A magical sigil from Old Bertram. Use it to teleport to your personal homestead at any time.'},
+  hoe:         {name:"Farmer's Hoe",    icon:'⚒',  type:'tool',    desc:'Used to till soil at your homestead. Right-click a grass tile while there to prepare it for planting.'},
+  // Crop seeds
+  wheat_seed:  {name:'Wheat Seeds',  icon:'🌱', type:'seed', cropItem:'wheat',  cropTile:196, growTime:5*60*1000, desc:'Plant in tilled homestead soil. Grows into wheat in ~5 minutes.'},
+  turnip_seed: {name:'Turnip Seeds', icon:'🌱', type:'seed', cropItem:'turnip', cropTile:197, growTime:4*60*1000, desc:'Plant in tilled homestead soil. Grows into turnips in ~4 minutes.'},
+  carrot_seed: {name:'Carrot Seeds', icon:'🌱', type:'seed', cropItem:'carrot', cropTile:198, growTime:6*60*1000, desc:'Plant in tilled homestead soil. Grows into carrots in ~6 minutes.'},
+  potato_seed: {name:'Potato Seeds', icon:'🌱', type:'seed', cropItem:'potato', cropTile:199, growTime:8*60*1000, desc:'Plant in tilled homestead soil. Grows into potatoes in ~8 minutes.'},
+  onion_seed:  {name:'Onion Seeds',  icon:'🌱', type:'seed', cropItem:'onion',  cropTile:200, growTime:5*60*1000, desc:'Plant in tilled homestead soil. Grows into onions in ~5 minutes.'},
   // === Quest reward items ===
   ashen_seal:      {name:'Ashen Seal',      icon:'🔴', type:'quest',  desc:'A ritual seal from the Cultist Catacombs. Aldermast will want this.'},
   ring_of_warding: {name:'Ring of Warding', icon:'💍', type:'equip',  slot:'shield', attackBonus:0, strBonus:0, defBonus:6,  desc:'A silver ring etched with warding runes. Reduces damage taken.'},
@@ -522,6 +536,15 @@ const T = {
   WARDROBE:     190,
   FIREPLACE:    191,
   PLANT:        192,
+  // Homestead farming
+  TILLED_SOIL:  193,
+  SEEDLING:     194,
+  CROP_GROWING: 195,
+  HOME_WHEAT:   196,
+  HOME_TURNIP:  197,
+  HOME_CARROT:  198,
+  HOME_POTATO:  199,
+  HOME_ONION:   200,
 };
 
 // Set of tile IDs that are decorations drawn over a floor layer
@@ -542,6 +565,9 @@ const DECOR_TILES = new Set([
   T.NPC_FARMER,
   // Animals — NPC system handles their visual; tile slot just holds floor
   T.ANIMAL_CHICKEN, T.ANIMAL_PIG, T.ANIMAL_COW,
+  // Homestead farming tiles
+  T.TILLED_SOIL, T.SEEDLING, T.CROP_GROWING,
+  T.HOME_WHEAT, T.HOME_TURNIP, T.HOME_CARROT, T.HOME_POTATO, T.HOME_ONION,
 ]);
 
 // Place a decoration tile and record the floor underneath in the floor layer

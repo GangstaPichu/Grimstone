@@ -211,6 +211,15 @@ function getTileLabel(t, tx, ty){
     [T.CROP_WHEAT]:'🌾 Wheat — Harvest',
     [T.CROP_TURNIP]:'🥕 Turnip — Harvest',
     [T.WINDMILL]:'⚙️ Windmill',
+    // Homestead tiles
+    [T.TILLED_SOIL]:'🌱 Tilled Soil — Plant a seed',
+    [T.SEEDLING]:'🌱 Seedling — Growing...',
+    [T.CROP_GROWING]:'🌿 Crop — Almost ready...',
+    [T.HOME_WHEAT]:'🌾 Wheat — Ready to harvest',
+    [T.HOME_TURNIP]:'🥕 Turnip — Ready to harvest',
+    [T.HOME_CARROT]:'🥕 Carrot — Ready to harvest',
+    [T.HOME_POTATO]:'🥔 Potato — Ready to harvest',
+    [T.HOME_ONION]:'🧅 Onion — Ready to harvest',
     [T.ANIMAL_CHICKEN]:'🐔 Chicken',
     [T.ANIMAL_PIG]:'🐷 Pig',
     [T.ANIMAL_COW]:'🐄 Cow',
@@ -257,6 +266,7 @@ const SOLID_TILES = new Set([
   T.HAY_BALE, T.FENCE_POST, T.WATER_TROUGH, T.SCARECROW, T.WINDMILL,
   // Crops are solid (walk-adjacent to harvest)
   T.CROP_WHEAT, T.CROP_TURNIP,
+  T.HOME_WHEAT, T.HOME_TURNIP, T.HOME_CARROT, T.HOME_POTATO, T.HOME_ONION,
   // Interior house furniture — solid
   T.SMALL_TABLE, T.WARDROBE, T.FIREPLACE,
   // PLANT is decorative but solid (potted plant)
@@ -474,6 +484,17 @@ function getTileActions(t){
   // Crop harvesting
   if(t===T.CROP_WHEAT)   return [{icon:'🌾',label:'Harvest Wheat',  action:(x,y)=>walkThenDo(x,y,()=>harvestCrop(x,y,'wheat',   'Farming? No skill — just labor.',4))}];
   if(t===T.CROP_TURNIP)  return [{icon:'🥕',label:'Harvest Turnip', action:(x,y)=>walkThenDo(x,y,()=>harvestCrop(x,y,'turnip',  'You pull the turnip from the earth.',3))}];
+  // Homestead tilling
+  if(t===T.DIRT && currentMap && currentMap.name==='YOUR HOMESTEAD')
+    return [{icon:'⚒',label:'Till Soil', action:(x,y)=>walkThenDo(x,y,()=>tillTile(x,y))}];
+  // Homestead planting
+  if(t===T.TILLED_SOIL)  return [{icon:'🌱',label:'Plant Seed', action:(x,y)=>walkThenDo(x,y,()=>plantSeed(x,y))}];
+  // Homestead harvesting
+  if(t===T.HOME_WHEAT)   return [{icon:'🌾',label:'Harvest Wheat',  action:(x,y)=>walkThenDo(x,y,()=>harvestHomeCrop(x,y,'wheat',  'You harvest the wheat.'))}];
+  if(t===T.HOME_TURNIP)  return [{icon:'🥕',label:'Harvest Turnip', action:(x,y)=>walkThenDo(x,y,()=>harvestHomeCrop(x,y,'turnip', 'You pull up the turnip.'))}];
+  if(t===T.HOME_CARROT)  return [{icon:'🥕',label:'Harvest Carrot', action:(x,y)=>walkThenDo(x,y,()=>harvestHomeCrop(x,y,'carrot', 'You pull up the carrot.'))}];
+  if(t===T.HOME_POTATO)  return [{icon:'🥔',label:'Harvest Potato', action:(x,y)=>walkThenDo(x,y,()=>harvestHomeCrop(x,y,'potato', 'You dig up the potato.'))}];
+  if(t===T.HOME_ONION)   return [{icon:'🧅',label:'Harvest Onion',  action:(x,y)=>walkThenDo(x,y,()=>harvestHomeCrop(x,y,'onion',  'You pull up the onion.'))}];
   // Animal interactions
   if(t===T.ANIMAL_CHICKEN) return [{icon:'🐔',label:'Catch Chicken', action:(x,y)=>walkThenDo(x,y,()=>catchAnimal(x,y,'chicken'))}];
   if(t===T.ANIMAL_PIG)     return [{icon:'🐷',label:'Catch Pig',     action:(x,y)=>walkThenDo(x,y,()=>catchAnimal(x,y,'pig'))}];
