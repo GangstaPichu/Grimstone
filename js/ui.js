@@ -1,3 +1,9 @@
+// ======= VERSION DISPLAY =======
+document.addEventListener('DOMContentLoaded', () => {
+  const tv = document.getElementById('title-version');
+  if(tv) tv.textContent = `v${GAME_VERSION}`;
+});
+
 // ======= CANVAS SETUP & UI SCALING =======
 let uiScale = parseFloat(localStorage.getItem('grimstone_ui_scale') || '1');
 
@@ -149,6 +155,8 @@ function startGame(mode) {
       document.getElementById('p2-hud').style.display='flex';
     }
     initScaleSlider(); initPanelToggles();
+    const hv = document.getElementById('hud-version');
+    if(hv) hv.textContent = `v${GAME_VERSION}`;
     gameLoop();
     window.addEventListener('resize',()=>{ applyUIScale(uiScale); Weather.initParticles(); });
   },100);
@@ -187,6 +195,8 @@ function startGameFromSave(savedPos) {
     const sbw2 = document.getElementById('session-btn-wrap');
     if(sbw2) sbw2.style.display = 'flex';
     initScaleSlider(); initPanelToggles();
+    const hv2 = document.getElementById('hud-version');
+    if(hv2) hv2.textContent = `v${GAME_VERSION}`;
     gameLoop();
     window.addEventListener('resize',()=>{ applyUIScale(uiScale); Weather.initParticles(); });
   },100);
