@@ -142,6 +142,12 @@ function startGame(mode) {
     Fireflies.init();
     startAutoSave();
     startHomeGrowthTick();
+    // Show Co-Op session button for all game modes (can start/join at any time)
+    const sbw = document.getElementById('session-btn-wrap');
+    if(sbw) sbw.style.display = 'flex';
+    if(mode==='coop') {
+      document.getElementById('p2-hud').style.display='flex';
+    }
     initScaleSlider(); initPanelToggles();
     gameLoop();
     window.addEventListener('resize',()=>{ applyUIScale(uiScale); Weather.initParticles(); });
@@ -178,6 +184,8 @@ function startGameFromSave(savedPos) {
     Fireflies.init();
     startAutoSave();
     startHomeGrowthTick();
+    const sbw2 = document.getElementById('session-btn-wrap');
+    if(sbw2) sbw2.style.display = 'flex';
     initScaleSlider(); initPanelToggles();
     gameLoop();
     window.addEventListener('resize',()=>{ applyUIScale(uiScale); Weather.initParticles(); });
@@ -202,11 +210,13 @@ function updateHUD(){
 }
 
 function updateP2HUD() {
+  // Only for local split-screen coop
   if(gameMode !== 'coop' || state.players.length < 2) return;
   const p2 = state.players[1];
   document.getElementById('p2-name-hud').textContent = p2.name;
   document.getElementById('p2-hp-bar-fill').style.width = (p2.hp / p2.maxHp * 100) + '%';
   document.getElementById('p2-hp-text').textContent = p2.hp + '/' + p2.maxHp;
+  document.getElementById('p2-hud').style.display = 'flex';
 }
 
 // ======= SKILLS PANEL =======

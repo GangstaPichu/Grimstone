@@ -2145,38 +2145,60 @@ function drawReturnPortal(px,py){
   ctx2.fillText('PREV ZONE',cx,py+4);
 }
 
-function drawPlayer(realX,realY,isP2){
+// drawPlayer — renders a player character at pixel-interpolated position.
+// isP2:       true for the local P2 in split-screen coop (uses state.players[1])
+// remoteConf: optional {bodyColor, ringColor, appearance, moving} for online remote players
+function drawPlayer(realX,realY,isP2,remoteConf=null){
   ctx2.save();
   const cx=realX*TILE+TILE/2, cy=realY*TILE+TILE/2;
-  const p = state.players[isP2?1:0];
-  const app = p?.appearance || {};
+  const p = remoteConf ? null : state.players[isP2?1:0];
+  const app  = remoteConf ? (remoteConf.appearance||{}) : (p?.appearance||{});
   const skin = SKIN_TONES[app.skinIdx||0];
-  const cl = CLASSES.find(c=>c.id===(app.classId||'warrior'))||CLASSES[0];
+  const cl   = CLASSES.find(c=>c.id===(app.classId||'warrior'))||CLASSES[0];
 
-  // Bob animation while moving
-  const bobOffset = playerMoving && !isP2 ? Math.sin(performance.now()*0.018)*2
-                  : p2Moving   &&  isP2 ? Math.sin(performance.now()*0.018)*2 : 0;
+  const isMoving = remoteConf ? remoteConf.moving
+                 : isP2      ? p2Moving
+                              : playerMoving;
+  const bobOffset = isMoving ? Math.sin(performance.now()*0.018)*2 : 0;
+
+  const bodyColor = remoteConf ? remoteConf.bodyColor
+                  : isP2      ? '#1a2a4a'
+                               : '#2a1a0a';
+  const ringColor = remoteConf ? remoteConf.ringColor
+                  : isP2      ? '#4a8aaa'
+                               : cl.color;
 
   // Shadow
   ctx2.fillStyle='rgba(0,0,0,0.4)';
   ctx2.beginPath(); ctx2.ellipse(cx,cy+TILE*.35,TILE*.22,TILE*.1,0,0,Math.PI*2); ctx2.fill();
 
   // Body
-  ctx2.fillStyle=isP2?'#1a2a4a':'#2a1a0a';
+  ctx2.fillStyle=bodyColor;
   ctx2.beginPath(); ctx2.arc(cx,cy+bobOffset,TILE*.32,0,Math.PI*2); ctx2.fill();
 
-  // Class color ring
-  ctx2.strokeStyle=isP2?'#4a8aaa':cl.color;
+  // Ring
+  ctx2.strokeStyle=ringColor;
   ctx2.lineWidth=2;
   ctx2.beginPath(); ctx2.arc(cx,cy+bobOffset,TILE*.32,0,Math.PI*2); ctx2.stroke();
 
-  // Skin dot (face)
+  // Face
   ctx2.fillStyle=skin;
   ctx2.beginPath(); ctx2.arc(cx,cy-2+bobOffset,TILE*.14,0,Math.PI*2); ctx2.fill();
 
   // Class icon
   ctx2.font='12px serif'; ctx2.textAlign='center'; ctx2.textBaseline='middle';
   ctx2.fillText(cl.icon,cx,cy+5+bobOffset);
+
+  // Name tag for remote players
+  if(remoteConf && remoteConf.name) {
+    ctx2.font='8px sans-serif'; ctx2.textAlign='center'; ctx2.textBaseline='bottom';
+    ctx2.fillStyle='rgba(0,0,0,0.55)';
+    const nw = ctx2.measureText(remoteConf.name).width;
+    ctx2.fillRect(cx-nw/2-2, cy-TILE*.4-10, nw+4, 10);
+    ctx2.fillStyle=ringColor;
+    ctx2.fillText(remoteConf.name, cx, cy-TILE*.4);
+  }
+
   ctx2.restore();
 }
 
@@ -2220,9 +2242,19 @@ function renderMap(){
     ctx2.strokeRect(hoverTile.x*TILE,hoverTile.y*TILE,TILE,TILE);
   }
 
-  if(gameMode==='coop' || isOnline()) {
-    const sameMap = !isOnline() || (remoteZone === zoneIndex && remoteInterior === interiorStack.length);
-    if(sameMap) drawPlayer(p2Real.x, p2Real.y, true);
+  // Local split-screen P2
+  if(gameMode==='coop') {
+    drawPlayer(p2Real.x, p2Real.y, true);
+  }
+  // Online remote players (up to 3)
+  if(isOnline()) {
+    for(const rp of remotePlayers.values()) {
+      const col = REMOTE_COLORS[rp.colorIdx] || REMOTE_COLORS[0];
+      drawPlayer(rp.real.x, rp.real.y, false, {
+        bodyColor: col.body, ringColor: col.ring,
+        appearance: rp.appearance, moving: rp.moving, name: rp.name,
+      });
+    }
   }
   drawNpcs();
   drawPlayer(playerReal.x,playerReal.y,false);
@@ -2473,16 +2505,17 @@ function gameLoop(){
   tickNpcs(now);
   tickChapelCultists();
   updateHUD();
-  if(gameMode==='coop' || isOnline()) updateP2HUD();
-  if(isOnline()) showOnlineBadge();
+  if(gameMode==='coop') updateP2HUD();
   Music.tick();
   Weather.tick();
   Fireflies.update(lastDt);
-  // Smoothly interpolate remote player toward their last known position
+  // Smoothly interpolate remote players toward their last known position
   if(isOnline()) {
     const lf = 0.18;
-    p2Real.x += (p2Pos.x - p2Real.x) * lf;
-    p2Real.y += (p2Pos.y - p2Real.y) * lf;
+    for(const rp of remotePlayers.values()) {
+      rp.real.x += (rp.pos.x - rp.real.x) * lf;
+      rp.real.y += (rp.pos.y - rp.real.y) * lf;
+    }
   }
   renderMap();
   requestAnimationFrame(gameLoop);
