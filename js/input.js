@@ -156,7 +156,7 @@ function showEnemyCtxMenu(e, en) {
   ctxMenu.classList.add('show');
 }
 
-function getTileLabel(t){
+function getTileLabel(t, tx, ty){
   const labels={
     [T.COPPER]:'⛏ Mine Copper Ore',
     [T.IRON]:'⛏ Mine Iron Ore',
@@ -217,8 +217,8 @@ function getTileLabel(t){
     [T.NPC_FARMER]:'💬 Farmer',
   };
   // Position-aware overrides for tiles that have different meanings by location
-  if(t === T.BWALL_DOOR && currentMap && currentMap.name === 'ASHENVEIL' && typeof arguments[1]!=='undefined') {
-    const lx = arguments[1], ly = arguments[2];
+  if(t === T.BWALL_DOOR && currentMap && currentMap.name === 'ASHENVEIL' && tx !== undefined) {
+    const lx = tx, ly = ty;
     if(lx===8 && ly===8) return '🚪 The Tarnished Flagon — Enter';
     const HOUSE_LABELS = {
       "3,33":"🚪 Mira's House",  "3,40":"🚪 Aldric's House",
@@ -361,7 +361,7 @@ function showTileCtxMenu(e,tx,ty,t){
   ctxMenu.innerHTML='';
   const title=document.createElement('div');
   title.className='ctx-title';
-  title.textContent=getTileLabel(t)||'Tile Options';
+  title.textContent=getTileLabel(t, tx, ty)||'Tile Options';
   ctxMenu.appendChild(title);
 
   const actions=getTileActions(t);

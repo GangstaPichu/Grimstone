@@ -647,7 +647,7 @@ function enemyCanMove(tx, ty) {
   if(tx<1||tx>=W-1||ty<1||ty>=H-1) return false;
   if(ENEMY_SOLID.has(tiles[ty][tx])) return false;
   // Don't stack on another enemy
-  if(enemies.some(e=>e!==undefined && Math.round(e.x)===tx && Math.round(e.y)===ty && e.state!=='dead')) return false;
+  if(enemies.some(e=> Math.round(e.x)===tx && Math.round(e.y)===ty && e.state!=='dead')) return false;
   return true;
 }
 
