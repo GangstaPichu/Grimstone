@@ -117,29 +117,60 @@ Object.assign(ITEMS, {
   harpoon:         {name:'Harpoon',             icon:'🔱', color:'#6a8a9a'},
 });
 
-// Add eating actions for all fish
-const _origGetItemActions = getItemActions;
 function getItemActions(id){
+  const item = ITEMS[id];
+  if(!item) return [];
+
   // ── Rune cast actions ────────────────────────────────────────────────
-  const runeItem = ITEMS[id];
-  if(runeItem && runeItem.type === 'rune') {
+  if(item.type === 'rune') {
     return [{
-      icon: runeItem.icon,
-      label: `Cast ${runeItem.name}`,
+      icon: item.icon,
+      label: `Cast ${item.name}`,
       action: (si) => castRune(si, id),
     }];
   }
-  // ── Food / cooked fish ────────────────────────────────────────────────
-  const fish=FISH_TABLE.find(f=>f.id===id);
-  if(fish) return [{icon:'🍽',label:`Eat Raw (heal ${fish.healHp} HP)`,action:(si)=>eatFood(si,fish.healHp)}];
-  const cookedFish=Object.values(COOKED);
+
+  // ── Raw / cooked fish ────────────────────────────────────────────────
+  const fish = FISH_TABLE.find(f=>f.id===id);
+  if(fish) return [{icon:'🍽', label:`Eat Raw (heal ${fish.healHp} HP)`, action:(si)=>eatFood(si,fish.healHp)}];
+  const cookedFish = Object.values(COOKED);
   if(cookedFish.includes(id)){
-    const rawId=Object.keys(COOKED).find(k=>COOKED[k]===id);
-    const f=FISH_TABLE.find(f=>f.id===rawId);
-    const hp=f?Math.floor(f.healHp*1.4):12;
-    return [{icon:'🍽',label:`Eat (heal ${hp} HP)`,action:(si)=>eatFood(si,hp)}];
+    const rawId = Object.keys(COOKED).find(k=>COOKED[k]===id);
+    const f = FISH_TABLE.find(f=>f.id===rawId);
+    const hp = f ? Math.floor(f.healHp*1.4) : 12;
+    return [{icon:'🍽', label:`Eat (heal ${hp} HP)`, action:(si)=>eatFood(si,hp)}];
   }
-  return _origGetItemActions(id);
+
+  // ── Generic food (healAmt > 0) ────────────────────────────────────────
+  if(item.type === 'food' && item.healAmt > 0) {
+    return [{icon:'🍽', label:`Eat (heal ${item.healAmt} HP)`, action:(si)=>eatFood(si,item.healAmt)}];
+  }
+
+  // ── Homestead Sigil ──────────────────────────────────────────────────
+  if(id === 'home_sigil') {
+    return [{icon:'🏡', label:'Teleport to Homestead', action:(si)=>{
+      if(!questFlags.homestead_rewarded) { log("You don't know how to use this yet.", 'bad'); return; }
+      log('The sigil pulses with warm light. You feel the homestead calling...', 'gold');
+      enterInterior(makeHomeMap, 'YOUR HOMESTEAD');
+    }}];
+  }
+
+  return [];
+}
+
+function eatFood(slotIdx, hp) {
+  const p = state.players[state.activePlayer];
+  if(p.hp >= p.maxHp) { log('You are already at full health.', 'bad'); return; }
+  const item = p.inventory[slotIdx];
+  if(!item) return;
+  const it = ITEMS[item.id];
+  const actual = Math.min(hp, p.maxHp - p.hp);
+  p.hp = Math.min(p.maxHp, p.hp + hp);
+  item.qty--;
+  if(item.qty <= 0) p.inventory[slotIdx] = null;
+  buildInventory(); updateHUD();
+  log(`You eat the ${it.name}. Restored ${actual} HP.`, 'good');
+  SFX.eat && SFX.eat();
 }
 
 // ── Rune casting ────────────────────────────────────────────────────────
@@ -1075,6 +1106,71 @@ function readBookshelf(x, y) {
   }
 }
 
+// ======= HOMESTEAD FARMING =======
+function tillTile(x, y) {
+  const p = state.players[state.activePlayer];
+  const hasHoe = p.inventory.some(s => s && s.id === 'hoe');
+  if(!hasHoe) {
+    log("You need a Farmer's Hoe to till the soil. Buy one from Dorin the Merchant.", 'bad');
+    return;
+  }
+  if(!currentMap || currentMap.name !== 'YOUR HOMESTEAD') {
+    log('You can only till soil at your homestead.', 'bad');
+    return;
+  }
+  const t = currentMap.tiles[y][x];
+  if(t !== T.DIRT) {
+    log('That tile cannot be tilled.', 'bad');
+    return;
+  }
+  currentMap.tiles[y][x] = T.TILLED_SOIL;
+  currentMap.floor[y][x]  = T.DIRT;
+  state.farmPlots[`${x},${y}`] = { state:'tilled' };
+  minimapDirty = true;
+  log('You till the soil, preparing it for planting.', 'good');
+  giveXP('Farming', 3);
+}
+
+function plantSeed(x, y) {
+  if(!currentMap || currentMap.name !== 'YOUR HOMESTEAD') return;
+  const p = state.players[state.activePlayer];
+  // Find any seed in inventory
+  const seedSlot = p.inventory.findIndex(s => s && ITEMS[s.id] && ITEMS[s.id].type === 'seed');
+  if(seedSlot === -1) {
+    log('You have no seeds to plant. Buy some from Dorin the Merchant.', 'bad');
+    return;
+  }
+  // If more than one seed type, open a small picker — for now just use the first found
+  const seedItem = p.inventory[seedSlot];
+  const seedDef  = ITEMS[seedItem.id];
+  currentMap.tiles[y][x] = T.SEEDLING;
+  state.farmPlots[`${x},${y}`] = {
+    state: 'planted',
+    cropItem:  seedDef.cropItem,
+    cropTile:  seedDef.cropTile,
+    plantedAt: Date.now(),
+    growTime:  seedDef.growTime,
+  };
+  minimapDirty = true;
+  seedItem.qty--;
+  if(seedItem.qty <= 0) p.inventory[seedSlot] = null;
+  buildInventory();
+  log(`You plant ${seedDef.name} in the tilled soil.`, 'good');
+  giveXP('Farming', 5);
+}
+
+function harvestHomeCrop(x, y, cropItem, msg) {
+  if(!currentMap || currentMap.name !== 'YOUR HOMESTEAD') return;
+  const it = ITEMS[cropItem];
+  addToInventory(cropItem);
+  buildInventory(); updateHUD();
+  currentMap.tiles[y][x] = T.TILLED_SOIL;
+  state.farmPlots[`${x},${y}`] = { state:'tilled' };
+  minimapDirty = true;
+  log(`${msg} You receive 1 ${it ? it.name : cropItem}.`, 'good');
+  giveXP('Farming', 15);
+}
+
 function searchChest(x, y) {
   // Only the chest near the blacksmith has the mystery quest note
   const isSpecialChest = (zoneIndex === 0 && !currentMap?.isInterior && x >= 28 && x <= 31 && y >= 9 && y <= 11);
@@ -1655,7 +1751,12 @@ document.addEventListener('keydown',e=>{
       scheduleP2KeyMove();
     }
   }
+  if(e.key==='m' || e.key==='M'){
+    toggleWorldMap(); return;
+  }
   if(e.key==='Escape'){
+    const mapOverlay = document.getElementById('world-map-overlay');
+    if(mapOverlay && mapOverlay.classList.contains('show')){ mapOverlay.classList.remove('show'); return; }
     if(document.getElementById('dialogue-panel').classList.contains('show')){ closeDialogue(); return; }
     if(document.getElementById('shop-panel').classList.contains('show')){ closeMerchantShop(); return; }
     cancelActivity();

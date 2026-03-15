@@ -1,97 +1,346 @@
-// =====================================================================
-// ONLINE CO-OP ENGINE — Firebase REST API (no SDK, pure fetch + SSE)
-// DB URL: https://grimmy-c4671-default-rtdb.firebaseio.com/
-// rooms/{code}/host   — {name, pos, appearance, hp, maxHp}
-// rooms/{code}/guest  — same
-// rooms/{code}/started — true when host fires start
-// =====================================================================
+// ======= PeerJS CO-OP ENGINE =======
+// Star topology: host is the center; guests connect only to the host.
+// The host relays a world-state snapshot to all guests every sync cycle.
+// Up to 4 players (1 host + 3 guests).
+// Sessions can be started or ended at any time without leaving the game.
 
-const FB_BASE = 'https://grimmy-c4671-default-rtdb.firebaseio.com';
+const MAX_PLAYERS = 4;
 
-// Firebase REST supports CORS natively — no proxy needed.
-// Key: omit Content-Type header to avoid preflight OPTIONS request.
-// Firebase accepts plain body for PUT/PATCH.
+// Distinct visual colors for remote player slots (P2, P3, P4)
+const REMOTE_COLORS = [
+  { body:'#1a2a4a', ring:'#4a8aaa' },  // P2 — cyan
+  { body:'#1a2a1a', ring:'#4a8a4a' },  // P3 — green
+  { body:'#2a1a08', ring:'#c8822a' },  // P4 — amber
+];
 
-async function fbGet(path) {
-  try {
-    const r = await fetch(FB_BASE + '/' + path + '.json?t=' + Date.now());
-    if(!r.ok) { console.error('fbGet failed:', r.status); return null; }
-    const text = await r.text();
-    if(!text || text === 'null') return null;
-    return JSON.parse(text);
-  } catch(e) { console.error('fbGet error:', e); return null; }
-}
-async function fbSet(path, data) {
-  try {
-    const r = await fetch(FB_BASE + '/' + path + '.json', {
-      method: 'PUT',
-      body: JSON.stringify(data)
-    });
-    if(!r.ok) console.error('fbSet failed:', r.status, await r.text());
-    else console.log('fbSet OK:', path);
-  } catch(e) { console.error('fbSet error:', e); }
-}
-async function fbUpdate(path, data) {
-  try {
-    await fetch(FB_BASE + '/' + path + '.json', {
-      method: 'PATCH',
-      body: JSON.stringify(data)
-    });
-  } catch(e) { console.error('fbUpdate error:', e); }
-}
-async function fbDelete(path) {
-  try {
-    await fetch(FB_BASE + '/' + path + '.json', { method: 'DELETE' });
-  } catch(e) {}
+// Live remote player map.  peerId → { id, name, pos, real, hp, maxHp, appearance, moving, colorIdx }
+// Declared as a plain object so render.js can iterate it without importing anything.
+const remotePlayers = new Map();
+
+let coopPeer       = null;   // local Peer instance (PeerJS)
+let coopRole       = null;   // 'host' | 'guest' | null
+let coopRoomCode   = null;   // 4-letter code
+let coopHostConn   = null;   // (guest only) DataConnection to the host
+let coopGuestConns = new Map(); // (host only) peerId → DataConnection
+let _coopSyncTimer = null;
+let _sessionPanelVisible = false;
+
+function isOnline() { return coopRole !== null; }
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function makeRoomCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  let code = '';
+  for(let i=0;i<4;i++) code+=chars[Math.floor(Math.random()*chars.length)];
+  return code;
 }
 
-function fbListen(path, callback) {
-  let last = undefined;
-  let stopped = false;
-  async function poll() {
-    if(stopped) return;
-    const data = await fbGet(path);
-    const key = JSON.stringify(data);
-    if(key !== last) { last = key; callback(data); }
-    if(!stopped) setTimeout(poll, 500);
+function _nextColorIdx() {
+  const used = new Set([...remotePlayers.values()].map(p=>p.colorIdx));
+  for(let i=0;i<3;i++) if(!used.has(i)) return i;
+  return 0;
+}
+
+function _myState() {
+  const p = state.players[0];
+  return {
+    type:'state',
+    name: p.name,
+    pos:  { x:playerPos.x, y:playerPos.y },
+    hp:   p.hp, maxHp: p.maxHp,
+    appearance: p.appearance||{},
+    zone: zoneIndex,
+    interior: interiorStack.length,
+  };
+}
+
+function _applyRemoteState(id, data) {
+  let rp = remotePlayers.get(id);
+  if(!rp) {
+    rp = {
+      id, name:'Adventurer',
+      pos:{x:6,y:5}, real:{x:6,y:5},
+      hp:30, maxHp:30, appearance:{},
+      moving:false, colorIdx:_nextColorIdx(),
+    };
+    remotePlayers.set(id, rp);
   }
-  poll();
-  return () => { stopped = true; };
+  if(data.pos) {
+    rp.moving = (rp.pos.x !== data.pos.x || rp.pos.y !== data.pos.y);
+    rp.pos    = data.pos;
+  }
+  if(data.name)        rp.name       = data.name;
+  if(data.hp    != null) rp.hp       = data.hp;
+  if(data.maxHp != null) rp.maxHp    = data.maxHp;
+  if(data.appearance)  rp.appearance = data.appearance;
 }
 
-// ── Online session state ──
-let onlineRole    = null;   // 'host' | 'guest' | null
-let onlineRoom    = null;   // 4-letter code
-let onlineReady   = false;
-let _syncTimer    = null;
-let _stopListeners = [];    // array of close() fns
+function _removeRemotePlayer(id) {
+  const rp = remotePlayers.get(id);
+  if(rp) { log(`${rp.name} left the session.`, 'info'); remotePlayers.delete(id); }
+  updateOnlineHUD();
+  updateSessionPanel();
+}
 
-let remotePos        = {x:6, y:5};
-let remoteAppearance = {skinIdx:1, hairColorIdx:2, hairStyleIdx:1, classId:'warrior'};
-let remoteName       = 'Wanderer';
-let remoteHp         = 30;
-let remoteMaxHp      = 30;
-let remoteZone       = 0;
-let remoteInterior   = 0;
+// ── HOST ─────────────────────────────────────────────────────────────────────
 
-// ── UI helpers ──
+function startHostSession(callback) {
+  if(coopRole) { log('Already in a session.', 'bad'); return; }
+  const code = makeRoomCode();
+  coopPeer = new Peer(code);
+
+  coopPeer.on('open', id => {
+    coopRole     = 'host';
+    coopRoomCode = id;
+    log(`✦ Session started. Code: ${id}`, 'gold');
+    _startSyncLoop();
+    updateOnlineHUD();
+    updateSessionPanel();
+    if(callback) callback(id);
+  });
+
+  coopPeer.on('connection', conn => {
+    if(coopGuestConns.size >= MAX_PLAYERS - 1) { conn.close(); return; }
+    conn.on('open', () => {
+      coopGuestConns.set(conn.peer, conn);
+      conn.on('data',  data => _onHostReceive(conn.peer, data));
+      conn.on('close', () => {
+        _removeRemotePlayer(conn.peer);
+        coopGuestConns.delete(conn.peer);
+        updateSessionPanel();
+      });
+      // Welcome the guest with the current world snapshot
+      _sendWorldToConn(conn);
+      updateSessionPanel();
+    });
+  });
+
+  coopPeer.on('error', err => log(`Co-op error: ${err.type}`, 'bad'));
+}
+
+function _onHostReceive(guestId, data) {
+  if(data.type === 'state') {
+    _applyRemoteState(guestId, data);
+    // Relay a fresh world snapshot to all OTHER guests
+    const snapshot = _buildWorldSnapshot();
+    for(const [id, conn] of coopGuestConns) {
+      if(id !== guestId && conn.open) conn.send(snapshot);
+    }
+    updateOnlineHUD();
+  } else if(data.type === 'leave') {
+    _removeRemotePlayer(guestId);
+    coopGuestConns.delete(guestId);
+  }
+}
+
+function _buildWorldSnapshot() {
+  const p = state.players[0];
+  const players = [
+    { id:'host', name:p.name, pos:{x:playerPos.x,y:playerPos.y}, hp:p.hp, maxHp:p.maxHp, appearance:p.appearance||{} },
+    ...[...remotePlayers.values()].map(rp => ({
+      id:rp.id, name:rp.name, pos:rp.pos, hp:rp.hp, maxHp:rp.maxHp, appearance:rp.appearance,
+    })),
+  ];
+  return { type:'world', players };
+}
+
+function _sendWorldToConn(conn) {
+  if(conn.open) conn.send(_buildWorldSnapshot());
+}
+
+// ── GUEST ─────────────────────────────────────────────────────────────────────
+
+function joinSession(roomCode, onSuccess, onFail) {
+  if(coopRole) { log('Already in a session.', 'bad'); return; }
+  coopPeer = new Peer(); // random ID for guest
+  coopPeer.on('open', () => {
+    const conn = coopPeer.connect(roomCode);
+    coopHostConn = conn;
+
+    conn.on('open', () => {
+      coopRole     = 'guest';
+      coopRoomCode = roomCode;
+      log(`✦ Joined session: ${roomCode}`, 'gold');
+      _startSyncLoop();
+      updateOnlineHUD();
+      updateSessionPanel();
+      if(onSuccess) onSuccess();
+    });
+
+    conn.on('data', data => {
+      if(data.type === 'world') {
+        const myId = coopPeer.id;
+        for(const pd of data.players) {
+          if(pd.id !== myId) _applyRemoteState(pd.id, pd);
+        }
+        updateOnlineHUD();
+      } else if(data.type === 'end') {
+        log('The host ended the session.', 'info');
+        endSession(true);
+      }
+    });
+
+    conn.on('close', () => { log('Lost connection to host.', 'bad'); endSession(true); });
+    conn.on('error', err => log(`Connection error: ${err.type}`, 'bad'));
+  });
+
+  coopPeer.on('error', err => {
+    log(`Could not connect: ${err.type}`, 'bad');
+    if(coopPeer) { coopPeer.destroy(); coopPeer=null; }
+    if(onFail) onFail(err);
+  });
+}
+
+// ── SYNC LOOP ─────────────────────────────────────────────────────────────────
+
+function _startSyncLoop() {
+  if(_coopSyncTimer) return;
+  function push() {
+    if(!coopRole) return;
+    if(coopRole === 'guest') {
+      if(coopHostConn && coopHostConn.open) coopHostConn.send(_myState());
+    } else if(coopRole === 'host') {
+      const snapshot = _buildWorldSnapshot();
+      for(const conn of coopGuestConns.values()) if(conn.open) conn.send(snapshot);
+    }
+    _coopSyncTimer = setTimeout(push, 50); // ~20 fps
+  }
+  push();
+}
+
+// ── END / LEAVE ───────────────────────────────────────────────────────────────
+
+function endSession(silent=false) {
+  if(!coopRole) return;
+  if(_coopSyncTimer) { clearTimeout(_coopSyncTimer); _coopSyncTimer=null; }
+  if(coopRole === 'host') {
+    for(const conn of coopGuestConns.values()) {
+      if(conn.open) conn.send({type:'end'});
+      conn.close();
+    }
+    coopGuestConns.clear();
+  } else if(coopRole === 'guest') {
+    if(coopHostConn && coopHostConn.open) {
+      coopHostConn.send({type:'leave'});
+      coopHostConn.close();
+    }
+    coopHostConn = null;
+  }
+  if(coopPeer) { coopPeer.destroy(); coopPeer=null; }
+  remotePlayers.clear();
+  coopRole=null; coopRoomCode=null;
+  if(!silent) log('Co-op session ended.', 'info');
+  updateOnlineHUD();
+  updateSessionPanel();
+}
+
+window.addEventListener('beforeunload', ()=> endSession(true));
+
+// ── IN-GAME SESSION PANEL ─────────────────────────────────────────────────────
+
+function toggleSessionPanel() {
+  _sessionPanelVisible = !_sessionPanelVisible;
+  document.getElementById('session-panel').style.display = _sessionPanelVisible ? 'block' : 'none';
+  if(_sessionPanelVisible) updateSessionPanel();
+}
+
+function updateSessionPanel() {
+  const panel = document.getElementById('session-panel-content');
+  if(!panel) return;
+
+  // Also update the HUD button label
+  const btnWrap = document.getElementById('session-btn-wrap');
+  const btnLabel = document.getElementById('session-btn-label');
+  if(btnWrap) btnWrap.style.display = 'flex';
+  if(btnLabel) {
+    if(coopRole === 'host')  btnLabel.textContent = `Host · ${remotePlayers.size} joined`;
+    else if(coopRole === 'guest') btnLabel.textContent = 'Online';
+    else btnLabel.textContent = 'Co-Op';
+  }
+
+  if(!_sessionPanelVisible) return;
+
+  let html = '';
+
+  if(!coopRole) {
+    // Not in a session — offer start or join
+    html = `
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button class="lobby-btn" onclick="toggleSessionPanel();startHostSessionInGame();" style="font-size:11px;padding:7px 0;">⚔ Host a Session</button>
+        <div style="font-size:10px;color:var(--text-dim);text-align:center;">— or —</div>
+        <input id="sp-join-input" class="lobby-input" maxlength="4" placeholder="Room Code"
+               oninput="this.value=this.value.toUpperCase().replace(/[^A-Z]/g,'')"
+               onkeydown="if(event.key==='Enter')joinSessionInGame()"
+               style="text-align:center;font-size:14px;letter-spacing:4px;">
+        <button class="lobby-btn" onclick="joinSessionInGame()" style="font-size:11px;padding:7px 0;">🌐 Join Session</button>
+        <div id="sp-status" style="font-size:10px;color:var(--text-dim);text-align:center;min-height:14px;"></div>
+      </div>`;
+  } else if(coopRole === 'host') {
+    const code = coopRoomCode || '—';
+    const players = [...remotePlayers.values()];
+    const pRows = players.map(rp => {
+      const col = REMOTE_COLORS[rp.colorIdx]?.ring || '#aaa';
+      return `<div style="font-size:11px;color:${col};padding:2px 0;">⚔ ${rp.name} <span style="color:var(--text-dim);font-size:10px;">${rp.hp}/${rp.maxHp} HP</span></div>`;
+    }).join('');
+    html = `
+      <div style="font-size:10px;color:var(--text-dim);margin-bottom:4px;">Room Code</div>
+      <div style="font-size:22px;letter-spacing:6px;color:var(--gold);text-align:center;margin-bottom:8px;">${code}</div>
+      <div style="font-size:10px;color:var(--text-dim);">Connected (${players.length}/3)</div>
+      <div style="margin:6px 0 10px;">${pRows || '<div style="font-size:10px;color:var(--text-dim);">Waiting for players...</div>'}</div>
+      <button class="lobby-btn" onclick="endSession()" style="font-size:11px;padding:7px 0;background:rgba(120,30,30,0.4);border-color:#8a3a3a;">✕ End Session</button>`;
+  } else {
+    // guest
+    const players = [...remotePlayers.values()];
+    const pRows = players.map(rp => {
+      const col = REMOTE_COLORS[rp.colorIdx]?.ring || '#aaa';
+      return `<div style="font-size:11px;color:${col};padding:2px 0;">⚔ ${rp.name} <span style="color:var(--text-dim);font-size:10px;">${rp.hp}/${rp.maxHp} HP</span></div>`;
+    }).join('');
+    html = `
+      <div style="font-size:10px;color:var(--text-dim);margin-bottom:4px;">Session: <span style="color:var(--gold);letter-spacing:2px;">${coopRoomCode}</span></div>
+      <div style="margin:6px 0 10px;">${pRows || '<div style="font-size:10px;color:var(--text-dim);">Connecting...</div>'}</div>
+      <button class="lobby-btn" onclick="endSession()" style="font-size:11px;padding:7px 0;background:rgba(120,30,30,0.4);border-color:#8a3a3a;">← Leave Session</button>`;
+  }
+
+  panel.innerHTML = html;
+}
+
+// Called when "Host a Session" is clicked from in-game panel
+function startHostSessionInGame() {
+  const btnWrap = document.getElementById('session-btn-wrap');
+  if(btnWrap) btnWrap.style.display = 'flex';
+  startHostSession(() => {
+    _sessionPanelVisible = true;
+    document.getElementById('session-panel').style.display = 'block';
+    updateSessionPanel();
+  });
+}
+
+// Called when "Join Session" is clicked from in-game panel
+function joinSessionInGame() {
+  const input = document.getElementById('sp-join-input');
+  const code  = input ? input.value.trim().toUpperCase() : '';
+  const status = document.getElementById('sp-status');
+  if(code.length !== 4) { if(status) status.textContent='Enter a 4-letter code.'; return; }
+  if(status) status.textContent = 'Connecting...';
+  joinSession(code,
+    () => { if(status) status.textContent=''; },
+    (err) => { if(status) status.textContent=`Failed: ${err.type}`; }
+  );
+}
+
+// ── LOBBY (title-screen flow) ─────────────────────────────────────────────────
+
 function openCoopMenu() {
   document.getElementById('title-screen').style.display='none';
   document.getElementById('coop-menu').style.display='flex';
 }
 function closeCoopMenu() {
-  // Just hide the coop menu — callers decide what to show next
   document.getElementById('coop-menu').style.display='none';
 }
 function backFromCoopMenu() {
   document.getElementById('coop-menu').style.display='none';
   document.getElementById('title-screen').style.display='flex';
-}
-function makeRoomCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-  let code = '';
-  for(let i=0;i<4;i++) code += chars[Math.floor(Math.random()*chars.length)];
-  return code;
 }
 
 function lobbySetTab(tab) {
@@ -100,258 +349,207 @@ function lobbySetTab(tab) {
   document.getElementById('lobby-host-panel').style.display = tab==='host' ? '' : 'none';
   document.getElementById('lobby-join-panel').style.display = tab==='join'  ? '' : 'none';
 }
+
 function openOnlineLobby() {
   closeCoopMenu();
-  onlineRoom = null; onlineRole = null; onlineReady = false;
+  // Reset state
+  endSession(true);
   document.getElementById('online-lobby').style.display='flex';
   lobbySetTab('host');
-  // Reset to initial state
-  document.getElementById('lobby-code-display').textContent = '····';
+  _resetLobbyUI();
+}
+
+function _resetLobbyUI() {
+  document.getElementById('lobby-code-display').textContent = '—';
   document.getElementById('slot-p1-name').textContent = '—';
   document.getElementById('slot-p1').classList.remove('filled');
-  document.getElementById('slot-p2-name').textContent = 'Waiting...';
-  document.getElementById('slot-p2').classList.remove('filled');
+  ['p2','p3','p4'].forEach(id => {
+    document.getElementById(`slot-${id}-name`).textContent = 'Waiting...';
+    document.getElementById(`slot-${id}`).classList.remove('filled');
+  });
   document.getElementById('lobby-host-status').textContent = 'Create your character to generate a room code.';
   document.getElementById('lobby-host-status').className = 'lobby-status waiting';
-  document.getElementById('lobby-start-btn').disabled = false;
-  document.getElementById('lobby-start-btn').textContent = '⚔ Create Character & Host';
-  document.getElementById('lobby-start-btn').style.display = '';
-  document.getElementById('lobby-start-btn').onclick = () => goToCharCreate('online-host');
+  const btn = document.getElementById('lobby-start-btn');
+  btn.textContent = '⚔ Create Character & Host';
+  btn.onclick = () => goToCharCreate('online-host');
 }
+
 function closeOnlineLobby() {
-  // Stop any active listeners/polling
-  _stopListeners.forEach(fn=>fn()); _stopListeners=[];
-  if(_syncTimer) { clearTimeout(_syncTimer); _syncTimer=null; }
-  // Clean up Firebase room if host
-  if(onlineRoom && onlineRole==='host') fbDelete('rooms/'+onlineRoom);
-  onlineRoom=null; onlineRole=null; onlineReady=false;
+  endSession(true);
   document.getElementById('online-lobby').style.display='none';
   openCoopMenu();
 }
 
-function resetHostPanel() {
-  document.getElementById('lobby-code-display').textContent = '····';
-  document.getElementById('slot-p1-name').textContent = '—';
-  document.getElementById('slot-p2-name').textContent = 'Waiting...';
-  document.getElementById('slot-p2').classList.remove('filled');
-  document.getElementById('slot-p1').classList.remove('filled');
-  document.getElementById('lobby-host-status').textContent = 'Create your character to generate a room code.';
-  document.getElementById('lobby-host-status').className = 'lobby-status waiting';
-  document.getElementById('lobby-start-btn').disabled = false;
-  document.getElementById('lobby-start-btn').textContent = '⚔ Create Character & Host';
-  document.getElementById('lobby-start-btn').style.display = '';
-  document.getElementById('lobby-start-btn').onclick = () => goToCharCreate('online-host');
-}
-
+// Called after character creation for the online host
 function afterHostCharCreate() {
   const p = state.players[0];
-  const code = makeRoomCode();
-  onlineRoom = code;
-  onlineRole = 'host';
-  onlineReady = false;
-
-  document.getElementById('char-create-screen').style.display = 'none';
-  document.getElementById('online-lobby').style.display = 'flex';
-
-  // Force host tab visible without triggering any resets
-  document.getElementById('tab-host').classList.add('active');
-  document.getElementById('tab-join').classList.remove('active');
-  document.getElementById('lobby-host-panel').style.display = '';
-  document.getElementById('lobby-join-panel').style.display = 'none';
-
-  // Set all fields directly — no helper calls that might overwrite
-  document.getElementById('lobby-code-display').textContent = code;
+  document.getElementById('char-create-screen').style.display='none';
+  document.getElementById('online-lobby').style.display='flex';
+  lobbySetTab('host');
   document.getElementById('slot-p1-name').textContent = p.name;
   document.getElementById('slot-p1').classList.add('filled');
-  document.getElementById('slot-p2-name').textContent = 'Waiting...';
-  document.getElementById('slot-p2').classList.remove('filled');
-  document.getElementById('lobby-host-status').textContent = '⏳ Creating room...';
+  document.getElementById('lobby-host-status').textContent = '⏳ Setting up room...';
   document.getElementById('lobby-host-status').className = 'lobby-status waiting';
-  document.getElementById('lobby-start-btn').disabled = true;
-  document.getElementById('lobby-start-btn').textContent = 'Waiting for Player 2...';
-  document.getElementById('lobby-start-btn').onclick = onlineLobbyStart;
+  const btn = document.getElementById('lobby-start-btn');
+  btn.textContent = 'Waiting for players...';
+  btn.onclick = onlineLobbyStart;
 
-  fbSet('rooms/'+code, {
-    host: { name:p.name, pos:{x:6,y:5}, appearance:p.appearance||{}, hp:p.hp, maxHp:p.maxHp },
-    started: false,
-    created: Date.now()
-  }).then(async () => {
-    const check = await fbGet('rooms/'+code);
-    if(!check) {
-      document.getElementById('lobby-host-status').textContent = '✖ Room creation failed. Check console (F12).';
-      document.getElementById('lobby-host-status').className = 'lobby-status error';
-      return;
-    }
-    document.getElementById('lobby-host-status').textContent = '✦ Room ready — share code: '+code;
+  startHostSession(code => {
+    document.getElementById('lobby-code-display').textContent = code;
+    document.getElementById('lobby-host-status').textContent = `✦ Room ready — share code: ${code}`;
     document.getElementById('lobby-host-status').className = 'lobby-status connected';
+    btn.textContent = 'Start Adventure ⚔ (or wait for more)';
+    btn.disabled = false;
 
-    // Poll for guest
-    const stopGuest = fbListen('rooms/'+code+'/guest', data => {
-      console.log('guest poll callback:', JSON.stringify(data));
-      document.getElementById('lobby-host-status').textContent = '🔍 Poll: '+(data ? data.name||'no name' : 'null');
-      if(data && data.name) {
-        remoteName       = data.name;
-        remoteAppearance = data.appearance || remoteAppearance;
-        remoteHp         = data.hp   || 30;
-        remoteMaxHp      = data.maxHp || 30;
-        onlineReady = true;
-        document.getElementById('slot-p2-name').textContent = data.name;
-        document.getElementById('slot-p2').classList.add('filled');
-        document.getElementById('lobby-host-status').textContent = '✦ '+data.name+' joined! Press Start.';
+    // Poll remotePlayers to update lobby slots
+    const slotIds = ['p2','p3','p4'];
+    function updateLobbySlots() {
+      if(document.getElementById('online-lobby').style.display === 'none') return;
+      const guests = [...remotePlayers.values()];
+      slotIds.forEach((sid, i) => {
+        const guest = guests[i];
+        const el = document.getElementById(`slot-${sid}`);
+        const nameEl = document.getElementById(`slot-${sid}-name`);
+        if(guest) {
+          el.classList.add('filled');
+          nameEl.textContent = guest.name;
+        } else {
+          el.classList.remove('filled');
+          nameEl.textContent = 'Waiting...';
+        }
+      });
+      if(remotePlayers.size > 0) {
+        document.getElementById('lobby-host-status').textContent =
+          `✦ ${remotePlayers.size} player(s) joined. Start when ready!`;
         document.getElementById('lobby-host-status').className = 'lobby-status connected';
-        document.getElementById('lobby-start-btn').disabled = false;
-        document.getElementById('lobby-start-btn').textContent = 'Start Adventure ⚔';
       }
-    });
-    _stopListeners.push(stopGuest);
+      setTimeout(updateLobbySlots, 300);
+    }
+    updateLobbySlots();
   });
+}
+
+function onlineLobbyStart() {
+  if(!coopRole) return;
+  document.getElementById('online-lobby').style.display='none';
+  beginOnlineGame();
 }
 
 function lobbyJoinRoom() {
   const code = document.getElementById('join-code-input').value.trim().toUpperCase();
-  if(code.length!==4){ setJoinStatus('Enter a 4-letter code.','error'); return; }
-  setJoinStatus('Looking up room...','waiting');
-  fbGet('rooms/'+code).then(room => {
-    if(!room){ setJoinStatus('Room not found. Check the code.','error'); return; }
-    if(room.guest){ setJoinStatus('Room is full.','error'); return; }
-    onlineRoom = code;
-    onlineRole = 'guest';
-    remoteName       = (room.host && room.host.name)       ? room.host.name       : 'Host';
-    remoteAppearance = (room.host && room.host.appearance)  ? room.host.appearance : remoteAppearance;
-    remoteHp         = (room.host && room.host.hp)          ? room.host.hp         : 30;
-    remoteMaxHp      = (room.host && room.host.maxHp)       ? room.host.maxHp      : 30;
-    setJoinStatus('✦ Room found — create your character to join!','connected');
-    setTimeout(() => goToCharCreate('online-guest'), 800);
-  }).catch(e => { setJoinStatus('Connection error: '+e.message,'error'); });
+  if(code.length!==4) { setJoinStatus('Enter a 4-letter code.','error'); return; }
+  setJoinStatus('Connecting...','waiting');
+  joinSession(code,
+    () => {
+      setJoinStatus('✦ Connected! Creating character...','connected');
+      setTimeout(() => goToCharCreate('online-guest'), 600);
+    },
+    (err) => setJoinStatus(`Could not connect: ${err.type}`, 'error')
+  );
 }
+
 function setJoinStatus(msg, cls) {
   const el = document.getElementById('lobby-join-status');
-  el.textContent = msg; el.className = 'lobby-status '+cls;
+  if(el) { el.textContent=msg; el.className='lobby-status '+cls; }
 }
 
+// Called after character creation for a guest joining via lobby
 function afterGuestCharCreate() {
-  document.getElementById('char-create-screen').style.display = 'none';
-  document.getElementById('online-lobby').style.display = 'flex';
+  document.getElementById('char-create-screen').style.display='none';
+  document.getElementById('online-lobby').style.display='flex';
   const p = state.players[0];
-
-  // Switch to host-panel layout to show both players
-  document.getElementById('lobby-join-panel').style.display = 'none';
-  document.getElementById('lobby-host-panel').style.display = '';
-  document.getElementById('lobby-code-display').textContent = onlineRoom;
-  document.getElementById('slot-p1-name').textContent = remoteName+' (Host)';
+  lobbySetTab('host'); // reuse host panel layout
+  document.getElementById('lobby-code-display').textContent = coopRoomCode;
+  document.getElementById('slot-p1-name').textContent = '(Host)';
   document.getElementById('slot-p1').classList.add('filled');
   document.getElementById('slot-p2-name').textContent = p.name+' (You)';
   document.getElementById('slot-p2').classList.add('filled');
-  document.getElementById('lobby-host-status').textContent = '⏳ Joining room...';
-  document.getElementById('lobby-host-status').className = 'lobby-status waiting';
-  document.getElementById('lobby-start-btn').style.display = 'none';
+  document.getElementById('lobby-host-status').textContent = '✦ Joined! Waiting for host to start...';
+  document.getElementById('lobby-host-status').className = 'lobby-status connected';
+  document.getElementById('lobby-start-btn').style.display='none';
 
-  fbSet('rooms/'+onlineRoom+'/guest', {
-    name:p.name, pos:{x:7,y:5},
-    appearance:p.appearance||{}, hp:p.hp, maxHp:p.maxHp
-  }).then(() => {
-    document.getElementById('lobby-host-status').textContent = '✦ Joined! Waiting for host to start...';
-    document.getElementById('lobby-host-status').className = 'lobby-status connected';
-
-    const stopStarted = fbListen('rooms/'+onlineRoom+'/started', data => {
-      if(data === true) {
-        _stopListeners.forEach(fn=>fn()); _stopListeners=[];
-        document.getElementById('online-lobby').style.display = 'none';
-        beginOnlineGame('guest');
+  // Host will send 'world' once game starts (guest sees it via data handler).
+  // If the host navigates away or calls beginOnlineGame separately,
+  // we start when a special 'start' message arrives.
+  // For simplicity, the host calls onlineLobbyStart which hides the lobby on their side;
+  // guests need a signal — we re-use the world sync.  Guest auto-starts after first world msg.
+  if(coopHostConn) {
+    const _origHandler = coopHostConn._dc ? coopHostConn._dc.onmessage : null;
+    // Watch for host starting (first 'world' message means game is live)
+    let _started = false;
+    const _prevOnData = coopHostConn._events?.data?.[0];
+    coopHostConn.on('data', function guestStartWatcher(data) {
+      if(_started) return;
+      if(data.type === 'world' || data.type === 'start') {
+        _started = true;
+        document.getElementById('online-lobby').style.display='none';
+        beginOnlineGame();
       }
     });
-    _stopListeners.push(stopStarted);
-  }).catch(() => {
-    document.getElementById('lobby-host-status').textContent = '✖ Failed to join. Try again.';
-    document.getElementById('lobby-host-status').className = 'lobby-status error';
-  });
+  }
 }
 
-// ── START ONLINE GAME ──
-function onlineLobbyStart() {
-  if(!onlineReady) return;
-  fbSet('rooms/'+onlineRoom+'/started', true);
-  _stopListeners.forEach(fn=>fn()); _stopListeners=[];
-  document.getElementById('online-lobby').style.display='none';
-  beginOnlineGame('host');
-}
-function beginOnlineGame(role) {
-  gameMode = 'online-'+role;
-  document.getElementById('game-container').style.display='flex';
-  document.getElementById('p2-hud').style.display='flex';
-  if(state.players.length < 2) {
-    state.players.push({
-      name:remoteName, hp:remoteHp, maxHp:remoteMaxHp, gold:0,
-      skills: JSON.parse(JSON.stringify(state.players[0].skills)),
-      inventory: Array(28).fill(null),
-      appearance: remoteAppearance
-    });
-  } else {
-    state.players[1].name=remoteName; state.players[1].hp=remoteHp;
-    state.players[1].maxHp=remoteMaxHp; state.players[1].appearance=remoteAppearance;
-  }
+// ── BEGIN ONLINE GAME ─────────────────────────────────────────────────────────
+
+function beginOnlineGame() {
+  gameMode = 'online-' + coopRole;
+  document.getElementById('game-container').style.display = 'flex';
+
   setTimeout(()=>{
     applyUIScale(uiScale);
     currentMap = makeZoneMap(0);
     spawnEnemiesFromMap(); spawnNpcsFromMap();
     const spawn = findSafeSpawn(5, Math.floor(MAP_H/2));
     playerPos = {x:spawn.x, y:spawn.y};
-    playerReal = {x:spawn.x, y:spawn.y};
-    p2Pos  = {x:spawn.x+1, y:spawn.y};
-    p2Real = {x:spawn.x+1, y:spawn.y};
-    camera.x = Math.max(0, playerPos.x*TILE - canvas.width/2);
-    camera.y = Math.max(0, playerPos.y*TILE - canvas.height/2);
-    patchItemIcons(); buildSkillsPanel(); buildInventory(); buildEquipPanel(); wireInvContextMenu(); updateHUD(); updateP2HUD();
+    playerReal= {x:spawn.x, y:spawn.y};
+    camera.x  = Math.max(0, playerPos.x*TILE - canvas.width/2);
+    camera.y  = Math.max(0, playerPos.y*TILE - canvas.height/2);
+    patchItemIcons(); buildSkillsPanel(); buildInventory(); buildEquipPanel();
+    wireInvContextMenu(); updateHUD();
     document.getElementById('zone-name').textContent = ZONES[0];
     const p = state.players[0];
-    log(`Welcome, ${p.name}. You adventure alongside ${remoteName}.`,'gold');
-    log('WASD/Arrows to move · Right-click to interact','info');
-    Music.init(); SFX.init(); startAutoSave(); initScaleSlider(); initPanelToggles(); gameLoop();
-    window.addEventListener('resize',()=>{ applyUIScale(uiScale); });
-    startOnlineSync();
+    log(`Welcome, ${p.name}. You adventure online.`, 'gold');
+    log('Right-click to interact · M for world map', 'info');
+    Music.init(); SFX.init(); startAutoSave(); startHomeGrowthTick();
+    initScaleSlider(); initPanelToggles(); gameLoop();
+    window.addEventListener('resize',()=>{ applyUIScale(uiScale); Weather.initParticles(); });
+    updateOnlineHUD();
+    updateSessionPanel();
+    // Show session button
+    const btnWrap = document.getElementById('session-btn-wrap');
+    if(btnWrap) btnWrap.style.display='flex';
   }, 100);
 }
 
-// ── SYNC ENGINE — push every 100ms, listen via SSE ──
-let _lastSyncPush = 0;
-function startOnlineSync() {
-  const myRole    = onlineRole;
-  const theirRole = myRole==='host' ? 'guest' : 'host';
+// ── ONLINE HUD (remote player bars) ──────────────────────────────────────────
 
-  // Listen to remote player
-  const stopRemote = fbListen('rooms/'+onlineRoom+'/'+theirRole, data => {
-    if(!data) return;
-    if(data.pos) { p2Pos={x:data.pos.x,y:data.pos.y}; }
-    if(data.name)        { remoteName=data.name; state.players[1].name=data.name; }
-    if(data.appearance)  { remoteAppearance=data.appearance; state.players[1].appearance=data.appearance; }
-    if(data.hp!=null)    state.players[1].hp=data.hp;
-    if(data.maxHp!=null) state.players[1].maxHp=data.maxHp;
-    if(data.zone!=null)  remoteZone=data.zone;
-    if(data.interior!=null) remoteInterior=data.interior;
-  });
-  _stopListeners.push(stopRemote);
-
-  // Push local state on interval
-  function pushLoop() {
-    const p = state.players[0];
-    fbUpdate('rooms/'+onlineRoom+'/'+myRole, {
-      name:p.name, pos:{x:playerPos.x,y:playerPos.y},
-      appearance:p.appearance||{}, hp:p.hp, maxHp:p.maxHp,
-      zone: zoneIndex, interior: interiorStack.length
-    });
-    _syncTimer = setTimeout(pushLoop, 50);
+function updateOnlineHUD() {
+  const container = document.getElementById('rp-huds');
+  if(!container) return;
+  if(!isOnline() || remotePlayers.size === 0) {
+    container.style.display = 'none';
+    container.innerHTML = '';
+    return;
   }
-  pushLoop();
-
-  // Clean up on page close
-  window.addEventListener('beforeunload', ()=>{
-    if(_syncTimer) clearTimeout(_syncTimer);
-    if(myRole==='host') fbDelete('rooms/'+onlineRoom);
-    else fbDelete('rooms/'+onlineRoom+'/guest');
-  });
+  container.style.display = 'flex';
+  container.innerHTML = '';
+  for(const rp of remotePlayers.values()) {
+    const col = REMOTE_COLORS[rp.colorIdx] || REMOTE_COLORS[0];
+    const pct = rp.maxHp > 0 ? Math.round(rp.hp / rp.maxHp * 100) : 0;
+    const el = document.createElement('div');
+    el.style.cssText = 'display:flex;align-items:center;gap:5px;padding:0 8px;border-left:1px solid var(--border)';
+    el.innerHTML = `
+      <span style="font-family:'Cinzel',serif;font-size:9px;color:${col.ring};letter-spacing:0.5px;">
+        ⚔ ${rp.name.substring(0,10)}
+      </span>
+      <div class="mini-bar hp-bar" style="width:60px">
+        <div class="mini-bar-fill" style="width:${pct}%;background:linear-gradient(90deg,${col.body},${col.ring})"></div>
+      </div>
+      <span style="font-size:10px;color:var(--text-dim);">${rp.hp}/${rp.maxHp}</span>`;
+    container.appendChild(el);
+  }
+  updateSessionPanel();
 }
-
-function isOnline() { return gameMode==='online-host' || gameMode==='online-guest'; }
 
 function showOnlineBadge() {
   if(document.getElementById('online-badge-hud')) return;
@@ -359,6 +557,6 @@ function showOnlineBadge() {
   badge.id = 'online-badge-hud';
   badge.className = 'online-badge';
   badge.innerHTML = '<span class="ping-dot"></span>ONLINE';
-  document.querySelector('.bar-wrap').appendChild(badge);
+  const bw = document.querySelector('.bar-wrap');
+  if(bw) bw.appendChild(badge);
 }
-

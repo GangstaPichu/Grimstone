@@ -341,6 +341,18 @@ function getDynamicGreet(npc) {
     return null;
   }
 
+  if(name === 'Bertram') {
+    if(qf.homestead_rewarded)
+      return "How goes the homestead? I hope the soil is treating you well. I knew it would find the right hands eventually.";
+    if(qf.homestead_quest_handedIn)
+      return "You brought the wheat. I knew you would. Use that sigil wisely — the land remembers the hands that tend it.";
+    if(qf.homestead_quest_accepted)
+      return "Three stalks of wheat is all I ask. Prove you know how to grow something before you take on a whole plot.";
+    if(qf.bertram_met)
+      return "Old Bertram. Still here. You think on what I said?";
+    return "Old Bertram. I've been sitting on something that ought to be passed on. You look like someone who doesn't mind getting their hands dirty.";
+  }
+
   if(typeId === T.NPC_INNKEEPER) {
     if(isRaining && w === Weather.HEAVY_RAIN)
       return "Every bed's taken — rain drives people inside. Best storm for business I've had all season. Welcome to the Flagon!";
@@ -365,12 +377,93 @@ function getDynamicGreet(npc) {
 }
 
 
+function openBertramDialogue(npc) {
+  const qf = questFlags;
+  const panel     = document.getElementById('dialogue-panel');
+  const portrait  = document.getElementById('dialogue-portrait');
+  const nameEl    = document.getElementById('dialogue-npc-name');
+  const textEl    = document.getElementById('dialogue-text');
+  const optionsEl = document.getElementById('dialogue-options');
+
+  portrait.textContent  = 'B';
+  portrait.style.background  = '#1a1208';
+  portrait.style.color       = '#9a7850';
+  portrait.style.borderColor = '#9a7850';
+  nameEl.textContent = 'OLD BERTRAM';
+  optionsEl.innerHTML = '';
+
+  function say(text) { textEl.textContent = text; }
+  function opt(label, fn) {
+    const b = document.createElement('div');
+    b.className = 'dlg-option';
+    b.textContent = label;
+    b.onclick = fn;
+    optionsEl.appendChild(b);
+  }
+  function close() { document.getElementById('dialogue-close').click(); }
+
+  if(!qf.bertram_met) {
+    qf.bertram_met = true;
+    say("Been sitting on this plot deed for three years now. My back won't let me farm anymore. You look like you might have some patience in you — which is the only thing farming asks of a person. I'll give you the homestead sigil. But first, prove you know something about growing. Bring me three wheat and it's yours.");
+    opt("▸ I'll bring you the wheat.", () => {
+      qf.homestead_quest_accepted = true;
+      say("Good. Wheat grows wild in the fields east of town — or you can find seeds in chests and plant your own. Either way: three stalks. Come back when you have them.");
+      log('✦ Quest accepted: A Place to Call Home — bring Old Bertram 3 wheat.', 'gold');
+      optionsEl.innerHTML = '';
+      opt('▸ Understood.', close);
+    });
+    opt("▸ Not right now.", close);
+    panel.classList.add('show');
+    document.getElementById('dialogue-close').onclick = closeDialogue;
+    return;
+  }
+
+  if(qf.homestead_quest_accepted && !qf.homestead_rewarded) {
+    const wheatCount = countInInventory('wheat');
+    if(wheatCount >= 3) {
+      say("Three stalks of wheat. Good. You know how to grow something — or at least how to find it. Here, take the sigil. Use it anywhere to return to the homestead. The land is yours now. Treat it well.");
+      opt("▸ Here's the wheat.", () => {
+        removeFromInventory('wheat', 3);
+        qf.homestead_quest_handedIn = true;
+        qf.homestead_rewarded = true;
+        addToInventory('home_sigil');
+        buildInventory(); updateHUD();
+        say("The land remembers the hands that tend it. Use the sigil in your inventory whenever you want to return. You can till the soil with a hoe — buy one from Dorin if you haven't already — and plant seeds to grow crops.");
+        log('✦ Quest complete: A Place to Call Home! Received Homestead Sigil.', 'gold');
+        optionsEl.innerHTML = '';
+        opt('▸ Thank you, Bertram.', close);
+      });
+      opt("▸ Not yet.", close);
+    } else {
+      say(`I need three wheat. You're carrying ${wheatCount} right now. Check the fields east of town, or plant wheat seeds and come back when they've grown.`);
+      opt("▸ I'll keep looking.", close);
+    }
+    panel.classList.add('show');
+    document.getElementById('dialogue-close').onclick = closeDialogue;
+    return;
+  }
+
+  if(qf.homestead_rewarded) {
+    say("How goes the homestead? I hope the soil is treating you well. Till with the hoe, plant your seeds, water with patience. The land gives back what you put into it.");
+    opt("▸ It's coming along.", close);
+    opt("▸ Goodbye, Bertram.", close);
+    panel.classList.add('show');
+    document.getElementById('dialogue-close').onclick = closeDialogue;
+    return;
+  }
+}
+
 function openDialogue(npc) {
   // Wizard gets a fully quest-aware custom dialogue
   if(npc.typeId === T.NPC_WIZARD) {
     document.getElementById('dialogue-panel').classList.add('show');
     document.getElementById('dialogue-close').onclick = closeDialogue;
     openWizardDialogue(npc);
+    return;
+  }
+  // Bertram — homestead quest giver
+  if(npc.npcName === 'Bertram') {
+    openBertramDialogue(npc);
     return;
   }
   dialogueNpc = npc;
@@ -417,6 +510,7 @@ function openDialogue(npc) {
       Bram:     `Bram Hollowtap. ${he}'s run the Tarnished Flagon for twenty years. ${he} knows every rumour that passes through Ashenveil, and shares none of them for free.`,
       Oswin:    `Oswin. ${he} travels between settlements buying and selling whatever fits in ${his} pack. ${he}'s been waiting on a caravan for three days. ${he} looks like ${he} regrets stopping here.`,
       Thessaly: `Thessaly. ${he} arrived in Ashenveil alone and hasn't said where from. ${he}'s been asking questions around town — quietly. ${he} seems to know more than ${he} lets on.`,
+      Bertram:  `Old Bertram. ${he} worked a homestead east of town for thirty years before age slowed him down. ${he} still carries the sigil that binds that land — and ${he}'s been looking for someone worth passing it to.`,
     };
     const intro = nameLines[npc.npcName] || `${npc.npcName}. A resident of Ashenveil.`;
     const nameBtn = document.createElement('div');
@@ -589,6 +683,13 @@ const MERCHANT_SHOP_CONFIG = {
     // ---- Food ----
     { id:'cooked_trout',  qty:1,  cost:12,  category:'Food',        desc:'Restores health when eaten.' },
     { id:'cooked_salmon', qty:1,  cost:20,  category:'Food',        desc:'Hearty meal, restores more health.' },
+    // ---- Farming ----
+    { id:'hoe',          qty:1,  cost:35,  category:'Farming',     desc:"Till dirt tiles at your homestead to prepare them for planting." },
+    { id:'wheat_seed',   qty:5,  cost:4,   category:'Farming',     desc:'Plant at the homestead. Grows in ~5 minutes.' },
+    { id:'turnip_seed',  qty:5,  cost:5,   category:'Farming',     desc:'Plant at the homestead. Grows in ~4 minutes.' },
+    { id:'carrot_seed',  qty:5,  cost:6,   category:'Farming',     desc:'Plant at the homestead. Grows in ~6 minutes.' },
+    { id:'potato_seed',  qty:5,  cost:7,   category:'Farming',     desc:'Plant at the homestead. Grows in ~8 minutes.' },
+    { id:'onion_seed',   qty:5,  cost:5,   category:'Farming',     desc:'Plant at the homestead. Grows in ~5 minutes.' },
   ],
   sellAccepts: [
     { id:'bones',       price:5,  desc:'Dropped by skeletons.' },
@@ -605,6 +706,11 @@ const MERCHANT_SHOP_CONFIG = {
     { id:'willow_log',  price:12, desc:'Flexible willow timber.' },
     { id:'raw_trout',   price:4,  desc:'Fresh catch.' },
     { id:'raw_salmon',  price:7,  desc:'Prized fish.' },
+    { id:'wheat',       price:3,  desc:'Harvested from your homestead.' },
+    { id:'turnip',      price:4,  desc:'Harvested from your homestead.' },
+    { id:'carrot',      price:5,  desc:'Harvested from your homestead.' },
+    { id:'potato',      price:6,  desc:'Harvested from your homestead.' },
+    { id:'onion',       price:3,  desc:'Harvested from your homestead.' },
   ],
 };
 

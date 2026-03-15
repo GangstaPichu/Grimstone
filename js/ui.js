@@ -141,6 +141,13 @@ function startGame(mode) {
     Weather.initParticles();
     Fireflies.init();
     startAutoSave();
+    startHomeGrowthTick();
+    // Show Co-Op session button for all game modes (can start/join at any time)
+    const sbw = document.getElementById('session-btn-wrap');
+    if(sbw) sbw.style.display = 'flex';
+    if(mode==='coop') {
+      document.getElementById('p2-hud').style.display='flex';
+    }
     initScaleSlider(); initPanelToggles();
     gameLoop();
     window.addEventListener('resize',()=>{ applyUIScale(uiScale); Weather.initParticles(); });
@@ -176,6 +183,9 @@ function startGameFromSave(savedPos) {
     Weather.initParticles();
     Fireflies.init();
     startAutoSave();
+    startHomeGrowthTick();
+    const sbw2 = document.getElementById('session-btn-wrap');
+    if(sbw2) sbw2.style.display = 'flex';
     initScaleSlider(); initPanelToggles();
     gameLoop();
     window.addEventListener('resize',()=>{ applyUIScale(uiScale); Weather.initParticles(); });
@@ -200,11 +210,13 @@ function updateHUD(){
 }
 
 function updateP2HUD() {
+  // Only for local split-screen coop
   if(gameMode !== 'coop' || state.players.length < 2) return;
   const p2 = state.players[1];
   document.getElementById('p2-name-hud').textContent = p2.name;
   document.getElementById('p2-hp-bar-fill').style.width = (p2.hp / p2.maxHp * 100) + '%';
   document.getElementById('p2-hp-text').textContent = p2.hp + '/' + p2.maxHp;
+  document.getElementById('p2-hud').style.display = 'flex';
 }
 
 // ======= SKILLS PANEL =======
@@ -646,6 +658,137 @@ function log(msg, type=''){
   el.appendChild(d);
   while(el.children.length>80) el.removeChild(el.firstChild);
   el.scrollTop=el.scrollHeight;
+}
+
+// ======= WORLD MAP =======
+const WORLD_ZONES = [
+  {
+    id: ['STORMCRAG REACH'],
+    label: 'Stormcrag Reach', sub: 'Mountain Keep',
+    x:265, y:25, w:170, h:58, color:'#2e3a47', border:'#607898',
+  },
+  {
+    id: ['FORSAKEN CHAPEL','THE FORSAKEN CHAPEL'],
+    label: 'Forsaken Chapel', sub: 'Cursed Grounds',
+    x:265, y:128, w:170, h:58, color:'#271630', border:'#7040a0',
+  },
+  {
+    id: ['GREENFIELD','GREENFIELD PASTURES'],
+    label: 'Greenfield', sub: 'Pastures & Farm',
+    x:55,  y:228, w:158, h:58, color:'#182e14', border:'#3a8c30',
+  },
+  {
+    id: ['ASHENVEIL'],
+    label: 'Ashenveil', sub: 'Starting Town',
+    x:258, y:228, w:184, h:58, color:'#2e1e0e', border:'#c8921a', isMain:true,
+  },
+  {
+    id: ['WHISPERWOOD','THE WHISPERWOOD'],
+    label: 'The Whisperwood', sub: 'Ancient Forest',
+    x:487, y:228, w:158, h:58, color:'#0e1e0e', border:'#407830',
+  },
+  {
+    id: ['ASHWOOD','IRON PEAKS','IRON DEPTHS','CATACOMBS','CRYPTS','DUNGEON','VALE'],
+    label: 'Dungeon Depths', sub: 'Perilous Below',
+    x:258, y:378, w:184, h:58, color:'#111116', border:'#505060',
+  },
+  {
+    id: ['YOUR HOMESTEAD'],
+    label: 'Your Homestead', sub: 'Personal Plot',
+    x:487, y:378, w:158, h:58, color:'#1a2e10', border:'#6aaa30',
+  },
+];
+
+// Path connections between zone centres [x1,y1, x2,y2]
+const MAP_PATHS = [
+  [350, 83,  350, 128],   // Stormcrag → Chapel
+  [350, 186, 350, 228],   // Chapel → Ashenveil
+  [213, 257, 258, 257],   // Greenfield → Ashenveil
+  [442, 257, 487, 257],   // Ashenveil → Whisperwood
+  [350, 286, 350, 378],   // Ashenveil → Dungeons
+  [442, 407, 487, 407],   // Ashenveil → Homestead (via sigil)
+];
+
+function drawWorldMap() {
+  const canvas = document.getElementById('world-map-canvas');
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  // Background
+  ctx.fillStyle = '#060810';
+  ctx.fillRect(0, 0, W, H);
+
+  // Faint grid texture
+  ctx.strokeStyle = 'rgba(90,70,30,0.12)';
+  ctx.lineWidth = 1;
+  for(let x = 0; x < W; x += 22) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for(let y = 0; y < H; y += 22) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+
+  const curName = (currentMap && currentMap.name) ? currentMap.name.toUpperCase() : '';
+
+  // Paths
+  ctx.strokeStyle = 'rgba(180,140,50,0.45)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 5]);
+  MAP_PATHS.forEach(([x1,y1,x2,y2]) => {
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  });
+  ctx.setLineDash([]);
+
+  // Zones
+  WORLD_ZONES.forEach(zone => {
+    const active = zone.id.some(id => curName.includes(id) || id.includes(curName));
+
+    // Fill
+    ctx.fillStyle = zone.color;
+    if(active) {
+      ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 18;
+    }
+    ctx.fillRect(zone.x, zone.y, zone.w, zone.h);
+    ctx.shadowBlur = 0;
+
+    // Border
+    ctx.strokeStyle = active ? '#ffd700' : zone.border;
+    ctx.lineWidth = active ? 2.5 : 1.5;
+    ctx.strokeRect(zone.x, zone.y, zone.w, zone.h);
+
+    // Zone name
+    ctx.textAlign = 'center';
+    ctx.fillStyle = active ? '#ffd700' : '#c8a870';
+    ctx.font = `${active ? 'bold ' : ''}13px Cinzel, serif`;
+    ctx.fillText(zone.label, zone.x + zone.w / 2, zone.y + zone.h / 2 + 1);
+
+    // Sub-label
+    ctx.fillStyle = active ? 'rgba(255,215,0,0.7)' : 'rgba(160,130,80,0.6)';
+    ctx.font = '10px Cinzel, serif';
+    ctx.fillText(zone.sub, zone.x + zone.w / 2, zone.y + zone.h / 2 + 17);
+
+    // Player marker
+    if(active) {
+      ctx.fillStyle = '#ffd700';
+      ctx.font = '13px serif';
+      ctx.fillText('▲ YOU ARE HERE', zone.x + zone.w / 2, zone.y + zone.h / 2 - 13);
+    }
+  });
+
+  // Interior zones note at bottom
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(160,130,80,0.5)';
+  ctx.font = '10px Cinzel, serif';
+  ctx.fillText('Interiors: The Tarnished Flagon · Grimward\'s Smithy · Wizard Tower · Dungeon Floors', W / 2, H - 12);
+}
+
+function toggleWorldMap() {
+  const overlay = document.getElementById('world-map-overlay');
+  if(!overlay) return;
+  const isOpen = overlay.classList.contains('show');
+  if(isOpen) {
+    overlay.classList.remove('show');
+  } else {
+    drawWorldMap();
+    overlay.classList.add('show');
+  }
 }
 
 // ======= TOOL MODE =======

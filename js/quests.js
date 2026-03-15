@@ -63,6 +63,18 @@ const QUESTS = [
     isComplete: (qf) => qf.missing_caravan_done || false,
   },
   {
+    id: 'a_place_to_call_home',
+    icon: '🏡',
+    title: 'A Place to Call Home',
+    giver: 'Old Bertram — Ashenveil',
+    desc: 'Old Bertram, a retired farmer in Ashenveil, wants to pass on his homestead sigil. Bring him three wheat to prove you know how to grow something.',
+    detail: 'Find Old Bertram west of the inn in Ashenveil. He\'ll give you the Homestead Sigil if you bring him three stalks of wheat. Wheat grows wild in the fields, or you can plant wheat seeds and harvest them.',
+    reward: 'Homestead Sigil — teleports you to your personal homestead',
+    rewardFn: null,
+    isVisible: (qf) => qf.bertram_met,
+    isComplete: (qf) => qf.homestead_rewarded,
+  },
+  {
     id: 'the_fractured_grimoire',
     icon: '📜',
     title: 'The Fractured Grimoire',

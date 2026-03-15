@@ -33,6 +33,7 @@ function buildSaveData() {
     playtime: (getSaveMeta(activeSaveSlot)?.playtime || 0) + sessionPlaytime,
     savedAt: Date.now(),
     questFlags: JSON.parse(JSON.stringify(questFlags)),
+    farmPlots:  JSON.parse(JSON.stringify(state.farmPlots || {})),
   };
 }
 
@@ -67,6 +68,7 @@ function loadGame(slot) {
     gameDay   = data.gameDay  || 1;
     worldSeed = data.worldSeed || Math.floor(Math.random()*99999);
     if(data.questFlags) Object.assign(questFlags, data.questFlags);
+    if(data.farmPlots)  state.farmPlots = JSON.parse(JSON.stringify(data.farmPlots));
 
     // Restore players
     const DEFAULT_SKILLS = GAME_DEFAULT_SKILLS;

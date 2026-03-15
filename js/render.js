@@ -44,6 +44,10 @@ const TILE_COLORS = {
   [T.SMALL_TABLE]:'#2a1c10', [T.WARDROBE]:'#1c1408',
   [T.FIREPLACE]:'#1a0c04',   [T.PLANT]:'#0c1a08',
   [T.DOCK_PLANK]:'#2a1a08',
+  // Homestead tiles
+  [T.TILLED_SOIL]:'#2a1a0a', [T.SEEDLING]:'#2a1a0a', [T.CROP_GROWING]:'#2a1a0a',
+  [T.HOME_WHEAT]:'#2a1a0a',  [T.HOME_TURNIP]:'#2a1a0a', [T.HOME_CARROT]:'#2a1a0a',
+  [T.HOME_POTATO]:'#2a1a0a', [T.HOME_ONION]:'#2a1a0a',
 };
 
 function tileColor(t) {
@@ -450,6 +454,129 @@ function drawTile(x,y,t,floorT) {
       ctx2.moveTo(px+TILE/2,py+TILE-12);
       ctx2.quadraticCurveTo(px+TILE/2+lx+Math.sin(lw)*1.5,py+TILE-16,px+TILE/2+lx*2,py+TILE-12+ly);
       ctx2.stroke();
+    });
+
+  // ─── TILLED SOIL ───────────────────────────────────────────────
+  } else if(t===T.TILLED_SOIL){
+    ctx2.fillStyle='#2a1a0a'; ctx2.fillRect(px,py,TILE,TILE);
+    ctx2.strokeStyle='#1a0e05'; ctx2.lineWidth=1;
+    for(let fy=0;fy<4;fy++){
+      const ry=py+4+fy*9;
+      ctx2.beginPath(); ctx2.moveTo(px+2,ry); ctx2.lineTo(px+TILE-2,ry); ctx2.stroke();
+    }
+    // Slight texture highlight
+    ctx2.fillStyle='rgba(80,50,20,0.18)';
+    for(let fy=0;fy<4;fy++) ctx2.fillRect(px+2,py+5+fy*9,TILE-4,3);
+
+  // ─── SEEDLING ──────────────────────────────────────────────────
+  } else if(t===T.SEEDLING){
+    ctx2.fillStyle='#2a1a0a'; ctx2.fillRect(px,py,TILE,TILE);
+    ctx2.strokeStyle='#1a0e05'; ctx2.lineWidth=1;
+    for(let fy=0;fy<4;fy++){
+      ctx2.beginPath(); ctx2.moveTo(px+2,py+4+fy*9); ctx2.lineTo(px+TILE-2,py+4+fy*9); ctx2.stroke();
+    }
+    // Tiny sprout
+    ctx2.strokeStyle='#4a8020'; ctx2.lineWidth=1.5;
+    ctx2.beginPath(); ctx2.moveTo(px+TILE/2,py+TILE-4); ctx2.lineTo(px+TILE/2,py+TILE-14); ctx2.stroke();
+    ctx2.strokeStyle='#60a030';
+    ctx2.beginPath(); ctx2.moveTo(px+TILE/2,py+TILE-12); ctx2.quadraticCurveTo(px+TILE/2-5,py+TILE-16,px+TILE/2-7,py+TILE-14); ctx2.stroke();
+    ctx2.beginPath(); ctx2.moveTo(px+TILE/2,py+TILE-12); ctx2.quadraticCurveTo(px+TILE/2+5,py+TILE-16,px+TILE/2+7,py+TILE-14); ctx2.stroke();
+
+  // ─── CROP GROWING ──────────────────────────────────────────────
+  } else if(t===T.CROP_GROWING){
+    ctx2.fillStyle='#2a1a0a'; ctx2.fillRect(px,py,TILE,TILE);
+    ctx2.strokeStyle='#1a0e05'; ctx2.lineWidth=1;
+    for(let fy=0;fy<4;fy++){
+      ctx2.beginPath(); ctx2.moveTo(px+2,py+4+fy*9); ctx2.lineTo(px+TILE-2,py+4+fy*9); ctx2.stroke();
+    }
+    const sw=frameNow*0.001;
+    ctx2.strokeStyle='#5a9030'; ctx2.lineWidth=1.5;
+    for(let si=0;si<3;si++){
+      const sx=px+8+si*10;
+      const sway3=Math.sin(sw+si*1.1)*1.5;
+      ctx2.beginPath(); ctx2.moveTo(sx,py+TILE-6); ctx2.quadraticCurveTo(sx+sway3,py+TILE/2+4,sx+sway3,py+TILE/2-4); ctx2.stroke();
+      ctx2.fillStyle='#70c040';
+      ctx2.beginPath(); ctx2.ellipse(sx+sway3,py+TILE/2-4,4,3,0.4,0,Math.PI*2); ctx2.fill();
+    }
+
+  // ─── HOME WHEAT ────────────────────────────────────────────────
+  } else if(t===T.HOME_WHEAT){
+    const wth=frameNow*0.0012;
+    ctx2.fillStyle='#2a1a0a'; ctx2.fillRect(px,py,TILE,TILE);
+    for(let si=0;si<5;si++){
+      const sx=px+6+si*6; const sw2=Math.sin(wth+si*0.7)*2;
+      ctx2.strokeStyle='#8a7020'; ctx2.lineWidth=1.2;
+      ctx2.beginPath(); ctx2.moveTo(sx,py+TILE-4); ctx2.quadraticCurveTo(sx+sw2,py+TILE/2,sx+sw2,py+6); ctx2.stroke();
+      ctx2.fillStyle='#d4b030';
+      for(let g=0;g<4;g++) ctx2.fillRect(sx+sw2-1,py+6+g*3,3,2);
+    }
+
+  // ─── HOME TURNIP ───────────────────────────────────────────────
+  } else if(t===T.HOME_TURNIP){
+    ctx2.fillStyle='#2a1a0a'; ctx2.fillRect(px,py,TILE,TILE);
+    ctx2.fillStyle='#d060a0';
+    ctx2.beginPath(); ctx2.ellipse(px+TILE/2,py+TILE-8,7,6,0,0,Math.PI*2); ctx2.fill();
+    ctx2.fillStyle='#e080c0';
+    ctx2.beginPath(); ctx2.ellipse(px+TILE/2-1,py+TILE-9,3,3,0,0,Math.PI*2); ctx2.fill();
+    const ltw=frameNow*0.001;
+    ctx2.strokeStyle='#3a8020'; ctx2.lineWidth=1.5;
+    [[-3,-8],[0,-10],[3,-8]].forEach(([lx,ly])=>{
+      ctx2.beginPath(); ctx2.moveTo(px+TILE/2,py+TILE-10);
+      ctx2.quadraticCurveTo(px+TILE/2+lx+Math.sin(ltw)*1.5,py+TILE-14,px+TILE/2+lx*2,py+TILE-10+ly); ctx2.stroke();
+    });
+
+  // ─── HOME CARROT ───────────────────────────────────────────────
+  } else if(t===T.HOME_CARROT){
+    ctx2.fillStyle='#2a1a0a'; ctx2.fillRect(px,py,TILE,TILE);
+    // Carrot body
+    ctx2.fillStyle='#e06010';
+    ctx2.beginPath(); ctx2.moveTo(px+TILE/2-5,py+TILE-12);
+    ctx2.lineTo(px+TILE/2+5,py+TILE-12); ctx2.lineTo(px+TILE/2,py+TILE-4); ctx2.closePath(); ctx2.fill();
+    ctx2.fillStyle='#f07820';
+    ctx2.beginPath(); ctx2.moveTo(px+TILE/2-4,py+TILE-12); ctx2.lineTo(px+TILE/2,py+TILE-13); ctx2.lineTo(px+TILE/2+4,py+TILE-12); ctx2.closePath(); ctx2.fill();
+    const ctw=frameNow*0.0009;
+    ctx2.strokeStyle='#3a8020'; ctx2.lineWidth=1.5;
+    [[-4,-9],[0,-12],[4,-9]].forEach(([lx,ly])=>{
+      ctx2.beginPath(); ctx2.moveTo(px+TILE/2,py+TILE-12);
+      ctx2.quadraticCurveTo(px+TILE/2+lx+Math.sin(ctw)*1.5,py+TILE-16,px+TILE/2+lx*2,py+TILE-12+ly); ctx2.stroke();
+    });
+
+  // ─── HOME POTATO ───────────────────────────────────────────────
+  } else if(t===T.HOME_POTATO){
+    ctx2.fillStyle='#2a1a0a'; ctx2.fillRect(px,py,TILE,TILE);
+    ctx2.fillStyle='#b08040';
+    ctx2.beginPath(); ctx2.ellipse(px+TILE/2,py+TILE-9,9,6,0,0,Math.PI*2); ctx2.fill();
+    ctx2.fillStyle='#c89050';
+    ctx2.beginPath(); ctx2.ellipse(px+TILE/2-2,py+TILE-10,4,3,0.3,0,Math.PI*2); ctx2.fill();
+    // Eyes (bumps)
+    ctx2.fillStyle='#9a7030';
+    [[3,0],[-3,1],[0,-2]].forEach(([ex,ey])=>{
+      ctx2.beginPath(); ctx2.arc(px+TILE/2+ex,py+TILE-9+ey,1.2,0,Math.PI*2); ctx2.fill();
+    });
+    // Leafy stalks
+    const ptw=frameNow*0.001;
+    ctx2.strokeStyle='#4a8030'; ctx2.lineWidth=1.2;
+    [[-4,-8],[0,-10],[4,-8]].forEach(([lx,ly])=>{
+      ctx2.beginPath(); ctx2.moveTo(px+TILE/2,py+TILE-12);
+      ctx2.quadraticCurveTo(px+TILE/2+lx+Math.sin(ptw)*1.5,py+TILE-16,px+TILE/2+lx*2,py+TILE-12+ly); ctx2.stroke();
+    });
+
+  // ─── HOME ONION ────────────────────────────────────────────────
+  } else if(t===T.HOME_ONION){
+    ctx2.fillStyle='#2a1a0a'; ctx2.fillRect(px,py,TILE,TILE);
+    ctx2.fillStyle='#9060b0';
+    ctx2.beginPath(); ctx2.ellipse(px+TILE/2,py+TILE-8,8,7,0,0,Math.PI*2); ctx2.fill();
+    ctx2.fillStyle='#b080d0';
+    ctx2.beginPath(); ctx2.ellipse(px+TILE/2-1,py+TILE-9,4,4,0,0,Math.PI*2); ctx2.fill();
+    ctx2.strokeStyle='#c0a0e0'; ctx2.lineWidth=0.8;
+    for(let ol=0;ol<3;ol++){
+      ctx2.beginPath(); ctx2.ellipse(px+TILE/2,py+TILE-8+ol*2,8-ol,7-ol*1.5,0,0,Math.PI); ctx2.stroke();
+    }
+    const otw=frameNow*0.001;
+    ctx2.strokeStyle='#4a8020'; ctx2.lineWidth=1.5;
+    [[-3,-10],[0,-12],[3,-10]].forEach(([lx,ly])=>{
+      ctx2.beginPath(); ctx2.moveTo(px+TILE/2,py+TILE-12);
+      ctx2.quadraticCurveTo(px+TILE/2+lx+Math.sin(otw)*1.5,py+TILE-16,px+TILE/2+lx*2,py+TILE-12+ly); ctx2.stroke();
     });
 
   // ─── WINDMILL ──────────────────────────────────────────────────
@@ -2018,38 +2145,60 @@ function drawReturnPortal(px,py){
   ctx2.fillText('PREV ZONE',cx,py+4);
 }
 
-function drawPlayer(realX,realY,isP2){
+// drawPlayer — renders a player character at pixel-interpolated position.
+// isP2:       true for the local P2 in split-screen coop (uses state.players[1])
+// remoteConf: optional {bodyColor, ringColor, appearance, moving} for online remote players
+function drawPlayer(realX,realY,isP2,remoteConf=null){
   ctx2.save();
   const cx=realX*TILE+TILE/2, cy=realY*TILE+TILE/2;
-  const p = state.players[isP2?1:0];
-  const app = p?.appearance || {};
+  const p = remoteConf ? null : state.players[isP2?1:0];
+  const app  = remoteConf ? (remoteConf.appearance||{}) : (p?.appearance||{});
   const skin = SKIN_TONES[app.skinIdx||0];
-  const cl = CLASSES.find(c=>c.id===(app.classId||'warrior'))||CLASSES[0];
+  const cl   = CLASSES.find(c=>c.id===(app.classId||'warrior'))||CLASSES[0];
 
-  // Bob animation while moving
-  const bobOffset = playerMoving && !isP2 ? Math.sin(performance.now()*0.018)*2
-                  : p2Moving   &&  isP2 ? Math.sin(performance.now()*0.018)*2 : 0;
+  const isMoving = remoteConf ? remoteConf.moving
+                 : isP2      ? p2Moving
+                              : playerMoving;
+  const bobOffset = isMoving ? Math.sin(performance.now()*0.018)*2 : 0;
+
+  const bodyColor = remoteConf ? remoteConf.bodyColor
+                  : isP2      ? '#1a2a4a'
+                               : '#2a1a0a';
+  const ringColor = remoteConf ? remoteConf.ringColor
+                  : isP2      ? '#4a8aaa'
+                               : cl.color;
 
   // Shadow
   ctx2.fillStyle='rgba(0,0,0,0.4)';
   ctx2.beginPath(); ctx2.ellipse(cx,cy+TILE*.35,TILE*.22,TILE*.1,0,0,Math.PI*2); ctx2.fill();
 
   // Body
-  ctx2.fillStyle=isP2?'#1a2a4a':'#2a1a0a';
+  ctx2.fillStyle=bodyColor;
   ctx2.beginPath(); ctx2.arc(cx,cy+bobOffset,TILE*.32,0,Math.PI*2); ctx2.fill();
 
-  // Class color ring
-  ctx2.strokeStyle=isP2?'#4a8aaa':cl.color;
+  // Ring
+  ctx2.strokeStyle=ringColor;
   ctx2.lineWidth=2;
   ctx2.beginPath(); ctx2.arc(cx,cy+bobOffset,TILE*.32,0,Math.PI*2); ctx2.stroke();
 
-  // Skin dot (face)
+  // Face
   ctx2.fillStyle=skin;
   ctx2.beginPath(); ctx2.arc(cx,cy-2+bobOffset,TILE*.14,0,Math.PI*2); ctx2.fill();
 
   // Class icon
   ctx2.font='12px serif'; ctx2.textAlign='center'; ctx2.textBaseline='middle';
   ctx2.fillText(cl.icon,cx,cy+5+bobOffset);
+
+  // Name tag for remote players
+  if(remoteConf && remoteConf.name) {
+    ctx2.font='8px sans-serif'; ctx2.textAlign='center'; ctx2.textBaseline='bottom';
+    ctx2.fillStyle='rgba(0,0,0,0.55)';
+    const nw = ctx2.measureText(remoteConf.name).width;
+    ctx2.fillRect(cx-nw/2-2, cy-TILE*.4-10, nw+4, 10);
+    ctx2.fillStyle=ringColor;
+    ctx2.fillText(remoteConf.name, cx, cy-TILE*.4);
+  }
+
   ctx2.restore();
 }
 
@@ -2093,9 +2242,19 @@ function renderMap(){
     ctx2.strokeRect(hoverTile.x*TILE,hoverTile.y*TILE,TILE,TILE);
   }
 
-  if(gameMode==='coop' || isOnline()) {
-    const sameMap = !isOnline() || (remoteZone === zoneIndex && remoteInterior === interiorStack.length);
-    if(sameMap) drawPlayer(p2Real.x, p2Real.y, true);
+  // Local split-screen P2
+  if(gameMode==='coop') {
+    drawPlayer(p2Real.x, p2Real.y, true);
+  }
+  // Online remote players (up to 3)
+  if(isOnline()) {
+    for(const rp of remotePlayers.values()) {
+      const col = REMOTE_COLORS[rp.colorIdx] || REMOTE_COLORS[0];
+      drawPlayer(rp.real.x, rp.real.y, false, {
+        bodyColor: col.body, ringColor: col.ring,
+        appearance: rp.appearance, moving: rp.moving, name: rp.name,
+      });
+    }
   }
   drawNpcs();
   drawPlayer(playerReal.x,playerReal.y,false);
@@ -2346,16 +2505,17 @@ function gameLoop(){
   tickNpcs(now);
   tickChapelCultists();
   updateHUD();
-  if(gameMode==='coop' || isOnline()) updateP2HUD();
-  if(isOnline()) showOnlineBadge();
+  if(gameMode==='coop') updateP2HUD();
   Music.tick();
   Weather.tick();
   Fireflies.update(lastDt);
-  // Smoothly interpolate remote player toward their last known position
+  // Smoothly interpolate remote players toward their last known position
   if(isOnline()) {
     const lf = 0.18;
-    p2Real.x += (p2Pos.x - p2Real.x) * lf;
-    p2Real.y += (p2Pos.y - p2Real.y) * lf;
+    for(const rp of remotePlayers.values()) {
+      rp.real.x += (rp.pos.x - rp.real.x) * lf;
+      rp.real.y += (rp.pos.y - rp.real.y) * lf;
+    }
   }
   renderMap();
   requestAnimationFrame(gameLoop);

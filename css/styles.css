@@ -729,3 +729,29 @@
   .ping-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--green-bright); margin-right:5px; animation:pingPulse 1.5s infinite; }
   @keyframes pingPulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.7)} }
 
+/* ======= WORLD MAP OVERLAY ======= */
+#world-map-overlay {
+  display:none; position:fixed; inset:0; z-index:900;
+  background:rgba(3,4,6,0.92); backdrop-filter:blur(4px);
+  align-items:center; justify-content:center;
+}
+#world-map-overlay.show { display:flex; }
+.world-map-wrap {
+  display:flex; flex-direction:column; align-items:center; gap:10px;
+}
+.world-map-title {
+  font-family:'Cinzel Decorative',serif; font-size:20px; color:var(--gold);
+  letter-spacing:4px; text-shadow:0 0 18px rgba(200,146,42,0.6);
+}
+#world-map-canvas {
+  border:2px solid var(--gold); box-shadow:0 0 30px rgba(200,146,42,0.25);
+  image-rendering:pixelated;
+}
+.world-map-hint {
+  font-family:'Cinzel',serif; font-size:11px; color:var(--text-dim); letter-spacing:2px;
+}
+.world-map-hint kbd {
+  background:rgba(200,146,42,0.15); border:1px solid var(--gold-dim);
+  padding:1px 5px; border-radius:3px; color:var(--gold); font-family:inherit;
+}
+

@@ -750,13 +750,13 @@ function harvestCrop(x, y, itemId, msg, xp) {
     buildInventory();
     giveXP('Farming', xp);
     log(`You harvest some ${ITEMS[itemId].name}.`, 'good');
-    // Remove crop — respawn after 3 mins
+    // Remove crop — respawn after 15 mins
     currentMap.tiles[y][x] = currentMap.floor[y][x] || T.GRASS;
     setTimeout(() => {
       if(currentMap && currentMap.tiles[y]) {
         currentMap.tiles[y][x] = itemId === 'wheat' ? T.CROP_WHEAT : T.CROP_TURNIP;
       }
-    }, 3 * 60 * 1000);
+    }, 15 * 60 * 1000);
   });
 }
 
@@ -1026,6 +1026,7 @@ function makeAshenveil() {
   tiles[6][42]=T.NPC_VILLAGER;  // Aldric
   tiles[32][4]=T.NPC_VILLAGER;  // Elspeth
   tiles[32][12]=T.NPC_VILLAGER; // Rowan
+  tiles[14][6]=T.NPC_VILLAGER;  // Old Bertram — homestead quest giver
 
   // ---- Town decorations ----
   placeDecor(tiles,floor,22,20,T.NOTICE_BOARD);
@@ -1726,6 +1727,9 @@ const DUNGEON_LOOT = [
   {id:'bronze_helm',   w:6},
   {id:'bronze_plate',  w:5},
   {id:'bronze_legs',   w:5},
+  {id:'wheat',         w:6},
+  {id:'turnip',        w:6},
+  {id:'egg',           w:4},
   {id:'bones',         w:10},
   {id:'coins',         w:8},
   {id:'goblin_hide',   w:7},
@@ -2040,6 +2044,8 @@ const NAMED_NPCS = {
   // Greenfield Pastures farmers
   'farm:20,35': { name:'Greta',   gender:'f', title:'Greta',          col:'#7aaa4a', letter:'G' },
   'farm:9,25':  { name:'Aldous',  gender:'m', title:'Aldous',         col:'#6a9a3a', letter:'A' },
+  // Old Bertram — homestead quest giver (west of inn cobble path)
+  '14,6': { name:'Bertram', gender:'m', title:'Old Bertram', col:'#9a7850', letter:'B' },
 };
 
 // Per-v// unique rumour lines (keyed by name)
@@ -2055,5 +2061,106 @@ const VILLAGER_RUMOURS = {
   Aldous:   "I've been working the wheat since I was twelve. Thirty years now. The fields know me better than any person in that town does.",
   Grimward: "If you've got ore, I can smelt it. If you want gear, I've got stock. Just don't touch the cooling rack.",
   Thessaly: "I came to Ashenveil to find someone. Asked around. Nobody talks much. Maybe you know something — person in a dark cloak, never shows their face?",
+  Bertram:  "I had a homestead once. Fine land, good soil. Haven't been back in years — gave the sigil to whoever needed it more. Maybe that's you.",
 };
+
+// ======= HOMESTEAD MAP =======
+function makeHomeMap() {
+  const W = 30, H = 24;
+  const tiles = Array.from({length:H}, ()=>Array(W).fill(T.GRASS));
+  const floor  = Array.from({length:H}, ()=>Array(W).fill(T.GRASS));
+
+  // Border fence
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++) {
+    if(y===0||y===H-1||x===0||x===W-1) tiles[y][x]=T.FENCE;
+  }
+
+  // Small cabin top-left area (3×2)
+  tiles[2][2]=T.ROOF_L; tiles[2][3]=T.ROOF_CHIMNEY; tiles[2][4]=T.ROOF_R;
+  tiles[3][2]=T.BWALL_WIN; tiles[3][3]=T.BWALL_DOOR; tiles[3][4]=T.BWALL_WIN;
+  for(let fy=1;fy<=4;fy++) for(let fx=1;fx<=5;fx++) {
+    if(tiles[fy][fx]===T.GRASS) tiles[fy][fx]=T.STONE_FLOOR;
+  }
+
+  // Dirt path from cabin to farm area
+  for(let y=4;y<=8;y++) tiles[y][4]=T.DIRT;
+  for(let x=4;x<=8;x++) tiles[8][x]=T.DIRT;
+
+  // Farmable area — 10×8 patch of dirt (right side of map)
+  for(let y=3;y<=12;y++) for(let x=8;x<=22;x++) tiles[y][x]=T.DIRT;
+
+  // Well (left of farm)
+  tiles[6][6]=T.TOWN_WELL;
+
+  // Trees along south and east edges for atmosphere
+  [[14,2],[15,4],[16,3],[14,24],[15,25],[16,24],
+   [20,5],[21,6],[20,8],[22,14],[21,16],[22,18],
+   [18,22],[19,24],[20,22]
+  ].forEach(([y,x])=>{ if(x>0&&x<W-1&&y>0&&y<H-1) tiles[y][x]=T.NORMAL_TREE; });
+
+  // Flowers near fence
+  [[13,4],[13,6],[17,6],[13,24],[17,24]
+  ].forEach(([y,x])=>{ if(x>0&&x<W-1&&y>0&&y<H-1&&tiles[y][x]===T.GRASS) tiles[y][x]=T.FLOWER; });
+
+  // Snapshot floor
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++) floor[y][x]=tiles[y][x];
+
+  // Place well and candle as decor after floor snapshot
+  placeDecor(tiles,floor,6,6,T.TOWN_WELL);
+  placeDecor(tiles,floor,4,2,T.CANDLE);
+  placeDecor(tiles,floor,4,5,T.BARREL);
+
+  // Exit back out (south wall centre)
+  placeDecor(tiles,floor,H-1,Math.floor(W/2),T.EXIT_INTERIOR);
+
+  // Restore any saved farm plots onto the map
+  if(state.farmPlots) {
+    for(const [key, plot] of Object.entries(state.farmPlots)) {
+      const [px,py] = key.split(',').map(Number);
+      if(py>=0&&py<H&&px>=0&&px<W) {
+        if(plot.state==='tilled') {
+          tiles[py][px]=T.TILLED_SOIL;
+          floor[py][px]=T.DIRT;
+        } else if(plot.state==='planted') {
+          const now=Date.now();
+          if(now - plot.plantedAt >= plot.growTime) {
+            tiles[py][px]=plot.cropTile;
+          } else if(now - plot.plantedAt >= plot.growTime/2) {
+            tiles[py][px]=T.CROP_GROWING;
+          } else {
+            tiles[py][px]=T.SEEDLING;
+          }
+          floor[py][px]=T.DIRT;
+        }
+      }
+    }
+  }
+
+  return {tiles, floor, W, H, isInterior:true, name:'YOUR HOMESTEAD', entryX:4, entryY:H-2};
+}
+
+// Periodic tick that checks if planted crops in homestead have finished growing
+let _homeGrowthTickId = null;
+function startHomeGrowthTick() {
+  if(_homeGrowthTickId) return;
+  _homeGrowthTickId = setInterval(()=>{
+    if(!state.farmPlots) return;
+    let changed = false;
+    for(const [key, plot] of Object.entries(state.farmPlots)) {
+      if(plot.state !== 'planted') continue;
+      const now = Date.now();
+      if(now - plot.plantedAt < plot.growTime) continue;
+      // Crop is mature — update the live map tile if we're currently in the homestead
+      if(currentMap && currentMap.name === 'YOUR HOMESTEAD') {
+        const [px,py] = key.split(',').map(Number);
+        if(py>=0&&py<currentMap.H&&px>=0&&px<currentMap.W) {
+          currentMap.tiles[py][px] = plot.cropTile;
+          minimapDirty = true;
+          changed = true;
+        }
+      }
+    }
+    if(changed) minimapDirty = true;
+  }, 10000); // check every 10 seconds
+}
 

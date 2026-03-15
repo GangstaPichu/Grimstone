@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/15.3.5/Tone.js"></script>
-<!-- Firebase REST API used directly via fetch — no SDK needed -->
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <body>
 
 <!-- TITLE SCREEN -->
@@ -19,7 +19,7 @@
     <div class="title-sub">FORGE YOUR LEGEND IN SHADOW</div>
     <div class="title-divider"></div>
     <button class="title-btn" onclick="goToCharCreate('solo')">⚔ New Journey (Solo)</button><br>
-    <button class="title-btn" onclick="openCoopMenu()" style="margin-top:4px">⚔⚔ Co-Op Realm (2 Players)</button>
+    <button class="title-btn" onclick="openCoopMenu()" style="margin-top:4px">⚔⚔ Co-Op Realm (Up to 4 Players)</button>
     <div id="save-slots"></div>
     <div style="margin-top:14px; font-size:12px; color:var(--text-dim); font-family:'Cinzel',serif; letter-spacing:1px;">
       WASD / Click to move &nbsp;·&nbsp; Right-click to interact
@@ -31,8 +31,8 @@
 <div id="coop-menu" style="display:none;position:fixed;inset:0;z-index:800;background:rgba(5,6,8,0.93);backdrop-filter:blur(4px);align-items:center;justify-content:center;flex-direction:column;">
   <div class="coop-menu-title">CO-OP REALM</div>
   <div class="coop-menu-sub">CHOOSE YOUR PATH</div>
-  <button class="coop-menu-btn" onclick="openOnlineLobby()">🌐 Online Co-Op</button>
-  <button class="coop-menu-btn gold" onclick="closeCoopMenu(); goToCharCreate('coop')">⚔⚔ Split Screen</button>
+  <button class="coop-menu-btn" onclick="openOnlineLobby()">🌐 Online Co-Op (Up to 4)</button>
+  <button class="coop-menu-btn gold" onclick="closeCoopMenu(); goToCharCreate('coop')">⚔⚔ Split Screen (2 Players)</button>
   <div class="coop-back-link" onclick="backFromCoopMenu()">← Back</div>
 </div>
 
@@ -49,10 +49,10 @@
     <div id="lobby-host-panel">
       <div class="lobby-section-label">Your Room Code</div>
       <div class="lobby-room-code" id="lobby-code-display">—</div>
-      <div class="lobby-section-label">Share this code with your friend</div>
+      <div class="lobby-section-label">Share this code — up to 3 friends can join</div>
       <div class="lobby-divider" style="margin:12px 0"></div>
       <div class="lobby-section-label">Players</div>
-      <div class="lobby-players">
+      <div class="lobby-players" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
         <div class="lobby-player-slot filled" id="slot-p1">
           <div class="slot-label">PLAYER 1 — YOU</div>
           <div class="slot-name" id="slot-p1-name">—</div>
@@ -61,9 +61,17 @@
           <div class="slot-label">PLAYER 2</div>
           <div class="slot-name" id="slot-p2-name">Waiting...</div>
         </div>
+        <div class="lobby-player-slot" id="slot-p3">
+          <div class="slot-label">PLAYER 3</div>
+          <div class="slot-name" id="slot-p3-name">Waiting...</div>
+        </div>
+        <div class="lobby-player-slot" id="slot-p4">
+          <div class="slot-label">PLAYER 4</div>
+          <div class="slot-name" id="slot-p4-name">Waiting...</div>
+        </div>
       </div>
-      <div class="lobby-status waiting" id="lobby-host-status">⏳ Waiting for a friend to join...</div>
-      <button class="lobby-btn" id="lobby-start-btn" onclick="onlineLobbyStart()" disabled>Create My Character First →</button>
+      <div class="lobby-status waiting" id="lobby-host-status">⏳ Waiting for players to join...</div>
+      <button class="lobby-btn" id="lobby-start-btn" onclick="onlineLobbyStart()">Create My Character First →</button>
     </div>
     <!-- JOIN panel -->
     <div id="lobby-join-panel" style="display:none">
@@ -75,6 +83,17 @@
       <div class="lobby-status waiting" id="lobby-join-status"></div>
     </div>
     <div class="coop-back-link" onclick="closeOnlineLobby()">← Back</div>
+  </div>
+</div>
+
+<!-- IN-GAME SESSION PANEL -->
+<div id="session-panel" style="display:none;position:fixed;right:20px;top:56px;z-index:500;min-width:220px;background:var(--panel-bg,#0d0f14);border:1px solid var(--border,#2a2828);border-radius:4px;font-family:'Cinzel',serif;box-shadow:0 4px 20px rgba(0,0,0,0.6);">
+  <div style="padding:12px 14px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <span style="font-size:12px;color:var(--gold,#c8922a);letter-spacing:1px;">🌐 CO-OP SESSION</span>
+      <button class="action-btn" onclick="toggleSessionPanel()" style="font-size:10px;padding:2px 7px;">✕</button>
+    </div>
+    <div id="session-panel-content"></div>
   </div>
 </div>
 
@@ -224,14 +243,23 @@
       <div class="mini-bar xp-bar"><div class="mini-bar-fill" id="xp-bar-fill" style="width:0%"></div></div>
       <span id="co-op-indicator" style="display:none">CO-OP ACTIVE</span>
     </div>
-    <!-- P2 HUD — only visible in co-op -->
+    <!-- P2 HUD — local coop only -->
     <div id="p2-hud" style="display:none;align-items:center;gap:6px;padding:0 10px;border-left:1px solid var(--border);">
       <span class="bar-label" style="color:var(--cyan)">P2</span>
       <span class="val" id="p2-name-hud" style="color:var(--cyan-bright);font-size:11px;min-width:60px"></span>
       <span class="bar-label">HP</span>
       <div class="mini-bar hp-bar" style="width:70px"><div class="mini-bar-fill" id="p2-hp-bar-fill" style="width:100%;background:linear-gradient(90deg,#104a6a,#2a8aaa)"></div></div>
       <span id="p2-hp-text" style="font-size:11px;color:var(--text-dim);">30/30</span>
-      <span style="font-size:9px;color:var(--text-dim);padding-left:4px">IJKL</span>
+      <span id="p2-hud-keys" style="font-size:9px;color:var(--text-dim);padding-left:4px">IJKL</span>
+    </div>
+    <!-- Remote player HUDs — online co-op (up to 3 remote players) -->
+    <div id="rp-huds" style="display:none;align-items:center;gap:10px;padding:0 10px;border-left:1px solid var(--border);"></div>
+    <!-- Session toggle button -->
+    <div id="session-btn-wrap" style="display:none;align-items:center;padding:0 6px;">
+      <button class="action-btn" id="session-toggle-btn" onclick="toggleSessionPanel()"
+              style="font-size:10px;padding:3px 9px;font-family:'Cinzel',serif;letter-spacing:0.5px;">
+        🌐 <span id="session-btn-label">Co-Op</span>
+      </button>
     </div>
     <div class="topbar-sep"></div>
     <div id="ui-scale-control" style="display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0;">
@@ -378,6 +406,15 @@
   </div>
 </div>
 
+
+<!-- WORLD MAP OVERLAY -->
+<div id="world-map-overlay">
+  <div class="world-map-wrap">
+    <div class="world-map-title">⚔ &nbsp; WORLD MAP &nbsp; ⚔</div>
+    <canvas id="world-map-canvas" width="700" height="480"></canvas>
+    <div class="world-map-hint">Press <kbd>M</kbd> or <kbd>Esc</kbd> to close</div>
+  </div>
+</div>
 
 <script src="js/particles.js"></script>
 <script src="js/character.js"></script>
