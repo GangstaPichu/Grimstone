@@ -2140,6 +2140,31 @@ function makeHomeMap() {
   return {tiles, floor, W, H, isInterior:true, name:'YOUR HOMESTEAD', entryX:4, entryY:H-2};
 }
 
+// ======= HOME CABIN INTERIOR =======
+function makeHomeCabinInterior() {
+  const W=9, H=7;
+  const tiles = Array.from({length:H}, ()=>Array(W).fill(T.STONE_FLOOR));
+  const floor  = Array.from({length:H}, ()=>Array(W).fill(T.STONE_FLOOR));
+
+  // Outer walls
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++)
+    if(y===0||y===H-1||x===0||x===W-1) tiles[y][x]=T.WALL;
+
+  // Floor snapshot
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++) floor[y][x]=tiles[y][x];
+
+  // Bed — use saved position if available, else default (2,2)
+  const bx = state.homeBed?.x ?? 2;
+  const by = state.homeBed?.y ?? 2;
+  placeDecor(tiles, floor, by, bx, T.BED);
+
+  // Exit in south wall centre
+  placeDecor(tiles, floor, H-1, Math.floor(W/2), T.EXIT_INTERIOR);
+
+  return {tiles, floor, W, H, isInterior:true, name:'YOUR CABIN',
+          entryX:Math.floor(W/2), entryY:H-2};
+}
+
 // Periodic tick that checks if planted crops in homestead have finished growing
 let _homeGrowthTickId = null;
 function startHomeGrowthTick() {

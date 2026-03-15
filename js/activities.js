@@ -1531,6 +1531,13 @@ function checkZoneExit() {
         setTimeout(()=>log(hd.log,'neutral'),600);
       }
     }
+    if(northTile === T.BWALL_DOOR && currentMap.name === 'YOUR HOMESTEAD') {
+      if(playerPos.x === 3 && playerPos.y === 4) {
+        SFX.door();
+        enterInterior(makeHomeCabinInterior, 'YOUR CABIN');
+        setTimeout(()=>log('You step inside your cabin. Cosy and quiet.','neutral'),600);
+      }
+    }
   } else if(t === T.CHAPEL_PORTAL) {
     enterInterior(makeChapelMap, 'The Forsaken Chapel');
     questFlags.chapel_visited = true;

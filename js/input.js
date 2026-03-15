@@ -1,3 +1,29 @@
+// ======= MOVABLE CABIN FURNITURE =======
+let homeMovingFurniture = null; // {tile, fromX, fromY} when dragging a piece
+
+function startMovingFurniture(tile, fromX, fromY) {
+  homeMovingFurniture = {tile, fromX, fromY};
+  log('Click an empty floor tile to place the bed.', 'info');
+}
+
+function placeFurniture(toX, toY) {
+  const map = currentMap;
+  const {tile, fromX, fromY} = homeMovingFurniture;
+  homeMovingFurniture = null;
+  // Restore old tile to its floor layer value
+  map.tiles[fromY][fromX] = map.floor[fromY][fromX];
+  // Place at new position
+  placeDecor(map.tiles, map.floor, toY, toX, tile);
+  // Persist bed position
+  if(tile === T.BED) {
+    if(!state.homeBed) state.homeBed = {};
+    state.homeBed.x = toX;
+    state.homeBed.y = toY;
+    saveState();
+  }
+  log('Bed placed.', 'neutral');
+}
+
 // ======= CANVAS EVENTS =======
 canvas.addEventListener('mousemove',e=>{
   const r=canvas.getBoundingClientRect();
@@ -8,6 +34,13 @@ canvas.addEventListener('mousemove',e=>{
     document.getElementById('action-tooltip').classList.remove('show'); return;}
   hoverTile={x:tx,y:ty};
   const tip=document.getElementById('action-tooltip');
+  // Furniture placement mode tooltip
+  if(homeMovingFurniture) {
+    const targetTile = map.tiles[ty][tx];
+    tip.textContent = targetTile===T.STONE_FLOOR ? '✋ Place bed here' : '✖ Cannot place here';
+    tip.style.left=(sx+12)+'px'; tip.style.top=(sy-30)+'px';
+    tip.classList.add('show'); return;
+  }
   // Check NPC first
   const npc=getNpcAt(tx,ty);
   if(npc){
@@ -47,6 +80,16 @@ canvas.addEventListener('click',e=>{
   const r=canvas.getBoundingClientRect();
   const {x:tx,y:ty}=screenToTile(e.clientX-r.left, e.clientY-r.top);
   if(!currentMap||tx<0||tx>=currentMap.W||ty<0||ty>=currentMap.H)return;
+  // Furniture placement mode
+  if(homeMovingFurniture) {
+    const targetTile = currentMap.tiles[ty][tx];
+    if(targetTile === T.STONE_FLOOR) {
+      placeFurniture(tx, ty);
+    } else {
+      log('You can only place furniture on an empty floor tile.', 'bad');
+    }
+    return;
+  }
   // Left-click NPC = walk to and talk
   const npc=getNpcAt(tx,ty);
   if(npc){
@@ -63,6 +106,8 @@ canvas.addEventListener('click',e=>{
 });
 canvas.addEventListener('contextmenu',e=>{
   e.preventDefault();
+  // Cancel furniture placement mode on right-click
+  if(homeMovingFurniture) { homeMovingFurniture = null; log('Cancelled.','neutral'); return; }
   const r=canvas.getBoundingClientRect();
   const {x:tx,y:ty}=screenToTile(e.clientX-r.left, e.clientY-r.top);
   const map=currentMap;
@@ -414,7 +459,12 @@ function getTileActions(t){
   if(t===T.COOKING_FIRE)  return [{icon:'🍖',label:'Cook Food',          action:(x,y)=>walkThenDo(x,y,()=>openCooker())}];
   if(t===T.SHOP)          return [{icon:'🏪',label:'Visit Shop',         action:(x,y)=>walkThenDo(x,y,()=>openShop())}];
   if(t===T.WORKBENCH)     return [{icon:'🪵',label:'Craft Woodwork',     action:(x,y)=>walkThenDo(x,y,()=>openWorkbench())}];
-  if(t===T.BED)           return [{icon:'🛏',label:'Sleep',        action:(x,y)=>walkThenDo(x,y,()=>sleepUntilMorning())}];
+  if(t===T.BED) {
+    const actions = [{icon:'🛏',label:'Sleep', action:(x,y)=>walkThenDo(x,y,()=>sleepUntilMorning())}];
+    if(currentMap && currentMap.name==='YOUR CABIN')
+      actions.push({icon:'✋',label:'Move Bed', action:(x,y)=>startMovingFurniture(T.BED,x,y)});
+    return actions;
+  }
   if(t===T.EXIT)          return [{icon:'➤', label:'Next Zone',   action:(x,y)=>walkThenDo(x,y,()=>doZoneTransition(1))}];
   if(t===T.EXIT_RETURN)   return [{icon:'◀', label:'Previous Zone',action:(x,y)=>walkThenDo(x,y,()=>doZoneTransition(-1))}];
   if(t===T.NOTICE_BOARD)  return [{icon:'📜',label:'Read Notice Board', action:(x,y)=>walkThenDo(x,y,()=>readNoticeBoard(x,y))}];
@@ -434,6 +484,9 @@ function getTileActions(t){
       };
       const ha = HOUSE_ACTIONS[`${y},${x}`];
       if(ha) return [{icon:'🚪',label:ha.label, action:()=>movePlayerToward(x, y+1)}];
+    }
+    if(currentMap && currentMap.name==='YOUR HOMESTEAD') {
+      if(y===3 && x===3) return [{icon:'🚪',label:'Enter Your Cabin', action:()=>movePlayerToward(x, y+1)}];
     }
     return [];
   }
