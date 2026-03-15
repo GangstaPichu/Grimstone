@@ -6,9 +6,18 @@
 <title>GRIMSTONE — A Dark Fantasy RPG</title>
 <link rel="stylesheet" href="css/styles.css">
 </head>
+<script src="js/version.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/15.3.5/Tone.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <body>
+
+<!-- UPDATE BANNER — shown when a newer version is detected on GitHub -->
+<div id="update-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:linear-gradient(90deg,#0e2a06,#1a4a0a);border-bottom:2px solid #4a8a20;padding:7px 16px;align-items:center;justify-content:center;gap:14px;font-family:'Cinzel',serif;">
+  <span style="color:#8aff50;font-size:10px;letter-spacing:1px;">NEW VERSION</span>
+  <span id="update-banner-text" style="color:#c8ffa0;font-size:11px;letter-spacing:1px;"></span>
+  <button onclick="applyUpdate()" style="background:#3a7a18;color:#c8ffa0;border:1px solid #6aaa30;border-radius:3px;padding:4px 14px;font-family:'Cinzel',serif;font-size:10px;cursor:pointer;letter-spacing:1px;">UPDATE NOW</button>
+  <button onclick="this.closest('#update-banner').style.display='none'" style="background:transparent;color:#5a8a30;border:1px solid #3a5a18;border-radius:3px;padding:4px 10px;font-family:'Cinzel',serif;font-size:10px;cursor:pointer;">LATER</button>
+</div>
 
 <!-- TITLE SCREEN -->
 <div id="title-screen">
@@ -24,6 +33,7 @@
     <div style="margin-top:14px; font-size:12px; color:var(--text-dim); font-family:'Cinzel',serif; letter-spacing:1px;">
       WASD / Click to move &nbsp;·&nbsp; Right-click to interact
     </div>
+    <div id="title-version" style="margin-top:18px;font-family:'Cinzel',serif;font-size:10px;color:var(--text-dim);letter-spacing:2px;opacity:0.5;"></div>
   </div>
 </div>
 
@@ -280,6 +290,7 @@
         <input id="music-vol-slider" type="range" min="0" max="100" value="35" oninput="setMusicVolume(this.value)">
       </div>
     </div>
+    <div id="hud-version" style="font-family:'Cinzel',serif;font-size:9px;color:var(--text-dim);letter-spacing:1px;opacity:0.45;padding:0 8px;flex-shrink:0;"></div>
   </div>
 
   <!-- MAIN AREA -->
@@ -429,5 +440,26 @@
 <script src="js/activities.js"></script>
 <script src="js/effects.js"></script>
 <script src="js/multiplayer.js"></script>
+
+<script>
+// ── Service Worker registration ───────────────────────────────────────────────
+if('serviceWorker' in navigator && window.location.protocol !== 'file:') {
+  navigator.serviceWorker.register('./service-worker.js').then(reg => {
+    // If a new SW installs while the game is open, show the update banner
+    reg.addEventListener('updatefound', () => {
+      const sw = reg.installing;
+      sw.addEventListener('statechange', () => {
+        if(sw.state === 'installed' && navigator.serviceWorker.controller) {
+          // New version is cached and waiting — show banner
+          if(typeof showUpdateBanner === 'function') showUpdateBanner('new version ready');
+        }
+      });
+    });
+  }).catch(e => console.warn('[SW] Registration failed:', e));
+
+  // When the SW swaps (after skipWaiting), reload to pick up new files
+  navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
+}
+</script>
 </body>
 </html>
