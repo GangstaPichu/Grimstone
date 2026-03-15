@@ -67,6 +67,9 @@ canvas.addEventListener('contextmenu',e=>{
   const {x:tx,y:ty}=screenToTile(e.clientX-r.left, e.clientY-r.top);
   const map=currentMap;
   if(!map||tx<0||tx>=map.W||ty<0||ty>=map.H) return;
+  // Ground bag right-click menu (checked before NPCs so bags are always reachable)
+  const bag=groundBags.find(b=>b.x===tx&&b.y===ty);
+  if(bag){ showBagCtxMenu(e,bag); return; }
   // NPC right-click menu
   const npc=getNpcAt(tx,ty);
   if(npc){
@@ -238,6 +241,8 @@ function getTileLabel(t, tx, ty){
     return HOUSE_LABELS[`${ly},${lx}`] || '';
   }
   if(t === T.BWALL_DOOR) return '';
+  // Ground bag override
+  if(groundBags.some(b => b.x===tx && b.y===ty)) return '🎒 Bag — Right-click to pick up';
   return labels[t]||'';
 }
 
@@ -514,6 +519,67 @@ function getEnemyAt(tx,ty) {
 }
 
 let _ctxMenuOpen = false;
+// ── Ground bag pickup ─────────────────────────────────────────────────────────
+function pickupBag(bagId) {
+  const bIdx = groundBags.findIndex(b => b.id === bagId);
+  if(bIdx < 0) return;
+  const bag = groundBags[bIdx];
+  const p   = state.players[state.activePlayer];
+  const leftover = [];
+
+  for(const slot of bag.items) {
+    const it   = ITEMS[slot.id];
+    const name = it?.name || slot.id;
+    let   qty  = slot.qty;
+
+    // Stack onto existing inventory entries first
+    for(let i = 0; i < 28 && qty > 0; i++) {
+      if(p.inventory[i]?.id === slot.id) { p.inventory[i].qty += qty; qty = 0; }
+    }
+    // Then fill empty slots
+    for(let i = 0; i < 28 && qty > 0; i++) {
+      if(!p.inventory[i]) { p.inventory[i] = {id:slot.id, qty}; qty = 0; }
+    }
+
+    const got = slot.qty - qty;
+    if(got > 0) log(`Picked up ${got}x ${name}.`, 'good');
+    if(qty > 0) { leftover.push({id:slot.id, qty}); log(`No room for ${qty}x ${name}.`, 'bad'); }
+  }
+
+  if(leftover.length === 0) groundBags.splice(bIdx, 1);
+  else bag.items = leftover;
+  buildInventory();
+}
+
+function showBagCtxMenu(e, bag) {
+  ctxMenu.innerHTML = '';
+  const total = bag.items.reduce((s, i) => s + i.qty, 0);
+  const title = document.createElement('div');
+  title.className = 'ctx-title';
+  title.textContent = `🎒 Bag (${total} item${total !== 1 ? 's' : ''})`;
+  ctxMenu.appendChild(title);
+
+  // List contents (non-interactive)
+  bag.items.forEach(slot => {
+    const it  = ITEMS[slot.id];
+    const row = document.createElement('div');
+    row.style.cssText = 'padding:3px 12px;font-size:11px;color:var(--text-dim);';
+    row.innerHTML = `${it?.icon || '📦'} ${it?.name || slot.id}${slot.qty > 1 ? ` ×${slot.qty}` : ''}`;
+    ctxMenu.appendChild(row);
+  });
+
+  const pickup = document.createElement('div');
+  pickup.className = 'ctx-item';
+  pickup.innerHTML = '<span class="ctx-icon">🤲</span>Pick Up All';
+  pickup.onclick = () => { hideCtxMenu(); walkThenDo(bag.x, bag.y, () => pickupBag(bag.id)); };
+  ctxMenu.appendChild(pickup);
+
+  ctxMenu.style.left = e.clientX + 'px';
+  ctxMenu.style.top  = e.clientY + 'px';
+  ctxMenu.classList.add('show');
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function showInvCtxMenu(e, slotIdx){
   if(_ctxMenuOpen) return;
   _ctxMenuOpen = true;
@@ -533,7 +599,23 @@ function showInvCtxMenu(e, slotIdx){
   const dd=document.createElement('div');
   dd.className='ctx-item danger';
   dd.innerHTML='<span class="ctx-icon">🗑</span>Drop';
-  dd.onclick=()=>{ hideCtxMenu(); p.inventory[slotIdx]=null; buildInventory(); buildEquipPanel(); log(`Dropped ${it.name}.`); };
+  dd.onclick=()=>{
+    hideCtxMenu();
+    const dropped = p.inventory[slotIdx];
+    if(!dropped) return;
+    // Merge into existing bag at player tile, or create a new one
+    const existing = groundBags.find(b => b.x===playerPos.x && b.y===playerPos.y);
+    if(existing) {
+      const stack = existing.items.find(s => s.id===dropped.id);
+      if(stack) stack.qty += dropped.qty;
+      else existing.items.push({id:dropped.id, qty:dropped.qty});
+    } else {
+      groundBags.push({id:_groundBagId++, x:playerPos.x, y:playerPos.y, items:[{id:dropped.id, qty:dropped.qty}]});
+    }
+    p.inventory[slotIdx]=null;
+    buildInventory(); buildEquipPanel();
+    log(`Dropped ${it.name}.`);
+  };
   ctxMenu.appendChild(dd);
   ctxMenu.style.left=e.clientX+'px';
   ctxMenu.style.top=e.clientY+'px';

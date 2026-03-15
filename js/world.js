@@ -128,6 +128,11 @@ const state = {
   farmPlots: {},
 };
 
+// Ground bags — items dropped by the player. Cleared on zone/map change.
+// Each entry: { id:Number, x:Number, y:Number, items:[{id,qty}] }
+let groundBags = [];
+let _groundBagId = 0;
+
 
 // ======= ITEM ICON SPRITE GENERATOR =======
 function makeIcon(drawFn) {
