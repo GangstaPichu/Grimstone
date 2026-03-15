@@ -63,8 +63,14 @@ function getPeriodLabel() {
 }
 
 // Fast-forward time to next morning (0.27) with a fade
+// Sleep only allowed from dusk (0.7) through night until dawn (0.3)
 function sleepUntilMorning() {
   if(isSleeping) return;
+  const t = gameTime;
+  if(t >= 0.3 && t < 0.7) {
+    log("It's the middle of the day — you're not tired yet. Come back at dusk.", 'bad');
+    return;
+  }
   isSleeping = true;
   const flash = document.getElementById('zone-flash');
   flash.style.transition = 'opacity 0.8s';

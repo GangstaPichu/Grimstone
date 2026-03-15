@@ -750,13 +750,13 @@ function harvestCrop(x, y, itemId, msg, xp) {
     buildInventory();
     giveXP('Farming', xp);
     log(`You harvest some ${ITEMS[itemId].name}.`, 'good');
-    // Remove crop — respawn after 3 mins
+    // Remove crop — respawn after 15 mins
     currentMap.tiles[y][x] = currentMap.floor[y][x] || T.GRASS;
     setTimeout(() => {
       if(currentMap && currentMap.tiles[y]) {
         currentMap.tiles[y][x] = itemId === 'wheat' ? T.CROP_WHEAT : T.CROP_TURNIP;
       }
-    }, 3 * 60 * 1000);
+    }, 15 * 60 * 1000);
   });
 }
 
@@ -1726,6 +1726,9 @@ const DUNGEON_LOOT = [
   {id:'bronze_helm',   w:6},
   {id:'bronze_plate',  w:5},
   {id:'bronze_legs',   w:5},
+  {id:'wheat',         w:6},
+  {id:'turnip',        w:6},
+  {id:'egg',           w:4},
   {id:'bones',         w:10},
   {id:'coins',         w:8},
   {id:'goblin_hide',   w:7},

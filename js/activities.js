@@ -1655,7 +1655,12 @@ document.addEventListener('keydown',e=>{
       scheduleP2KeyMove();
     }
   }
+  if(e.key==='m' || e.key==='M'){
+    toggleWorldMap(); return;
+  }
   if(e.key==='Escape'){
+    const mapOverlay = document.getElementById('world-map-overlay');
+    if(mapOverlay && mapOverlay.classList.contains('show')){ mapOverlay.classList.remove('show'); return; }
     if(document.getElementById('dialogue-panel').classList.contains('show')){ closeDialogue(); return; }
     if(document.getElementById('shop-panel').classList.contains('show')){ closeMerchantShop(); return; }
     cancelActivity();
