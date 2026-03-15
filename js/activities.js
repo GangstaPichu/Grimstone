@@ -149,7 +149,7 @@ function getItemActions(id){
   // ── Homestead Sigil ──────────────────────────────────────────────────
   if(id === 'home_sigil') {
     return [{icon:'🏡', label:'Teleport to Homestead', action:(si)=>{
-      if(!questFlags.homestead_rewarded) { log("You don't know how to use this yet.", 'bad'); return; }
+      if(!questFlags.homestead_rewarded) questFlags.homestead_rewarded = true;
       log('The sigil pulses with warm light. You feel the homestead calling...', 'gold');
       enterInterior(makeHomeMap, 'YOUR HOMESTEAD');
     }}];
