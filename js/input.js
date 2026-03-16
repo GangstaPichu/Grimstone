@@ -255,7 +255,7 @@ function getTileLabel(t, tx, ty){
     [T.CHAPEL_RUNE]:'🔮 Carved Rune',
     // Farm
     [T.FARM_PORTAL]:'🌾 Portal to Greenfield Pastures',
-    [T.CARAVAN_PORTAL]:'🛤 The Abandoned Road — Investigate',
+    [T.CARAVAN_PORTAL]:'🛤 The Western Pass',
     [T.HAY_BALE]:'🌾 Hay Bale',
     [T.FENCE_POST]:'🪵 Fence Post',
     [T.WATER_TROUGH]:'💧 Water Trough',
@@ -507,7 +507,8 @@ function getTileActions(t, x, y){
   if(t===T.WIZARD_DOOR) {
     return [{icon:'🚪', label:'Enter the tower', action:(x,y)=>movePlayerToward(x,y)}];
   }
-  if(t===T.CARAVAN_PORTAL) return [{icon:'🛤',label:'Enter The Abandoned Road', action:(x,y)=>movePlayerToward(x,y)}];
+  if(t===T.CARAVAN_PORTAL) return [{icon:'🛤',label:'Enter The Western Pass', action:(x,y)=>movePlayerToward(x,y)}];
+  if(t===T.BARREL)         return [{icon:'🛢',label:'Search Barrel',           action:(x,y)=>walkThenDo(x,y,()=>searchBarrel(x,y))}];
   if(t===T.FOREST_PORTAL) {
     const inWood = currentMap && currentMap.name==='THE WHISPERWOOD';
     return [{icon:'🌲', label: inWood ? 'Leave the Whisperwood' : 'Enter the Whisperwood', action:(x,y)=>movePlayerToward(x,y)}];

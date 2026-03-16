@@ -23,16 +23,10 @@ function ensureBankState(p) {
   for(const id in STOCKS) if(!(id in p.bank.stocks)) p.bank.stocks[id] = 0;
 }
 
-// ── Add a specific amount of coins to inventory ────────────
+// ── Add gold directly to player wallet ────────────────────
 function bankAddCoins(p, amount) {
-  const slot = p.inventory.find(s => s?.id === 'coins');
-  if(slot) {
-    slot.qty += amount;
-  } else {
-    for(let i = 0; i < 28; i++) {
-      if(!p.inventory[i]) { p.inventory[i] = { id:'coins', qty:amount }; break; }
-    }
-  }
+  p.gold = (p.gold || 0) + amount;
+  updateHUD();
 }
 
 // ── Stock price updates (random walk, every 30 s) ──────────
@@ -134,7 +128,7 @@ function renderVaultTab(panel, p) {
   const body = document.createElement('div');
   body.style.cssText = 'padding:8px 12px;';
 
-  const goldInHand = p.inventory.reduce((s, sl) => s + (sl?.id === 'coins' ? sl.qty : 0), 0);
+  const goldInHand = p.gold || 0;
   const info = document.createElement('div');
   info.style.cssText = 'margin-bottom:10px;padding:6px;background:#1a1a1a;border-radius:4px;font-size:11px;';
   info.innerHTML = `<div style="color:#c8922a;">💰 In hand: <b>${goldInHand}g</b></div>`
@@ -142,9 +136,8 @@ function renderVaultTab(panel, p) {
   body.appendChild(info);
 
   body.appendChild(_bankAmountRow('Amount to deposit', '⬇ Deposit', amount => {
-    const have = p.inventory.reduce((s, sl) => s + (sl?.id === 'coins' ? sl.qty : 0), 0);
-    if(have < amount) { log('Not enough gold in hand.', 'bad'); return; }
-    removeFromInventory('coins', amount);
+    if((p.gold || 0) < amount) { log('Not enough gold in hand.', 'bad'); return; }
+    p.gold -= amount;
     p.bank.gold += amount;
     log(`Deposited ${amount}g into the bank vault.`, 'good');
     buildInventory(); updateHUD();

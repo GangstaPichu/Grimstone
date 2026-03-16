@@ -551,6 +551,40 @@ function openDialogue(npc) {
   }
   textEl.textContent = greet;
 
+  // Mira — return her locket if player has found it
+  if(npc.npcName === 'Mira' && questFlags.miras_locket_found && !questFlags.miras_locket_done) {
+    const p = state.players[state.activePlayer];
+    textEl.textContent = "Oh — is that... is that my locket? I've been looking everywhere for it. How did you find it?";
+    optionsEl.innerHTML = '';
+    const returnBtn = document.createElement('div');
+    returnBtn.className = 'dlg-option';
+    returnBtn.textContent = '▸ I found it in a barrel on the dock.';
+    returnBtn.onclick = () => {
+      removeFromInventory('miras_locket');
+      p.gold = (p.gold||0) + 15;
+      questFlags.miras_locket_done = true;
+      buildInventory(); updateHUD();
+      textEl.textContent = "I don't know how to thank you. It was my mother's — I thought it was gone forever. Please, take this. It's not much, but it's all I have on me.";
+      optionsEl.innerHTML = '';
+      log('📿 Returned the locket to Mira. +15g', 'gold');
+      log('✦ Quest complete: Mira\'s Lost Locket!', 'gold');
+      const closeBtn2 = document.createElement('div');
+      closeBtn2.className = 'dlg-option';
+      closeBtn2.textContent = '▸ Glad I could help.';
+      closeBtn2.onclick = closeDialogue;
+      optionsEl.appendChild(closeBtn2);
+    };
+    optionsEl.appendChild(returnBtn);
+    const noBtn = document.createElement('div');
+    noBtn.className = 'dlg-option';
+    noBtn.textContent = '▸ Actually, let me hold onto it a bit longer.';
+    noBtn.onclick = closeDialogue;
+    optionsEl.appendChild(noBtn);
+    panel.classList.add('show');
+    document.getElementById('dialogue-close').onclick = closeDialogue;
+    return;
+  }
+
   // Build dialogue options — named NPCs get a "What's your name?" option
   optionsEl.innerHTML = '';
   if(npc.npcName) {

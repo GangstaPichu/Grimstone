@@ -22,7 +22,7 @@ const QUESTS = [
     desc: 'Mira has lost a silver locket somewhere near the docks. She\'s been searching for days and is offering a reward for its return.',
     detail: 'Mira mentioned losing a silver locket near the south docks. It might still be there, or someone may have picked it up. Ask around — Rowan keeps odd hours near the waterfront.',
     reward: '15 gold + Mira\'s thanks',
-    rewardFn: null, // placeholder — not yet implemented
+    rewardFn: null, // reward given directly in npcs.js when returned to Mira
     isVisible: (qf) => true, // always visible — heard from Mira or town rumour
     isComplete: (qf) => qf.miras_locket_done || false,
   },

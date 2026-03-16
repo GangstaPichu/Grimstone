@@ -447,7 +447,8 @@ const ITEMS = {
   onion_seed:  {name:'Onion Seeds',  icon:'🌱', type:'seed', cropItem:'onion',  cropTile:200, growTime:5*60*1000, desc:'Plant in tilled homestead soil. Grows into onions in ~5 minutes.'},
   // === Quest reward items ===
   ashen_seal:      {name:'Ashen Seal',      icon:'🔴', type:'quest',  desc:'A ritual seal from the Cultist Catacombs. Aldermast will want this.'},
-  caravan_manifest:{name:'Caravan Manifest',icon:'📋', type:'quest',  desc:'A shipping manifest from Oswin\'s missing caravan. Proof of what happened on the abandoned road.'},
+  caravan_manifest:{name:'Caravan Manifest',icon:'📋', type:'quest',  desc:'A shipping manifest from Oswin\'s missing caravan. Proof of what happened on the western pass.'},
+  miras_locket:    {name:"Mira's Locket",  icon:'📿', type:'quest',  desc:'A delicate silver locket on a fine chain. Initials are engraved on the back. Return it to Mira.'},
   ring_of_warding: {name:'Ring of Warding', icon:'💍', type:'equip',  slot:'shield', attackBonus:0, strBonus:0, defBonus:6,  desc:'A silver ring etched with warding runes. Reduces damage taken.'},
   void_shard:      {name:'Void Shard',      icon:'🔷', type:'quest',  desc:'A fragment of crystallised void-energy. Cold to the touch. One of four.'},
   amulet_of_stars: {name:'Amulet of Stars', icon:'⭐', type:'equip',  slot:'ammo',   attackBonus:5, strBonus:3, defBonus:3,  desc:'An amulet Aldermast forged from four Void Shards. Hums faintly.'},
