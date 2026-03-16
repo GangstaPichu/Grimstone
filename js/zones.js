@@ -1994,8 +1994,18 @@ function makeShopInterior() {
   pd(2,11,T.BARREL);   pd(2,12,T.BARREL);       // stock barrels east
   pd(1,5,T.CANDLE);    pd(1,8,T.CANDLE);        // candles on back wall
 
-  // Dorin behind counter
-  tiles[2][6]=T.NPC_MERCHANT;
+  // Dorin behind counter (absent at night when Old Bones quest is active)
+  const dorinAbsent = typeof getNightAlpha === 'function' && getNightAlpha() > 0.5 &&
+                      typeof questFlags !== 'undefined' && questFlags.old_bones_accepted;
+  if(!dorinAbsent) {
+    tiles[2][6]=T.NPC_MERCHANT;
+  }
+
+  // Hidden chest — Dorin's ledger cabinet (back west corner)
+  // Only placed when Dorin is absent (player is sneaking in at night)
+  if(dorinAbsent && typeof questFlags !== 'undefined' && !questFlags.old_bones_contract_found) {
+    pd(2,3,T.CHEST);
+  }
 
   // ---- Customer floor (y=4..6) ----
   pd(5,2,T.BARREL); pd(5,12,T.BARREL);          // display barrels flanking
@@ -2301,6 +2311,10 @@ function makeHomeMap() {
 
   // Farmable area — 10×8 patch of dirt (right side of map)
   for(let y=3;y<=12;y++) for(let x=8;x<=22;x++) tiles[y][x]=T.DIRT;
+  // Extended farmable rows — unlocked by Homestead Extension Deed
+  if(typeof questFlags !== 'undefined' && questFlags.homestead_extended) {
+    for(let y=13;y<=16;y++) for(let x=8;x<=22;x++) tiles[y][x]=T.DIRT;
+  }
 
   // Well (left of farm)
   tiles[6][6]=T.TOWN_WELL;

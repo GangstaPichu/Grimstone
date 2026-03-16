@@ -1496,6 +1496,21 @@ function searchChest(x, y) {
       { icon:'📦', text: '"The chest is mostly empty — a few copper coins, a broken belt buckle.\n\nAt the bottom, folded small, is a scrap of parchment:"' },
       { icon:'📦', text: '"To the next fool who opens this:\n\nI found what they buried. I shouldn\'t have looked. The figure at the docks will show you the way — but only on Grimtide. Wait until the eleventh bell, before the first.\n\nI\'m leaving Ashenveil before dawn.\n\n— K"' },
     ], 'clue_chest_note');
+  } else if(currentMap?.name === "DORIN'S TRADING POST" && questFlags.old_bones_accepted && !questFlags.old_bones_contract_found) {
+    // Dorin's hidden ledger — only findable at night when he's absent
+    if(getNightAlpha() <= 0.5) {
+      log("Just an ordinary chest. Nothing unusual.", 'neutral');
+      return;
+    }
+    SFX.chest();
+    addToInventory('forged_contract', 1);
+    questFlags.old_bones_contract_found = true;
+    buildInventory(); updateHUD();
+    log('📋 Behind the barrels, a loose board hides a leather-bound ledger.', 'gold');
+    log('The numbers are wrong. Thirty gold recorded as owed — but the original entry shows six.', 'gold');
+    setTimeout(() => log('✦ Quest updated: Old Bones, New Debts — bring this to Vayne or Edwyn.', 'gold'), 700);
+    // Remove the chest tile from the map now that it's been searched
+    currentMap.tiles[y][x] = currentMap.floor[y][x] || T.STONE_FLOOR;
   } else if(currentMap?.name === 'THE WESTERN PASS' && !questFlags.caravan_manifest_found && x===9 && y===5) {
     // Quest chest — caravan manifest
     SFX.chest();
@@ -1888,14 +1903,25 @@ function checkZoneExit() {
         '28,11': {fn:()=>makeHouseInterior('Rowan'),   name:"Rowan's House",   log:"Rowan's house. A lantern flickers on the table."},
         '8,24':  {fn:()=>makeBlacksmithInterior(),     name:"The Ashen Forge", log:"Heat and the smell of iron hit you as you step inside the forge."},
         '9,14':  {fn:()=>makeBankInterior(),  name:"GRIMSTONE SAVINGS BANK",  log:"The door swings open. It smells of polished wood and old coin."},
-        '21,15': {fn:()=>makeShopInterior(), name:"DORIN'S TRADING POST",     log:"A bell jingles as the door swings open. The smell of spices and leather fills the room."},
+        '21,15': {fn:()=>makeShopInterior(), name:"DORIN'S TRADING POST",
+          log:getNightAlpha()>0.5
+            ? (questFlags.old_bones_accepted
+               ? "You slip inside through the unlocked door. The shop is dark — Dorin is out."
+               : "A bell jingles as the door swings open. The smell of spices and leather fills the room.")
+            : "A bell jingles as the door swings open. The smell of spices and leather fills the room.",
+          nightBlock: true},
       };
       const key = `${playerPos.y},${playerPos.x}`;
       const hd = HOUSE_DOORS[key];
       if(hd) {
-        SFX.door();
-        enterInterior(hd.fn, hd.name);
-        setTimeout(()=>log(hd.log,'neutral'),600);
+        // Trading Post is closed at night — unless Old Bones quest is active
+        if(hd.nightBlock && getNightAlpha() > 0.5 && !questFlags.old_bones_accepted) {
+          log('📝 A sign on the door: "CLOSED — Back at dawn. — Dorin"', 'neutral');
+        } else {
+          SFX.door();
+          enterInterior(hd.fn, hd.name);
+          setTimeout(()=>log(hd.log,'neutral'),600);
+        }
       }
     }
     if(northTile === T.BWALL_DOOR && currentMap.name === 'YOUR HOMESTEAD') {

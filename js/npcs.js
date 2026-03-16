@@ -144,8 +144,8 @@ function getDynamicGreet(npc) {
   const w  = Weather.current;
   const wn = Weather.getName();
   const isNight = getNightAlpha() > 0.5;
-  const isDawn  = gameTime > 0.2 && gameTime < 0.3;
-  const isDusk  = gameTime > 0.7 && gameTime < 0.8;
+  const isDawn  = gameTime > 0.133 && gameTime < 0.2;
+  const isDusk  = gameTime > 0.8   && gameTime < 0.867;
   const dayName = DAY_NAMES[gameDay % DAY_NAMES.length];
   const isGrimtide = dayName === 'Grimtide';
   const isRaining  = w === Weather.RAIN || w === Weather.HEAVY_RAIN;
@@ -496,6 +496,98 @@ function openBertramDialogue(npc) {
     return;
   }
 
+  if(qf.homestead_rewarded && !qf.old_bones_accepted && !qf.old_bones_done) {
+    say("My grandson Ferris came to me yesterday with a debt notice from Dorin the Trader. Thirty gold, he says, owed for goods never delivered. I traded forty years and I know falsified books when I hear of them. But I can't prove it — and Ferris can't afford a guard's ear. I don't suppose...");
+    opt("▸ I'll look into it.", () => {
+      qf.old_bones_accepted = true;
+      log('✦ Quest accepted: Old Bones, New Debts — find evidence in Dorin\'s Trading Post at night.', 'gold');
+      say("Dorin's shop closes at dark — but that man forgets to lock the back door more nights than not. Wait until after dusk. If there's a falsified ledger in there, it'll be behind the counter. Bring what you find to Corporal Vayne or Guard Edwyn. They'll know what to do.");
+      optionsEl.innerHTML = '';
+      opt('▸ I\'ll take a look tonight.', close);
+    });
+    opt("▸ Not my concern.", () => {
+      say("No, I understand. You've your own troubles. I'll find another way.");
+      optionsEl.innerHTML = '';
+      opt('▸ Goodbye, Bertram.', close);
+    });
+    panel.classList.add('show');
+    document.getElementById('dialogue-close').onclick = closeDialogue;
+    return;
+  }
+
+  if(qf.old_bones_accepted && !qf.old_bones_done) {
+    const hint = qf.old_bones_contract_found
+      ? "You've got the proof — now get it to Vayne or Edwyn before Dorin notices anything's missing."
+      : "Dorin's shop closes at dark. Try the Trading Post after dusk — and watch the counter area.";
+    say(hint);
+    opt("▸ I'm working on it.", close);
+    opt("▸ Goodbye, Bertram.", close);
+    panel.classList.add('show');
+    document.getElementById('dialogue-close').onclick = closeDialogue;
+    return;
+  }
+
+  if(qf.old_bones_done) {
+    const discountLine = qf.bertram_discount
+      ? " And as I promised — seeds from me at half the usual cost."
+      : "";
+    say(`The guards handled it quietly. Dorin repaid Ferris before sundown and left town before questions could pile. First honest outcome I've seen from this business in years.${discountLine}`);
+    if(qf.bertram_discount && !qf.bertram_discount_offered) {
+      qf.bertram_discount_offered = true;
+      opt('▸ I\'ll take some seeds.', () => {
+        optionsEl.innerHTML = '';
+        const seedCosts = [
+          {id:'wheat_seed',  name:'Wheat Seeds (×5)',   full:4, disc:2},
+          {id:'turnip_seed', name:'Turnip Seeds (×5)',  full:5, disc:3},
+          {id:'carrot_seed', name:'Carrot Seeds (×5)',  full:6, disc:3},
+          {id:'potato_seed', name:'Potato Seeds (×5)',  full:7, disc:4},
+          {id:'onion_seed',  name:'Onion Seeds (×5)',   full:5, disc:3},
+        ];
+        const p = state.players[state.activePlayer];
+        say("Take your pick. Half price, for your trouble.");
+        seedCosts.forEach(s => {
+          opt(`▸ ${s.name} — ${s.disc}g`, () => {
+            if(p.gold < s.disc) { say("You're a bit short on coin. Come back when you have it."); return; }
+            p.gold -= s.disc;
+            addToInventory(s.id, 5);
+            buildInventory(); updateHUD();
+            log(`Bought ${s.name} from Bertram for ${s.disc}g.`, 'gold');
+            say("Good choice. Treat the soil well.");
+          });
+        });
+        opt('▸ Maybe later.', close);
+      });
+    } else if(qf.bertram_discount) {
+      opt('▸ I\'d like some seeds.', () => {
+        optionsEl.innerHTML = '';
+        const seedCosts = [
+          {id:'wheat_seed',  name:'Wheat Seeds (×5)',   disc:2},
+          {id:'turnip_seed', name:'Turnip Seeds (×5)',  disc:3},
+          {id:'carrot_seed', name:'Carrot Seeds (×5)',  disc:3},
+          {id:'potato_seed', name:'Potato Seeds (×5)',  disc:4},
+          {id:'onion_seed',  name:'Onion Seeds (×5)',   disc:3},
+        ];
+        const p = state.players[state.activePlayer];
+        say("Still at half price, same as always.");
+        seedCosts.forEach(s => {
+          opt(`▸ ${s.name} — ${s.disc}g`, () => {
+            if(p.gold < s.disc) { say("Not enough coin."); return; }
+            p.gold -= s.disc;
+            addToInventory(s.id, 5);
+            buildInventory(); updateHUD();
+            log(`Bought ${s.name} from Bertram for ${s.disc}g.`, 'gold');
+            say("Good choice. Treat the soil well.");
+          });
+        });
+        opt('▸ Nothing today.', close);
+      });
+    }
+    opt("▸ Glad it worked out.", close);
+    panel.classList.add('show');
+    document.getElementById('dialogue-close').onclick = closeDialogue;
+    return;
+  }
+
   if(qf.homestead_rewarded) {
     say("How goes the homestead? I hope the soil is treating you well. Till with the hoe, plant your seeds, water with patience. The land gives back what you put into it.");
     opt("▸ It's coming along.", close);
@@ -522,6 +614,55 @@ function openDialogue(npc) {
   // Willa — bank teller
   if(npc.npcName === 'Willa') {
     openWillaDialogue(npc);
+    return;
+  }
+  // Vayne / Edwyn — accept forged contract for Old Bones, New Debts
+  if((npc.npcName === 'Vayne' || npc.npcName === 'Edwyn') &&
+      questFlags.old_bones_contract_found && !questFlags.old_bones_done) {
+    const panel2 = document.getElementById('dialogue-panel');
+    const portrait2 = document.getElementById('dialogue-portrait');
+    const nameEl2 = document.getElementById('dialogue-npc-name');
+    const textEl2 = document.getElementById('dialogue-text');
+    const optEl2 = document.getElementById('dialogue-options');
+    portrait2.textContent = npc.def.letter;
+    portrait2.style.background = npc.def.bg;
+    portrait2.style.color = npc.def.col;
+    portrait2.style.borderColor = npc.def.col;
+    nameEl2.textContent = npc.def.name.toUpperCase();
+    textEl2.textContent = "Evening. Quiet night. Something on your mind?";
+    optEl2.innerHTML = '';
+    dialogueNpc = npc;
+    const handInBtn = document.createElement('div');
+    handInBtn.className = 'dlg-option';
+    handInBtn.textContent = '▸ [Show the forged contract]';
+    handInBtn.onclick = () => {
+      removeFromInventory('forged_contract', 1);
+      questFlags.old_bones_done = true;
+      questFlags.homestead_extended = true;
+      questFlags.bertram_discount = true;
+      const p = state.players[state.activePlayer];
+      p.gold = (p.gold || 0) + 40;
+      addToInventory('homestead_deed', 1);
+      buildInventory(); buildEquipPanel(); updateHUD();
+      textEl2.textContent = "... Well. These numbers don't match any ledger I've seen. This is fraud. We'll bring Dorin in before morning. You've done Ashenveil a service — take this from the guard fund. And tell Bertram his grandson is clear.";
+      optEl2.innerHTML = '';
+      log('📋 Handed the forged contract to the guard.', 'gold');
+      log('✦ Quest complete: Old Bones, New Debts! +40g, Homestead Extension Deed.', 'gold');
+      setTimeout(() => log('Your homestead has been extended — new crop rows await.', 'gold'), 800);
+      const doneBtn = document.createElement('div');
+      doneBtn.className = 'dlg-option';
+      doneBtn.textContent = "▸ I'll let Bertram know.";
+      doneBtn.onclick = closeDialogue;
+      optEl2.appendChild(doneBtn);
+    };
+    optEl2.appendChild(handInBtn);
+    const skipBtn = document.createElement('div');
+    skipBtn.className = 'dlg-option';
+    skipBtn.textContent = '▸ Nothing. Good evening.';
+    skipBtn.onclick = closeDialogue;
+    optEl2.appendChild(skipBtn);
+    document.getElementById('dialogue-close').onclick = closeDialogue;
+    panel2.classList.add('show');
     return;
   }
   dialogueNpc = npc;
@@ -1256,5 +1397,12 @@ let questFlags = {
   grimoire_done:          false,
   // === Magic intro ===
   magic_intro_seen:       false,  // Aldermast taught player about rune crafting
+  // === Old Bones, New Debts ===
+  old_bones_accepted:     false,  // accepted quest from Bertram
+  old_bones_contract_found: false, // found the forged contract in Trading Post
+  old_bones_done:         false,  // delivered proof to guards
+  // === Homestead extension (reward from old_bones) ===
+  homestead_extended:     false,  // unlocks extra crop rows at homestead
+  bertram_discount:       false,  // Bertram sells seeds cheaper
 };
 

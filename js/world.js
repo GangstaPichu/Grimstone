@@ -1,8 +1,9 @@
 // ======= DAY / NIGHT CYCLE =======
-// gameTime: 0.0 = midnight, 0.25 = dawn, 0.5 = noon, 0.75 = dusk, 1.0 = midnight
+// gameTime: 0.0 = midnight, 0.2 = dawn, 0.5 = noon, 0.8 = dusk, 1.0 = midnight
+// Boundaries: Night [0.0–0.133] & [0.867–1.0]  Dawn [0.133–0.2]  Day [0.2–0.8]  Dusk [0.8–0.867]
 // One full day = DAY_DURATION_MS milliseconds of real time
-const DAY_DURATION_MS = 10 * 60 * 1000; // 10 real minutes = 1 game day
-let gameTime = 0.27; // start just after dawn
+const DAY_DURATION_MS = 15 * 60 * 1000; // 15 real minutes = 1 game day (day≈9min, night≈4min)
+let gameTime = 0.22; // start just after dawn
 let gameDay  = 1;    // current in-game day (starts on Day 1)
 let lastFrameTime = 0;
 let isSleeping = false;
@@ -37,12 +38,12 @@ function tickDayNight(now) {
 
 // Returns 0 (full day) → 1 (full night) based on gameTime
 function getNightAlpha() {
-  // Dawn: 0.2–0.3, Day: 0.3–0.7, Dusk: 0.7–0.8, Night: 0.8–0.2
+  // Dawn: 0.133–0.2, Day: 0.2–0.8, Dusk: 0.8–0.867, Night: 0.867–1.0 and 0.0–0.133
   const t = gameTime;
-  if(t >= 0.3 && t <= 0.7) return 0;                          // full day
-  if(t > 0.7 && t <= 0.8) return (t - 0.7) / 0.1;            // dusk fade in
-  if(t > 0.8 || t <= 0.2) return 1;                           // full night
-  if(t > 0.2 && t < 0.3)  return 1 - (t - 0.2) / 0.1;        // dawn fade out
+  if(t >= 0.2 && t <= 0.8)  return 0;                             // full day
+  if(t > 0.8 && t <= 0.867) return (t - 0.8) / 0.067;            // dusk fade in
+  if(t > 0.867 || t <= 0.133) return 1;                           // full night
+  if(t > 0.133 && t < 0.2)  return 1 - (t - 0.133) / 0.067;     // dawn fade out
   return 0;
 }
 
@@ -56,18 +57,18 @@ function getTimeLabel() {
 
 function getPeriodLabel() {
   const t = gameTime;
-  if(t >= 0.25 && t < 0.3)  return '🌅 Dawn';
-  if(t >= 0.3  && t < 0.7)  return '☀️ Day';
-  if(t >= 0.7  && t < 0.8)  return '🌇 Dusk';
+  if(t >= 0.133 && t < 0.2)  return '🌅 Dawn';
+  if(t >= 0.2   && t < 0.8)  return '☀️ Day';
+  if(t >= 0.8   && t < 0.867) return '🌇 Dusk';
   return '🌙 Night';
 }
 
-// Fast-forward time to next morning (0.27) with a fade
-// Sleep only allowed from dusk (0.7) through night until dawn (0.3)
+// Fast-forward time to next morning with a fade
+// Sleep only allowed from dusk (0.8) through night until dawn (0.2)
 function sleepUntilMorning() {
   if(isSleeping) return;
   const t = gameTime;
-  if(t >= 0.3 && t < 0.7) {
+  if(t >= 0.2 && t < 0.8) {
     log("It's the middle of the day — you're not tired yet. Come back at dusk.", 'bad');
     return;
   }
@@ -77,7 +78,7 @@ function sleepUntilMorning() {
   flash.style.background = '#050608';
   flash.style.opacity = '1';
   setTimeout(() => {
-    gameTime = 0.28; // just after dawn
+    gameTime = 0.22; // just after dawn
     gameDay++;
     log("You sleep soundly... and wake refreshed at dawn.", 'gold');
     // Restore HP
@@ -450,8 +451,10 @@ const ITEMS = {
   caravan_manifest:{name:'Caravan Manifest',icon:'📋', type:'quest',  desc:'A shipping manifest from Oswin\'s missing caravan. Proof of what happened on the western pass.'},
   miras_locket:    {name:"Mira's Locket",  icon:'📿', type:'quest',  desc:'A delicate silver locket on a fine chain. Initials are engraved on the back. Return it to Mira.'},
   ring_of_warding: {name:'Ring of Warding', icon:'💍', type:'equip',  slot:'shield', attackBonus:0, strBonus:0, defBonus:6,  desc:'A silver ring etched with warding runes. Reduces damage taken.'},
-  void_shard:      {name:'Void Shard',      icon:'🔷', type:'quest',  desc:'A fragment of crystallised void-energy. Cold to the touch. One of four.'},
-  amulet_of_stars: {name:'Amulet of Stars', icon:'⭐', type:'equip',  slot:'ammo',   attackBonus:5, strBonus:3, defBonus:3,  desc:'An amulet Aldermast forged from four Void Shards. Hums faintly.'},
+  void_shard:        {name:'Void Shard',            icon:'🔷', type:'quest', desc:'A fragment of crystallised void-energy. Cold to the touch. One of four.'},
+  amulet_of_stars:   {name:'Amulet of Stars',       icon:'⭐', type:'equip', slot:'ammo', attackBonus:5, strBonus:3, defBonus:3, desc:'An amulet Aldermast forged from four Void Shards. Hums faintly.'},
+  forged_contract:   {name:'Forged Debt Contract',  icon:'📋', type:'quest', desc:'A falsified ledger page — debt amounts altered in a different hand. Evidence of fraud.'},
+  homestead_deed:    {name:'Homestead Extension Deed', icon:'📜', type:'quest', desc:'A land deed granting expanded farmland on your homestead. Additional soil plots await.'},
 
   // ── RUNES (consumable magic) ───────────────────────────────────────────
   rune_fire:    {name:'Fire Rune',    icon:'🔴', type:'rune', color:'#e04010', desc:'Cast to hurl a bolt of fire. Deals 8–15 damage. Gives Magic XP.',       magicReqLvl:1,  dmgMin:8,  dmgMax:15, xp:8  },

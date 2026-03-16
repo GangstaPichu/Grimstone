@@ -86,6 +86,18 @@ const QUESTS = [
     isVisible: (qf) => qf.grimoire_accepted,
     isComplete: (qf) => qf.grimoire_done,
   },
+  {
+    id: 'old_bones_new_debts',
+    icon: '📋',
+    title: 'Old Bones, New Debts',
+    giver: 'Old Bertram — Greenfield Pastures',
+    desc: "Bertram's grandson has been handed a debt notice by Dorin the Trader. The numbers don't add up. Someone needs to take a closer look at Dorin's books.",
+    detail: "Old Bertram suspects the debt his grandson owes Dorin is fabricated. Dorin's Trading Post closes at night — but Bertram says Dorin has a habit of leaving the back unlocked. Slip in after dark, find the ledger, and bring proof to Corporal Vayne or Guard Edwyn.",
+    reward: 'Homestead Extension Deed + Bertram discount on seeds',
+    rewardFn: null, // handled in guard dialogue
+    isVisible: (qf) => qf.homestead_rewarded && !qf.old_bones_done,
+    isComplete: (qf) => qf.old_bones_done || false,
+  },
 ];
 
 let questBoardTab = 'active';
