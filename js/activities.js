@@ -1096,16 +1096,24 @@ function respawn(){
     document.getElementById('zone-name').textContent = ZONES[zoneIndex];
   }
 
-  // Spawn near the entry portal of that zone (left edge, near EXIT_RETURN)
+  // Spawn near the entry portal of that zone.
+  // Maps with a named entryX/entryY (e.g. Whisperwood — portal at top centre, not col 0)
+  // use that directly; regular world-map zones scan column 0 for EXIT_RETURN/FOREST_PORTAL.
   const tiles = currentMap.tiles;
-  const H2 = currentMap.H, W2 = currentMap.W;
-  let portalY = Math.floor(H2/2);
-  for(let y=0;y<H2;y++){
-    if(tiles[y][0]===T.EXIT_RETURN||tiles[y][0]===T.FOREST_PORTAL){
-      portalY=y; break;
+  const H2 = currentMap.H;
+  let spawnX = 2, spawnY;
+  if(currentMap.entryX != null && currentMap.entryY != null) {
+    spawnX = currentMap.entryX;
+    spawnY = currentMap.entryY;
+  } else {
+    spawnY = Math.floor(H2/2);
+    for(let y=0;y<H2;y++){
+      if(tiles[y][0]===T.EXIT_RETURN||tiles[y][0]===T.FOREST_PORTAL){
+        spawnY=y; break;
+      }
     }
   }
-  const spawn = findSafeSpawn(2, portalY);
+  const spawn = findSafeSpawn(spawnX, spawnY);
   playerPos = {x:spawn.x, y:spawn.y};
   playerReal = {x:spawn.x, y:spawn.y};
   camera.x = Math.max(0, spawn.x*TILE - canvas.width/2);

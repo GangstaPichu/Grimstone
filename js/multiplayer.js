@@ -74,6 +74,8 @@ function _applyRemoteState(id, data) {
   if(data.hp    != null) rp.hp       = data.hp;
   if(data.maxHp != null) rp.maxHp    = data.maxHp;
   if(data.appearance)  rp.appearance = data.appearance;
+  if(data.zone     != null) rp.zone     = data.zone;
+  if(data.interior != null) rp.interior = data.interior;
 }
 
 function _removeRemotePlayer(id) {
@@ -137,9 +139,11 @@ function _onHostReceive(guestId, data) {
 function _buildWorldSnapshot() {
   const p = state.players[0];
   const players = [
-    { id:'host', name:p.name, pos:{x:playerPos.x,y:playerPos.y}, hp:p.hp, maxHp:p.maxHp, appearance:p.appearance||{} },
+    { id:'host', name:p.name, pos:{x:playerPos.x,y:playerPos.y}, hp:p.hp, maxHp:p.maxHp,
+      appearance:p.appearance||{}, zone:zoneIndex, interior:interiorStack.length },
     ...[...remotePlayers.values()].map(rp => ({
       id:rp.id, name:rp.name, pos:rp.pos, hp:rp.hp, maxHp:rp.maxHp, appearance:rp.appearance,
+      zone:rp.zone, interior:rp.interior,
     })),
   ];
   return { type:'world', players };
