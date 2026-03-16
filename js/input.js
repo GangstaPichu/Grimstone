@@ -27,7 +27,9 @@ function placeFurniture(toX, toY) {
 // ======= CANVAS EVENTS =======
 canvas.addEventListener('mousemove',e=>{
   const r=canvas.getBoundingClientRect();
-  const sx=e.clientX-r.left, sy=e.clientY-r.top;
+  // Divide by uiScale: getBoundingClientRect returns CSS/viewport pixels, but
+  // the canvas internal resolution is r.width/uiScale (set in resizeCanvas).
+  const sx=(e.clientX-r.left)/uiScale, sy=(e.clientY-r.top)/uiScale;
   const {x:tx,y:ty}=screenToTile(sx,sy);
   const map=currentMap;
   if(!map||tx<0||tx>=map.W||ty<0||ty>=map.H){hoverTile={x:-1,y:-1};
@@ -78,7 +80,7 @@ canvas.addEventListener('mouseleave',()=>{
 });
 canvas.addEventListener('click',e=>{
   const r=canvas.getBoundingClientRect();
-  const {x:tx,y:ty}=screenToTile(e.clientX-r.left, e.clientY-r.top);
+  const {x:tx,y:ty}=screenToTile((e.clientX-r.left)/uiScale, (e.clientY-r.top)/uiScale);
   if(!currentMap||tx<0||tx>=currentMap.W||ty<0||ty>=currentMap.H)return;
   // Furniture placement mode
   if(homeMovingFurniture) {
@@ -109,7 +111,7 @@ canvas.addEventListener('contextmenu',e=>{
   // Cancel furniture placement mode on right-click
   if(homeMovingFurniture) { homeMovingFurniture = null; log('Cancelled.','neutral'); return; }
   const r=canvas.getBoundingClientRect();
-  const {x:tx,y:ty}=screenToTile(e.clientX-r.left, e.clientY-r.top);
+  const {x:tx,y:ty}=screenToTile((e.clientX-r.left)/uiScale, (e.clientY-r.top)/uiScale);
   const map=currentMap;
   if(!map||tx<0||tx>=map.W||ty<0||ty>=map.H) return;
   // Ground bag right-click menu (checked before NPCs so bags are always reachable)

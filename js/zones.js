@@ -2045,6 +2045,7 @@ const NPC_DEFS = {
   [T.NPC_VILLAGER]:  { name:'Villager',    letter:'V', bg:'#1e1a16', col:'#8a7a68', patrolRadius:5,  speed:0.7 },
   [T.NPC_INNKEEPER]: { name:'Innkeeper',   letter:'I', bg:'#2a1208', col:'#a06030', patrolRadius:2,  speed:0.5 },
   [T.NPC_WIZARD]:    { name:'Aldermast',   letter:'W', bg:'#0d0820', col:'#a060e0', patrolRadius:1,  speed:0.3 },
+  [T.NPC_FARMER]:    { name:'Farmer',      letter:'F', bg:'#141a0a', col:'#7aaa4a', patrolRadius:4,  speed:0.5 },
   // Animals — wander freely, no dialogue
   [T.ANIMAL_CHICKEN]:{ name:'Chicken', letter:'🐔', bg:'#2a2010', col:'#f0e060', patrolRadius:5, speed:0.5, isAnimal:true },
   [T.ANIMAL_PIG]:    { name:'Pig',     letter:'🐷', bg:'#2a1818', col:'#e09080', patrolRadius:4, speed:0.4, isAnimal:true },
