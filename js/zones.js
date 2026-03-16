@@ -915,20 +915,20 @@ function makeAshenveil() {
 
     // ---- TOWN WELL and LAMPPOSTS — placed via placeDecor after floor snapshot ----
 
-  // ---- DOCKS / WATER (south-east corner) ----
-  for(let y=24;y<=H-2;y++) for(let x=35;x<=W-2;x++) tiles[y][x]=T.WATER;
-  // Extend water one row north for pier-over-water effect
+  // ---- DOCKS / WATER (south-east corner) — 3×9 boardwalk at y=24..26 ----
+  // Large water area south of dock and to the east
+  for(let y=27;y<=H-2;y++) for(let x=35;x<=W-2;x++) tiles[y][x]=T.WATER;
+  for(let y=24;y<=26;y++) for(let x=37;x<=W-2;x++) tiles[y][x]=T.WATER;
+  // Water transition row just north of dock — gives "pier over water" feel at east end
   for(let x=35;x<=W-2;x++) tiles[23][x]=T.WATER;
-  // ---- DOCK BOARDWALK: runs east from cobble square edge (x=28) along y=22,23 ----
-  for(let x=28;x<=36;x++) { tiles[22][x]=T.DOCK_PLANK; tiles[23][x]=T.DOCK_PLANK; }
-  // Pier head juts further east over water at y=22,23 x=35,36 (already set above)
-  // Dock railing suggestion — placeDecor barrels at pier sides
-  // Fishing spots on pier head
-  tiles[22][34]=T.FISHING; tiles[22][36]=T.FISHING;
-  // Cobble connector: east road (y=16,x=30) south to dock approach (y=21,x=30)
-  for(let y=17;y<=21;y++) if(tiles[y][30]!==T.COBBLE) tiles[y][30]=T.COBBLE;
-  // Dock approach row at y=21 widens to boardwalk x=28..30
-  for(let x=28;x<=30;x++) if(tiles[21][x]===T.GRASS||tiles[21][x]===T.COBBLE) tiles[21][x]=T.COBBLE;
+  // ---- DOCK BOARDWALK: 3 rows × 9 cols, y=24..26, x=28..36 ----
+  for(let x=28;x<=36;x++) { tiles[24][x]=T.DOCK_PLANK; tiles[25][x]=T.DOCK_PLANK; tiles[26][x]=T.DOCK_PLANK; }
+  // Fishing spots on south row of pier
+  tiles[26][34]=T.FISHING; tiles[26][36]=T.FISHING;
+  // Cobble connector: road x=30 south to dock approach row y=23
+  for(let y=17;y<=23;y++) if(tiles[y][30]!==T.COBBLE) tiles[y][30]=T.COBBLE;
+  // Dock approach row at y=23, x=28..30
+  for(let x=28;x<=30;x++) tiles[23][x]=T.COBBLE;
 
   // ---- TREES / NATURE around town edges ----
   // NW corner cluster
@@ -947,8 +947,8 @@ function makeAshenveil() {
   for(let y=10;y<=16;y++) tiles[y][8]=T.COBBLE;
   // Blacksmith to road — door at x=24
   for(let y=8;y<=16;y++) tiles[y][24]=T.COBBLE;
-  // Market path south
-  for(let y=16;y<=19;y++) tiles[y][14]=T.COBBLE;
+  // Trading Post path — leads to door at x=15 (stop at y=17, building starts at y=18)
+  tiles[17][15]=T.COBBLE;
 
   // ---- NORTH GATE AREA ----
   // Clear path from north wall into town
@@ -1027,10 +1027,10 @@ function makeAshenveil() {
   // Town well (centre of square)
   placeDecor(tiles,floor,15,18,T.TOWN_WELL);
   // 7 dock barrels — all on DOCK_PLANK floor; one randomly holds Mira's Locket (see searchBarrel)
-  placeDecor(tiles,floor,22,28,T.BARREL); placeDecor(tiles,floor,23,28,T.BARREL);
-  placeDecor(tiles,floor,22,30,T.BARREL); placeDecor(tiles,floor,23,30,T.BARREL);
-  placeDecor(tiles,floor,22,32,T.BARREL); placeDecor(tiles,floor,23,32,T.BARREL);
-  placeDecor(tiles,floor,22,33,T.BARREL);
+  placeDecor(tiles,floor,24,28,T.BARREL); placeDecor(tiles,floor,25,28,T.BARREL);
+  placeDecor(tiles,floor,24,30,T.BARREL); placeDecor(tiles,floor,25,30,T.BARREL);
+  placeDecor(tiles,floor,24,32,T.BARREL); placeDecor(tiles,floor,25,32,T.BARREL);
+  placeDecor(tiles,floor,24,33,T.BARREL);
 
   // ---- LAMPPOSTS ----
   // North road flanking — x=17,19 beside road x=18 (not on it)
