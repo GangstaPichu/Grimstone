@@ -2307,9 +2307,10 @@ function renderMap(){
   if(gameMode==='coop') {
     drawPlayer(p2Real.x, p2Real.y, true);
   }
-  // Online remote players (up to 3)
+  // Online remote players (up to 3) — only draw players on the same map
   if(isOnline()) {
     for(const rp of remotePlayers.values()) {
+      if(rp.zone !== zoneIndex || rp.interior !== interiorStack.length) continue;
       const col = REMOTE_COLORS[rp.colorIdx] || REMOTE_COLORS[0];
       drawPlayer(rp.real.x, rp.real.y, false, {
         bodyColor: col.body, ringColor: col.ring,

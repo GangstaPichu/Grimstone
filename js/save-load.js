@@ -64,6 +64,7 @@ function buildSaveData() {
       gold: pl.gold,
       skills: JSON.parse(JSON.stringify(pl.skills)),
       inventory: JSON.parse(JSON.stringify(pl.inventory)),
+      equipment: JSON.parse(JSON.stringify(pl.equipment || {})),
       appearance: JSON.parse(JSON.stringify(pl.appearance || {})),
     })),
     playtime: (getSaveMeta(activeSaveSlot)?.playtime || 0) + sessionPlaytime,
@@ -123,6 +124,7 @@ function loadGame(slot) {
         gold: pd.gold,
         skills,
         inventory: JSON.parse(JSON.stringify(pd.inventory)),
+        equipment: JSON.parse(JSON.stringify(pd.equipment || {weapon:null,shield:null,head:null,body:null,legs:null,ammo:null})),
         appearance: JSON.parse(JSON.stringify(pd.appearance || {})),
       });
     });
@@ -141,6 +143,43 @@ function loadGame(slot) {
 function deleteSave(slot) {
   localStorage.removeItem(getSaveKey(slot));
   renderSaveSlots();
+}
+
+// Restore player state from a save slot WITHOUT launching the game.
+// Used for online play so the player can bring their existing character.
+// Returns true on success.
+function loadSaveForOnline(slot) {
+  try {
+    let data = getSaveMeta(slot);
+    if(!data) return false;
+    data = migrateSave(data);
+    activeSaveSlot = slot;
+    const DEFAULT_SKILLS = GAME_DEFAULT_SKILLS;
+    state.players.length = 0;
+    data.players.forEach(pd => {
+      const skills = JSON.parse(JSON.stringify(pd.skills));
+      Object.entries(DEFAULT_SKILLS).forEach(([k,v]) => {
+        if(!skills[k]) skills[k] = JSON.parse(JSON.stringify(v));
+      });
+      state.players.push({
+        name: pd.name,
+        hp: pd.hp,
+        maxHp: pd.maxHp,
+        gold: pd.gold,
+        skills,
+        inventory: JSON.parse(JSON.stringify(pd.inventory)),
+        equipment: JSON.parse(JSON.stringify(pd.equipment || {weapon:null,shield:null,head:null,body:null,legs:null,ammo:null})),
+        appearance: JSON.parse(JSON.stringify(pd.appearance || {})),
+      });
+    });
+    state.activePlayer = 0;
+    if(data.questFlags) Object.assign(questFlags, data.questFlags);
+    if(data.farmPlots)  state.farmPlots = JSON.parse(JSON.stringify(data.farmPlots));
+    return true;
+  } catch(e) {
+    console.warn('loadSaveForOnline failed:', e);
+    return false;
+  }
 }
 
 function flashSaveIndicator() {

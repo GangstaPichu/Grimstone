@@ -65,6 +65,8 @@ function _applyRemoteState(id, data) {
       moving:false, colorIdx:_nextColorIdx(),
     };
     remotePlayers.set(id, rp);
+    const joinName = data.name || 'Adventurer';
+    _chatSystemMsg(`${joinName} joined the session.`);
   }
   if(data.pos) {
     rp.moving = (rp.pos.x !== data.pos.x || rp.pos.y !== data.pos.y);
@@ -74,11 +76,13 @@ function _applyRemoteState(id, data) {
   if(data.hp    != null) rp.hp       = data.hp;
   if(data.maxHp != null) rp.maxHp    = data.maxHp;
   if(data.appearance)  rp.appearance = data.appearance;
+  if(data.zone     != null) rp.zone     = data.zone;
+  if(data.interior != null) rp.interior = data.interior;
 }
 
 function _removeRemotePlayer(id) {
   const rp = remotePlayers.get(id);
-  if(rp) { log(`${rp.name} left the session.`, 'info'); remotePlayers.delete(id); }
+  if(rp) { log(`${rp.name} left the session.`, 'info'); _chatSystemMsg(`${rp.name} left the session.`); remotePlayers.delete(id); }
   updateOnlineHUD();
   updateSessionPanel();
 }
@@ -128,6 +132,23 @@ function _onHostReceive(guestId, data) {
       if(id !== guestId && conn.open) conn.send(snapshot);
     }
     updateOnlineHUD();
+  } else if(data.type === 'bag_add') {
+    _applyBagAdd(data.bag);
+    // Relay to all other guests
+    for(const [id, conn] of coopGuestConns) {
+      if(id !== guestId && conn.open) conn.send(data);
+    }
+  } else if(data.type === 'bag_remove') {
+    _applyBagRemove(data.bagX, data.bagY);
+    for(const [id, conn] of coopGuestConns) {
+      if(id !== guestId && conn.open) conn.send(data);
+    }
+  } else if(data.type === 'chat') {
+    _appendChatMsg(data.name, data.text);
+    // Relay to all other guests
+    for(const [id, conn] of coopGuestConns) {
+      if(id !== guestId && conn.open) conn.send(data);
+    }
   } else if(data.type === 'leave') {
     _removeRemotePlayer(guestId);
     coopGuestConns.delete(guestId);
@@ -137,12 +158,49 @@ function _onHostReceive(guestId, data) {
 function _buildWorldSnapshot() {
   const p = state.players[0];
   const players = [
-    { id:'host', name:p.name, pos:{x:playerPos.x,y:playerPos.y}, hp:p.hp, maxHp:p.maxHp, appearance:p.appearance||{} },
+    { id:'host', name:p.name, pos:{x:playerPos.x,y:playerPos.y}, hp:p.hp, maxHp:p.maxHp,
+      appearance:p.appearance||{}, zone:zoneIndex, interior:interiorStack.length },
     ...[...remotePlayers.values()].map(rp => ({
       id:rp.id, name:rp.name, pos:rp.pos, hp:rp.hp, maxHp:rp.maxHp, appearance:rp.appearance,
+      zone:rp.zone, interior:rp.interior,
     })),
   ];
-  return { type:'world', players };
+  // Include current ground bags so joining guests get the full picture.
+  // gameTime/gameDay keep all players on the same day-night cycle so music themes stay in sync.
+  return { type:'world', players, bags: groundBags, gameTime, gameDay };
+}
+
+// ── BAG SYNC ──────────────────────────────────────────────────────────────────
+// Bags are synced via events (bag_add / bag_remove) rather than every-tick state.
+// The host is authoritative; guests send events up, host relays to other guests.
+// The world snapshot carries the full bag list for new joiners.
+
+function _applyBagAdd(bag) {
+  const existing = groundBags.find(b => b.x === bag.x && b.y === bag.y);
+  if(existing) {
+    for(const item of bag.items) {
+      const stack = existing.items.find(s => s.id === item.id);
+      if(stack) stack.qty += item.qty;
+      else existing.items.push({id:item.id, qty:item.qty});
+    }
+  } else {
+    groundBags.push({id: _groundBagId++, x: bag.x, y: bag.y, items: bag.items.map(i=>({...i}))});
+  }
+}
+
+function _applyBagRemove(bx, by) {
+  const idx = groundBags.findIndex(b => b.x === bx && b.y === by);
+  if(idx >= 0) groundBags.splice(idx, 1);
+}
+
+// Called from input.js after any bag change
+function broadcastBagEvent(msg) {
+  if(!coopRole) return;
+  if(coopRole === 'guest') {
+    if(coopHostConn && coopHostConn.open) coopHostConn.send(msg);
+  } else if(coopRole === 'host') {
+    for(const conn of coopGuestConns.values()) if(conn.open) conn.send(msg);
+  }
 }
 
 function _sendWorldToConn(conn) {
@@ -174,7 +232,21 @@ function joinSession(roomCode, onSuccess, onFail) {
         for(const pd of data.players) {
           if(pd.id !== myId) _applyRemoteState(pd.id, pd);
         }
+        // Sync bag list from host (authoritative)
+        if(data.bags) {
+          groundBags.length = 0;
+          for(const b of data.bags) _applyBagAdd(b);
+        }
+        // Sync day/night cycle from host so music themes stay identical
+        if(data.gameTime != null) gameTime = data.gameTime;
+        if(data.gameDay  != null) gameDay  = data.gameDay;
         updateOnlineHUD();
+      } else if(data.type === 'bag_add') {
+        _applyBagAdd(data.bag);
+      } else if(data.type === 'bag_remove') {
+        _applyBagRemove(data.bagX, data.bagY);
+      } else if(data.type === 'chat') {
+        _appendChatMsg(data.name, data.text);
       } else if(data.type === 'end') {
         log('The host ended the session.', 'info');
         endSession(true);
@@ -253,6 +325,7 @@ function updateSessionPanel() {
   const btnWrap = document.getElementById('session-btn-wrap');
   const btnLabel = document.getElementById('session-btn-label');
   if(btnWrap) btnWrap.style.display = 'flex';
+  _updateChatBtnVisibility();
   if(btnLabel) {
     if(coopRole === 'host')  btnLabel.textContent = `Host · ${remotePlayers.size} joined`;
     else if(coopRole === 'guest') btnLabel.textContent = 'Online';
@@ -370,8 +443,8 @@ function _resetLobbyUI() {
   document.getElementById('lobby-host-status').textContent = 'Create your character to generate a room code.';
   document.getElementById('lobby-host-status').className = 'lobby-status waiting';
   const btn = document.getElementById('lobby-start-btn');
-  btn.textContent = '⚔ Create Character & Host';
-  btn.onclick = () => goToCharCreate('online-host');
+  btn.textContent = '⚔ Choose Character & Host';
+  btn.onclick = () => _showOnlineCharSelect('host');
 }
 
 function closeOnlineLobby() {
@@ -441,8 +514,8 @@ function lobbyJoinRoom() {
   setJoinStatus('Connecting...','waiting');
   joinSession(code,
     () => {
-      setJoinStatus('✦ Connected! Creating character...','connected');
-      setTimeout(() => goToCharCreate('online-guest'), 600);
+      setJoinStatus('✦ Connected!','connected');
+      setTimeout(() => _showOnlineCharSelect('guest'), 400);
     },
     (err) => setJoinStatus(`Could not connect: ${err.type}`, 'error')
   );
@@ -560,3 +633,165 @@ function showOnlineBadge() {
   const bw = document.querySelector('.bar-wrap');
   if(bw) bw.appendChild(badge);
 }
+
+// ── ONLINE CHARACTER SELECT ───────────────────────────────────────────────────
+
+let _ocsRole = null; // 'host' or 'guest'
+
+function _showOnlineCharSelect(role) {
+  _ocsRole = role;
+  const overlay = document.getElementById('online-char-select');
+  const slotsEl = document.getElementById('online-char-select-slots');
+  if(!overlay || !slotsEl) { goToCharCreate(`online-${role}`); return; }
+
+  // Gather existing saves
+  const saves = [];
+  for(let i = 0; i < MAX_SAVES; i++) {
+    const meta = getSaveMeta(i);
+    if(meta) saves.push({ slot: i, meta });
+  }
+
+  slotsEl.innerHTML = '';
+  if(saves.length === 0) {
+    // No saves at all — skip the overlay, go straight to char create
+    goToCharCreate(`online-${role}`);
+    return;
+  }
+
+  // Build save rows
+  saves.forEach(({ slot, meta }) => {
+    const row = document.createElement('div');
+    row.className = 'ocs-save-row';
+    const cl = typeof getCombatLevel === 'function' ? getCombatLevel(meta.players[0].skills) : '?';
+    const zoneNames = ['Ashenveil','Ashwood Vale','Iron Peaks','Cursed Marshes','Obsidian Depths'];
+    const zone = zoneNames[meta.zoneIndex] || 'Ashenveil';
+    const pt = typeof formatPlaytime === 'function' ? formatPlaytime(meta.playtime || 0) : '';
+    row.innerHTML = `
+      <div class="ocs-save-num">${slot + 1}</div>
+      <div class="ocs-save-info">
+        <div class="ocs-save-name">${meta.name}</div>
+        <div class="ocs-save-meta">Lvl ${cl} · ${zone}${pt ? ' · ' + pt : ''}</div>
+      </div>`;
+    row.onclick = () => _ocsLoadSave(slot);
+    slotsEl.appendChild(row);
+  });
+
+  overlay.classList.add('open');
+}
+
+function _ocsLoadSave(slot) {
+  const overlay = document.getElementById('online-char-select');
+  if(overlay) overlay.classList.remove('open');
+  if(!loadSaveForOnline(slot)) {
+    // Fallback to char create if load fails
+    goToCharCreate(`online-${_ocsRole}`);
+    return;
+  }
+  if(_ocsRole === 'host') afterHostCharCreate();
+  else afterGuestCharCreate();
+}
+
+function _ocsPickNew() {
+  const overlay = document.getElementById('online-char-select');
+  if(overlay) overlay.classList.remove('open');
+  goToCharCreate(`online-${_ocsRole}`);
+}
+
+function _ocsCancel() {
+  const overlay = document.getElementById('online-char-select');
+  if(overlay) overlay.classList.remove('open');
+  // If we're a guest who connected, end that session and return to lobby
+  if(_ocsRole === 'guest' && coopRole === 'guest') endSession(true);
+  // Return to appropriate screen
+  document.getElementById('online-lobby').style.display = 'flex';
+}
+
+// ── CHAT ─────────────────────────────────────────────────────────────────────
+
+let _chatUnread = 0;
+let _chatOpen   = false;
+
+function broadcastChat(text) {
+  if(!coopRole || !text.trim()) return;
+  const name = state.players[0].name || 'Adventurer';
+  const msg = { type:'chat', name, text: text.trim() };
+  _appendChatMsg(name, text.trim()); // show locally immediately
+  if(coopRole === 'guest') {
+    if(coopHostConn && coopHostConn.open) coopHostConn.send(msg);
+  } else if(coopRole === 'host') {
+    for(const conn of coopGuestConns.values()) if(conn.open) conn.send(msg);
+  }
+}
+
+function _appendChatMsg(name, text) {
+  const box = document.getElementById('chat-messages');
+  if(!box) return;
+  const row = document.createElement('div');
+  row.className = 'chat-msg';
+  row.innerHTML = `<span class="chat-name">${_escHtml(name)}</span>: ${_escHtml(text)}`;
+  box.appendChild(row);
+  // Keep a max of 100 messages
+  while(box.children.length > 100) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+
+  if(!_chatOpen) {
+    _chatUnread++;
+    const badge = document.getElementById('chat-badge');
+    if(badge) { badge.style.display = 'block'; badge.textContent = _chatUnread > 9 ? '9+' : _chatUnread; }
+  }
+}
+
+function _chatSystemMsg(text) {
+  const box = document.getElementById('chat-messages');
+  if(!box) return;
+  const row = document.createElement('div');
+  row.className = 'chat-msg chat-system';
+  row.textContent = text;
+  box.appendChild(row);
+  box.scrollTop = box.scrollHeight;
+}
+
+function _escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function toggleChatPanel() {
+  const panel = document.getElementById('chat-panel');
+  if(!panel) return;
+  _chatOpen = !_chatOpen;
+  panel.classList.toggle('open', _chatOpen);
+  if(_chatOpen) {
+    _chatUnread = 0;
+    const badge = document.getElementById('chat-badge');
+    if(badge) badge.style.display = 'none';
+    const inp = document.getElementById('chat-input');
+    if(inp) inp.focus();
+    const box = document.getElementById('chat-messages');
+    if(box) box.scrollTop = box.scrollHeight;
+  }
+}
+
+function sendChatMessage() {
+  const inp = document.getElementById('chat-input');
+  if(!inp || !inp.value.trim()) return;
+  broadcastChat(inp.value.trim());
+  inp.value = '';
+}
+
+function chatInsertEmoji(emoji) {
+  const inp = document.getElementById('chat-input');
+  if(!inp) return;
+  const pos = inp.selectionStart ?? inp.value.length;
+  inp.value = inp.value.slice(0, pos) + emoji + inp.value.slice(pos);
+  inp.selectionStart = inp.selectionEnd = pos + emoji.length;
+  inp.focus();
+}
+
+// Show/hide the chat button alongside the session button
+function _updateChatBtnVisibility() {
+  const wrap = document.getElementById('chat-btn-wrap');
+  if(wrap) wrap.style.display = isOnline() ? 'flex' : 'none';
+}
+// Patch endSession to also close chat and clear state
+const _origEndSession = endSession;
+// Note: endSession is already defined above; hook visibility updates into updateSessionPanel instead

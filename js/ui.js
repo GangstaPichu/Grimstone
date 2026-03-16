@@ -85,6 +85,17 @@ function initScaleSlider() {
     applyUIScale(s);
   });
 
+  function stepScale(delta) {
+    const next = Math.min(130, Math.max(60, parseInt(slider.value) + delta));
+    slider.value = next;
+    label.textContent = next + '%';
+    applyUIScale(next / 100);
+  }
+  const minusBtn = document.getElementById('ui-scale-minus');
+  const plusBtn  = document.getElementById('ui-scale-plus');
+  if(minusBtn) minusBtn.addEventListener('click', () => stepScale(-5));
+  if(plusBtn)  plusBtn.addEventListener('click',  () => stepScale(+5));
+
   // SFX volume slider
   const sfxSlider = document.getElementById('sfx-vol-slider');
   if(sfxSlider) {

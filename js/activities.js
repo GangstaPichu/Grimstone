@@ -714,6 +714,15 @@ function enemyStepToward(e, tx, ty) {
   }
 }
 
+// Returns true if (x, y) is within 5 Chebyshev tiles of any portal in the current map.
+// Used to keep Whisperwood enemies away from portal entrances.
+function _enemyInPortalZone(x, y) {
+  if(!currentMap || !currentMap.portalPositions) return false;
+  return currentMap.portalPositions.some(([px,py]) =>
+    Math.abs(x-px) <= 5 && Math.abs(y-py) <= 5
+  );
+}
+
 let lastEnemyTick = 0;
 function tickEnemies(now) {
   if(!currentMap || !enemies.length) return;
@@ -753,20 +762,35 @@ function tickEnemies(now) {
         // Pick new patrol target near home
         const angle = Math.random()*Math.PI*2;
         const r = 1 + Math.random()*e.def.patrolRadius;
-        e.patrolX = Math.round(e.homeX + Math.cos(angle)*r);
-        e.patrolY = Math.round(e.homeY + Math.sin(angle)*r);
+        let ptx = Math.round(e.homeX + Math.cos(angle)*r);
+        let pty = Math.round(e.homeY + Math.sin(angle)*r);
+        // If target lands in portal exclusion zone, flip to opposite side of home
+        if(_enemyInPortalZone(ptx, pty)) {
+          ptx = Math.round(e.homeX - Math.cos(angle)*r);
+          pty = Math.round(e.homeY - Math.sin(angle)*r);
+        }
+        e.patrolX = ptx;
+        e.patrolY = pty;
         e.patrolTimer = 2 + Math.random()*4;
       }
       e.moveTimer -= dt;
       if(e.moveTimer <= 0) {
         const dPat = dist(e.x,e.y,e.patrolX,e.patrolY);
-        if(dPat > 0.5) enemyStepToward(e, e.patrolX, e.patrolY);
+        // If enemy has drifted into the portal zone, step back toward home
+        if(_enemyInPortalZone(Math.round(e.x), Math.round(e.y))) {
+          enemyStepToward(e, e.homeX, e.homeY);
+        } else if(dPat > 0.5) {
+          enemyStepToward(e, e.patrolX, e.patrolY);
+        }
         e.moveTimer = 1/e.moveSpeed * (0.8+Math.random()*0.4);
       }
 
     } else if(e.state==='chase') {
-      // Drop chase if ignoring or too far
-      if(isIgnoring || dPlayer > e.def.aggroRange * 1.8) {
+      // Drop chase if: ignoring, too far, enemy entered portal zone, or player is in portal zone
+      // (portals act as safe zones — enemies won't follow the player through them)
+      const enemyInZone = _enemyInPortalZone(Math.round(e.x), Math.round(e.y));
+      const playerInZone = _enemyInPortalZone(Math.round(px), Math.round(py));
+      if(isIgnoring || dPlayer > e.def.aggroRange * 1.8 || enemyInZone || playerInZone) {
         e.state = 'patrol';
         e.patrolTimer = 1;
         continue;
@@ -784,8 +808,8 @@ function tickEnemies(now) {
       }
 
     } else if(e.state==='attack') {
-      // If player walks away, chase again
-      if(dPlayer > 2) { e.state='chase'; continue; }
+      // If player walks away or retreats to portal zone, drop back to chase
+      if(dPlayer > 2 || _enemyInPortalZone(Math.round(px), Math.round(py))) { e.state='chase'; continue; }
 
       e.attackTimer -= dt;
       if(e.attackTimer <= 0) {
@@ -1072,16 +1096,24 @@ function respawn(){
     document.getElementById('zone-name').textContent = ZONES[zoneIndex];
   }
 
-  // Spawn near the entry portal of that zone (left edge, near EXIT_RETURN)
+  // Spawn near the entry portal of that zone.
+  // Maps with a named entryX/entryY (e.g. Whisperwood — portal at top centre, not col 0)
+  // use that directly; regular world-map zones scan column 0 for EXIT_RETURN/FOREST_PORTAL.
   const tiles = currentMap.tiles;
-  const H2 = currentMap.H, W2 = currentMap.W;
-  let portalY = Math.floor(H2/2);
-  for(let y=0;y<H2;y++){
-    if(tiles[y][0]===T.EXIT_RETURN||tiles[y][0]===T.FOREST_PORTAL){
-      portalY=y; break;
+  const H2 = currentMap.H;
+  let spawnX = 2, spawnY;
+  if(currentMap.entryX != null && currentMap.entryY != null) {
+    spawnX = currentMap.entryX;
+    spawnY = currentMap.entryY;
+  } else {
+    spawnY = Math.floor(H2/2);
+    for(let y=0;y<H2;y++){
+      if(tiles[y][0]===T.EXIT_RETURN||tiles[y][0]===T.FOREST_PORTAL){
+        spawnY=y; break;
+      }
     }
   }
-  const spawn = findSafeSpawn(2, portalY);
+  const spawn = findSafeSpawn(spawnX, spawnY);
   playerPos = {x:spawn.x, y:spawn.y};
   playerReal = {x:spawn.x, y:spawn.y};
   camera.x = Math.max(0, spawn.x*TILE - canvas.width/2);
