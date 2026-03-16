@@ -479,9 +479,10 @@ function makeWizardTowerInterior() {
 }
 
 // ======= THE WHISPERWOOD =======
-// A dark, dense forest south of Ashenveil. Shadow Walkers lurk between the trees.
+// A dark, dense forest. Shadow Walkers lurk between the trees.
+// Enemies stay 5+ tiles from portals; spawn 7+ tiles from portals.
 function makeWhisperwoodMap() {
-  const W=60, H=44;
+  const W=80, H=60;
   const rng = makePRNG(worldSeed + 88881);
   const tiles = Array.from({length:H}, ()=>Array(W).fill(T.DARK_GRASS));
   const floor  = Array.from({length:H}, ()=>Array(W).fill(T.DARK_GRASS));
@@ -496,7 +497,6 @@ function makeWhisperwoodMap() {
     const n = treeNoise(x,y);
     if(n>0.45) tiles[y][x] = T.NORMAL_TREE;
     else if(n>0.30) tiles[y][x] = T.OAK;
-    // sparse dark grass clearings stay as base tile
   }
 
   // A few small water pools
@@ -505,80 +505,113 @@ function makeWhisperwoodMap() {
     if(waterNoise(x,y)>0.78 && tiles[y][x]!==T.WALL) tiles[y][x]=T.WATER;
   smoothTerrain(tiles,W,H,T.WATER,2);
 
-  // Winding dirt path from north entry (x=18) south, biased to arrive at southExitX
+  // Main winding dirt path from north entry (x=18) south
   const pathX = 18;
-  const southExitX = pathX; // keep south exit aligned with entry so path always reaches it
-  let cx=pathX;
+  const southExitX = pathX;
+  const mainPathXByRow = []; // tracks main-path x per row for branch origins
+  let cx = pathX;
   for(let y=1;y<H-1;y++) {
     const bias = cx < southExitX ? 1 : (cx > southExitX ? -1 : 0);
     cx = Math.max(4, Math.min(W-5, cx + Math.floor(rng()*3)-1 + (rng()<0.3?bias:0)));
     for(let dx=-1;dx<=1;dx++)
       if(tiles[y][cx+dx]!==T.WALL) tiles[y][cx+dx]=T.DIRT;
+    mainPathXByRow.push(cx);
   }
   // Guarantee last few rows connect straight to south exit
   for(let y=H-5;y<H-1;y++)
     if(tiles[y][southExitX]!==T.WALL) tiles[y][southExitX]=T.DIRT;
 
-  // Also carve a wider clearing around the north entry
+  // Wider clearing around north entry
   for(let dy=0;dy<5;dy++) for(let dx=-3;dx<=3;dx++) {
     const ny=1+dy, nx=pathX+dx;
     if(nx>0&&nx<W-1) tiles[ny][nx]=T.DARK_GRASS;
   }
 
-  // ── Ensure all clearings are reachable from the dirt path ──
-  // Flood-fill from path tiles to find all passable ground
-  {
-    const passable = t => t===T.DARK_GRASS||t===T.DIRT||t===T.GRAVE||
-                          t===T.CANDLE||t===T.WATER||t===T.SHADOW_WALKER;
-    const reached = Array.from({length:H}, ()=>Array(W).fill(false));
-    const q = [];
-    for(let y=1;y<H-1;y++) for(let x=1;x<W-1;x++)
-      if(tiles[y][x]===T.DIRT){ reached[y][x]=true; q.push([y,x]); }
-    let qi=0;
-    while(qi<q.length){
-      const [cy,cx]=q[qi++];
-      for(const [dy,dx] of [[-1,0],[1,0],[0,-1],[0,1]]){
-        const ny=cy+dy, nx=cx+dx;
-        if(ny<1||ny>H-2||nx<1||nx>W-2||reached[ny][nx]) continue;
-        if(passable(tiles[ny][nx])){ reached[ny][nx]=true; q.push([ny,nx]); }
+  // ── Branching side paths ──
+  // 3–4 branches split off the main path and end in small clearings
+  const branchCount = 3 + Math.floor(rng()*2);
+  const usedRows = [];
+  let branchesMade = 0;
+  for(let att=0; att<100 && branchesMade<branchCount; att++) {
+    const rowY = 10 + Math.floor(rng() * (H - 22)); // avoid portal ends
+    // Space branches at least 10 rows apart from each other
+    if(usedRows.some(r => Math.abs(r - rowY) < 10)) continue;
+    const originX = mainPathXByRow[rowY - 1] || pathX;
+    const dir = rng() < 0.5 ? 1 : -1;
+    const len = 9 + Math.floor(rng() * 9); // 9–17 tiles
+
+    let bx = originX, by = rowY;
+    let blocked = false;
+    for(let i=0; i<len; i++) {
+      bx = Math.max(3, Math.min(W-4, bx + dir));
+      if(rng() < 0.2) by = Math.max(3, Math.min(H-4, by + (rng()<0.5?1:-1)));
+      if(tiles[by][bx]===T.WALL) { blocked=true; break; }
+      tiles[by][bx] = T.DIRT;
+      // Occasionally widen path by 1 tile
+      if(rng() < 0.35) {
+        const wy = Math.max(1, Math.min(H-2, by + (rng()<0.5?1:-1)));
+        if(tiles[wy][bx]!==T.WALL) tiles[wy][bx]=T.DARK_GRASS;
       }
     }
-    // For every unreached passable tile, carve a path of cleared trees to nearest reached tile
-    // Repeat passes until everything is connected (handles chains)
-    for(let pass=0;pass<6;pass++){
-      for(let y=2;y<H-2;y++) for(let x=2;x<W-2;x++){
-        if(reached[y][x]||!passable(tiles[y][x])) continue;
-        // Find nearest reached tile via Manhattan scan
-        let bestD=9999, bry=-1, brx=-1;
-        for(let sy=1;sy<H-1;sy++) for(let sx=1;sx<W-1;sx++){
-          if(!reached[sy][sx]) continue;
-          const d=Math.abs(sy-y)+Math.abs(sx-x);
-          if(d<bestD){ bestD=d; bry=sy; brx=sx; }
-        }
-        if(bry===-1) continue;
-        // Carve horizontal then vertical
-        const stepX=x<brx?1:-1, stepY=y<bry?1:-1;
-        let cx=x;
-        while(cx!==brx){
-          if(tiles[y][cx]===T.NORMAL_TREE||tiles[y][cx]===T.OAK) tiles[y][cx]=T.DARK_GRASS;
-          if(!reached[y][cx]&&passable(tiles[y][cx])){ reached[y][cx]=true; q.push([y,cx]); }
-          cx+=stepX;
-        }
-        let cy=y;
-        while(cy!==bry){
-          if(tiles[cy][brx]===T.NORMAL_TREE||tiles[cy][brx]===T.OAK) tiles[cy][brx]=T.DARK_GRASS;
-          if(!reached[cy][brx]&&passable(tiles[cy][brx])){ reached[cy][brx]=true; q.push([cy,brx]); }
-          cy+=stepY;
-        }
-        // Re-flood after carving
-        let qi2=0;
-        while(qi2<q.length){
-          const [cy2,cx2]=q[qi2++];
-          for(const [dy,dx] of [[-1,0],[1,0],[0,-1],[0,1]]){
-            const ny=cy2+dy, nx=cx2+dx;
-            if(ny<1||ny>H-2||nx<1||nx>W-2||reached[ny][nx]) continue;
-            if(passable(tiles[ny][nx])){ reached[ny][nx]=true; q.push([ny,nx]); }
-          }
+    if(blocked) continue;
+
+    // Terminal clearing (4×4 open area)
+    for(let dy=-2; dy<=2; dy++) for(let dx=-2; dx<=2; dx++) {
+      const cy=by+dy, cc=bx+dx;
+      if(cy>0&&cy<H-1&&cc>0&&cc<W-1&&tiles[cy][cc]!==T.WALL)
+        tiles[cy][cc] = T.DARK_GRASS;
+    }
+    usedRows.push(rowY);
+    branchesMade++;
+  }
+
+  // ── Connectivity flood-fill: ensure all passable tiles are reachable ──
+  const passable = t => t===T.DARK_GRASS||t===T.DIRT||t===T.GRAVE||
+                        t===T.CANDLE||t===T.WATER||t===T.SHADOW_WALKER;
+  const reached = Array.from({length:H}, ()=>Array(W).fill(false));
+  const q = [];
+  for(let y=1;y<H-1;y++) for(let x=1;x<W-1;x++)
+    if(tiles[y][x]===T.DIRT){ reached[y][x]=true; q.push([y,x]); }
+  let qi=0;
+  while(qi<q.length){
+    const [cy2,cx2]=q[qi++];
+    for(const [dy,dx] of [[-1,0],[1,0],[0,-1],[0,1]]){
+      const ny=cy2+dy, nx=cx2+dx;
+      if(ny<1||ny>H-2||nx<1||nx>W-2||reached[ny][nx]) continue;
+      if(passable(tiles[ny][nx])){ reached[ny][nx]=true; q.push([ny,nx]); }
+    }
+  }
+  // For every isolated passable tile, carve a corridor to the nearest reached tile
+  for(let pass=0;pass<6;pass++){
+    for(let y=2;y<H-2;y++) for(let x=2;x<W-2;x++){
+      if(reached[y][x]||!passable(tiles[y][x])) continue;
+      let bestD=9999, bry=-1, brx=-1;
+      for(let sy=1;sy<H-1;sy++) for(let sx=1;sx<W-1;sx++){
+        if(!reached[sy][sx]) continue;
+        const d=Math.abs(sy-y)+Math.abs(sx-x);
+        if(d<bestD){ bestD=d; bry=sy; brx=sx; }
+      }
+      if(bry===-1) continue;
+      const stepX=x<brx?1:-1, stepY=y<bry?1:-1;
+      let carveX=x;
+      while(carveX!==brx){
+        if(tiles[y][carveX]===T.NORMAL_TREE||tiles[y][carveX]===T.OAK) tiles[y][carveX]=T.DARK_GRASS;
+        if(!reached[y][carveX]&&passable(tiles[y][carveX])){ reached[y][carveX]=true; q.push([y,carveX]); }
+        carveX+=stepX;
+      }
+      let carveY=y;
+      while(carveY!==bry){
+        if(tiles[carveY][brx]===T.NORMAL_TREE||tiles[carveY][brx]===T.OAK) tiles[carveY][brx]=T.DARK_GRASS;
+        if(!reached[carveY][brx]&&passable(tiles[carveY][brx])){ reached[carveY][brx]=true; q.push([carveY,brx]); }
+        carveY+=stepY;
+      }
+      let qi2=0;
+      while(qi2<q.length){
+        const [cy3,cx3]=q[qi2++];
+        for(const [dy,dx] of [[-1,0],[1,0],[0,-1],[0,1]]){
+          const ny=cy3+dy, nx=cx3+dx;
+          if(ny<1||ny>H-2||nx<1||nx>W-2||reached[ny][nx]) continue;
+          if(passable(tiles[ny][nx])){ reached[ny][nx]=true; q.push([ny,nx]); }
         }
       }
     }
@@ -587,53 +620,50 @@ function makeWhisperwoodMap() {
   // Snapshot floor
   for(let y=0;y<H;y++) for(let x=0;x<W;x++) floor[y][x]=tiles[y][x];
 
-  // North return portal (back to Ashenveil) at top of path
-  tiles[0][pathX] = T.DARK_GRASS; // break wall for portal tile
+  // Portal positions — stored on the map for enemy AI exclusion zones
+  const portalPositions = [[pathX, 0], [southExitX, H-1]];
+
+  // North return portal (back to Ashenveil)
+  tiles[0][pathX] = T.DARK_GRASS;
   placeDecor(tiles,floor,0,pathX,T.FOREST_PORTAL);
 
-  // South exit portal — leads to Stormcrag Reach
+  // South exit portal — leads onward
   tiles[H-1][southExitX]=T.DARK_GRASS;
   placeDecor(tiles,floor,H-1,southExitX,T.EXIT);
-  // Approach clearing
   for(let dy=1;dy<=5;dy++)
     if(tiles[H-1-dy][southExitX]!==T.WALL) tiles[H-1-dy][southExitX]=T.DIRT;
 
-  // Scatter some ancient graves and candles as atmosphere
-  const graveSites = [];
-  for(let att=0;att<30;att++) {
+  // Scatter ancient graves and candles
+  for(let att=0;att<50;att++) {
     const gx=3+Math.floor(rng()*(W-6)), gy=6+Math.floor(rng()*(H-12));
-    if(tiles[gy][gx]===T.DARK_GRASS) {
+    if(tiles[gy][gx]===T.DARK_GRASS && reached[gy][gx]) {
       placeDecor(tiles,floor,gy,gx,T.GRAVE);
       if(rng()<0.5 && tiles[gy][gx+1]===T.DARK_GRASS)
         placeDecor(tiles,floor,gy,gx+1,T.CANDLE);
-      graveSites.push({x:gx,y:gy});
     }
   }
 
-  // Place Shadow Walkers — clustered near trees
+  // Place Shadow Walkers
+  // Requirements: reachable tile, adjacent to tree, 7-tile Chebyshev exclusion from portals
   let swPlaced=0;
-  for(let att=0;att<400&&swPlaced<14;att++) {
+  for(let att=0;att<600&&swPlaced<18;att++) {
     const ex=3+Math.floor(rng()*(W-6));
     const ey=4+Math.floor(rng()*(H-8));
+    if(!reached[ey][ex]) continue;
     if(tiles[ey][ex]!==T.DARK_GRASS && tiles[ey][ex]!==T.DIRT) continue;
-    // Must be adjacent to a tree
     const dirs=[[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]];
     const nearTree=dirs.some(([dy,dx])=>{
       const t=tiles[ey+dy]?.[ex+dx];
       return t===T.NORMAL_TREE||t===T.OAK;
     });
-    // Keep away from portals
-    const nearPortal=[...Array(8)].some((_,i)=>{
-      const r=8, a=(i/8)*Math.PI*2;
-      const ny=Math.round(ey+Math.sin(a)*r), nx=Math.round(ex+Math.cos(a)*r);
-      const t=tiles[ny]?.[nx];
-      return t===T.FOREST_PORTAL||t===T.EXIT||t===T.EXIT_RETURN;
-    });
-    if(nearTree&&!nearPortal) { tiles[ey][ex]=T.SHADOW_WALKER; swPlaced++; }
+    const tooClose = portalPositions.some(([px,py]) =>
+      Math.abs(ex-px)<=7 && Math.abs(ey-py)<=7
+    );
+    if(nearTree && !tooClose) { tiles[ey][ex]=T.SHADOW_WALKER; swPlaced++; }
   }
 
   return {tiles, floor, W, H, name:'THE WHISPERWOOD',
-          entryX:pathX, entryY:2};
+          entryX:pathX, entryY:2, portalPositions};
 }
 
 // Shadow Walker special AI — stays near trees by day, roams freely at night
