@@ -79,6 +79,7 @@ canvas.addEventListener('mouseleave',()=>{
   document.getElementById('action-tooltip').classList.remove('show');
 });
 canvas.addEventListener('click',e=>{
+  hideCtxMenu();
   const r=canvas.getBoundingClientRect();
   const {x:tx,y:ty}=screenToTile((e.clientX-r.left)/uiScale, (e.clientY-r.top)/uiScale);
   if(!currentMap||tx<0||tx>=currentMap.W||ty<0||ty>=currentMap.H)return;
@@ -420,13 +421,15 @@ function animatePlayerStep(fromX,fromY,toX,toY,onDone){
 const ctxMenu=document.getElementById('ctx-menu');
 
 function showTileCtxMenu(e,tx,ty,t){
+  const actions=getTileActions(t);
+  // Don't show an empty panel for tiles with nothing to do
+  if(actions.length === 0) { hideCtxMenu(); return; }
   ctxMenu.innerHTML='';
   const title=document.createElement('div');
   title.className='ctx-title';
   title.textContent=getTileLabel(t, tx, ty)||'Tile Options';
   ctxMenu.appendChild(title);
 
-  const actions=getTileActions(t);
   actions.forEach(a=>{
     const d=document.createElement('div');
     d.className='ctx-item'+(a.danger?' danger':'');
@@ -601,8 +604,15 @@ function pickupBag(bagId) {
     if(qty > 0) { leftover.push({id:slot.id, qty}); log(`No room for ${qty}x ${name}.`, 'bad'); }
   }
 
-  if(leftover.length === 0) groundBags.splice(bIdx, 1);
-  else bag.items = leftover;
+  if(leftover.length === 0) {
+    groundBags.splice(bIdx, 1);
+    broadcastBagEvent({type:'bag_remove', bagX:bag.x, bagY:bag.y});
+  } else {
+    bag.items = leftover;
+    // Bag still exists but with fewer items — broadcast the updated state
+    broadcastBagEvent({type:'bag_remove', bagX:bag.x, bagY:bag.y});
+    broadcastBagEvent({type:'bag_add',    bag:{x:bag.x, y:bag.y, items:leftover}});
+  }
   buildInventory();
 }
 
@@ -664,8 +674,10 @@ function showInvCtxMenu(e, slotIdx){
       const stack = existing.items.find(s => s.id===dropped.id);
       if(stack) stack.qty += dropped.qty;
       else existing.items.push({id:dropped.id, qty:dropped.qty});
+      broadcastBagEvent({type:'bag_add', bag:{x:existing.x, y:existing.y, items:[{id:dropped.id, qty:dropped.qty}]}});
     } else {
       groundBags.push({id:_groundBagId++, x:playerPos.x, y:playerPos.y, items:[{id:dropped.id, qty:dropped.qty}]});
+      broadcastBagEvent({type:'bag_add', bag:{x:playerPos.x, y:playerPos.y, items:[{id:dropped.id, qty:dropped.qty}]}});
     }
     p.inventory[slotIdx]=null;
     buildInventory(); buildEquipPanel();

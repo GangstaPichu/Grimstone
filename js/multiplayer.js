@@ -130,6 +130,17 @@ function _onHostReceive(guestId, data) {
       if(id !== guestId && conn.open) conn.send(snapshot);
     }
     updateOnlineHUD();
+  } else if(data.type === 'bag_add') {
+    _applyBagAdd(data.bag);
+    // Relay to all other guests
+    for(const [id, conn] of coopGuestConns) {
+      if(id !== guestId && conn.open) conn.send(data);
+    }
+  } else if(data.type === 'bag_remove') {
+    _applyBagRemove(data.bagX, data.bagY);
+    for(const [id, conn] of coopGuestConns) {
+      if(id !== guestId && conn.open) conn.send(data);
+    }
   } else if(data.type === 'leave') {
     _removeRemotePlayer(guestId);
     coopGuestConns.delete(guestId);
@@ -146,7 +157,41 @@ function _buildWorldSnapshot() {
       zone:rp.zone, interior:rp.interior,
     })),
   ];
-  return { type:'world', players };
+  // Include current ground bags so joining guests get the full picture
+  return { type:'world', players, bags: groundBags };
+}
+
+// ── BAG SYNC ──────────────────────────────────────────────────────────────────
+// Bags are synced via events (bag_add / bag_remove) rather than every-tick state.
+// The host is authoritative; guests send events up, host relays to other guests.
+// The world snapshot carries the full bag list for new joiners.
+
+function _applyBagAdd(bag) {
+  const existing = groundBags.find(b => b.x === bag.x && b.y === bag.y);
+  if(existing) {
+    for(const item of bag.items) {
+      const stack = existing.items.find(s => s.id === item.id);
+      if(stack) stack.qty += item.qty;
+      else existing.items.push({id:item.id, qty:item.qty});
+    }
+  } else {
+    groundBags.push({id: _groundBagId++, x: bag.x, y: bag.y, items: bag.items.map(i=>({...i}))});
+  }
+}
+
+function _applyBagRemove(bx, by) {
+  const idx = groundBags.findIndex(b => b.x === bx && b.y === by);
+  if(idx >= 0) groundBags.splice(idx, 1);
+}
+
+// Called from input.js after any bag change
+function broadcastBagEvent(msg) {
+  if(!coopRole) return;
+  if(coopRole === 'guest') {
+    if(coopHostConn && coopHostConn.open) coopHostConn.send(msg);
+  } else if(coopRole === 'host') {
+    for(const conn of coopGuestConns.values()) if(conn.open) conn.send(msg);
+  }
 }
 
 function _sendWorldToConn(conn) {
@@ -178,7 +223,16 @@ function joinSession(roomCode, onSuccess, onFail) {
         for(const pd of data.players) {
           if(pd.id !== myId) _applyRemoteState(pd.id, pd);
         }
+        // Sync bag list from host (authoritative)
+        if(data.bags) {
+          groundBags.length = 0;
+          for(const b of data.bags) _applyBagAdd(b);
+        }
         updateOnlineHUD();
+      } else if(data.type === 'bag_add') {
+        _applyBagAdd(data.bag);
+      } else if(data.type === 'bag_remove') {
+        _applyBagRemove(data.bagX, data.bagY);
       } else if(data.type === 'end') {
         log('The host ended the session.', 'info');
         endSession(true);
