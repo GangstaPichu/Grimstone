@@ -410,18 +410,18 @@ function openWillaDialogue(npc) {
 
   opt('▸ I\'d like to use the bank.', () => {
     closeDialogue();
-    openBankPanel();
+    setTimeout(() => openBankPanel(), 0);
   });
   opt('▸ What services do you offer?', () => {
     say("Three services! The Vault stores your gold safely — no monsters can pickpocket it there! The Market lets you buy shares in local companies; prices shift over time, so keep an eye out. And Savings Bonds lock your gold for a set period and return it with guaranteed interest. Longer wait, better reward!");
     optionsEl.innerHTML = '';
-    opt('▸ Open the bank.', () => { closeDialogue(); openBankPanel(); });
+    opt('▸ Open the bank.', () => { closeDialogue(); setTimeout(() => openBankPanel(), 0); });
     opt('▸ Thanks, goodbye!', close);
   });
   opt('▸ Tell me about yourself.', () => {
     say("Born and raised right here in Ashenveil! Four years behind this counter and I love every minute of it — numbers, ledgers, the satisfying clink of counted coin. When a farmer's bond matures and they can finally afford new tools... honestly, that never gets old. A bit nerdy, I know, but here we are!");
     optionsEl.innerHTML = '';
-    opt('▸ Use the bank.', () => { closeDialogue(); openBankPanel(); });
+    opt('▸ Use the bank.', () => { closeDialogue(); setTimeout(() => openBankPanel(), 0); });
     opt('▸ Goodbye, Willa!', close);
   });
   opt('▸ Goodbye!', close);

@@ -424,7 +424,7 @@ function animatePlayerStep(fromX,fromY,toX,toY,onDone){
 const ctxMenu=document.getElementById('ctx-menu');
 
 function showTileCtxMenu(e,tx,ty,t){
-  const actions=getTileActions(t);
+  const actions=getTileActions(t, tx, ty);
   // Don't show an empty panel for tiles with nothing to do
   if(actions.length === 0) { hideCtxMenu(); return; }
   ctxMenu.innerHTML='';
@@ -449,7 +449,7 @@ function showTileCtxMenu(e,tx,ty,t){
   ctxMenu.classList.add('show');
 }
 
-function getTileActions(t){
+function getTileActions(t, x, y){
   if(t===T.COPPER)    return [{icon:'⛏',label:'Mine Copper',   action:(x,y)=>walkThenDo(x,y,()=>startMine(x,y,'copper_ore','Mining',10,1800))}];
   if(t===T.IRON)      return [{icon:'⛏',label:'Mine Iron',     action:(x,y)=>walkThenDo(x,y,()=>startMine(x,y,'iron_ore','Mining',35,2400))}];
   if(t===T.GOLD_ORE)  return [{icon:'⛏',label:'Mine Gold',     action:(x,y)=>walkThenDo(x,y,()=>startMine(x,y,'gold_ore','Mining',65,3200))}];
