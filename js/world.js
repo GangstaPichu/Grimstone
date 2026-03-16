@@ -447,6 +447,7 @@ const ITEMS = {
   onion_seed:  {name:'Onion Seeds',  icon:'🌱', type:'seed', cropItem:'onion',  cropTile:200, growTime:5*60*1000, desc:'Plant in tilled homestead soil. Grows into onions in ~5 minutes.'},
   // === Quest reward items ===
   ashen_seal:      {name:'Ashen Seal',      icon:'🔴', type:'quest',  desc:'A ritual seal from the Cultist Catacombs. Aldermast will want this.'},
+  caravan_manifest:{name:'Caravan Manifest',icon:'📋', type:'quest',  desc:'A shipping manifest from Oswin\'s missing caravan. Proof of what happened on the abandoned road.'},
   ring_of_warding: {name:'Ring of Warding', icon:'💍', type:'equip',  slot:'shield', attackBonus:0, strBonus:0, defBonus:6,  desc:'A silver ring etched with warding runes. Reduces damage taken.'},
   void_shard:      {name:'Void Shard',      icon:'🔷', type:'quest',  desc:'A fragment of crystallised void-energy. Cold to the touch. One of four.'},
   amulet_of_stars: {name:'Amulet of Stars', icon:'⭐', type:'equip',  slot:'ammo',   attackBonus:5, strBonus:3, defBonus:3,  desc:'An amulet Aldermast forged from four Void Shards. Hums faintly.'},
@@ -563,6 +564,8 @@ const T = {
   HOME_ONION:   200,
   // Farm processing
   BUTTER_CHURN: 201,
+  // Caravan zone portal (farm west wall)
+  CARAVAN_PORTAL: 202,
 };
 
 // Set of tile IDs that are decorations drawn over a floor layer
@@ -588,6 +591,8 @@ const DECOR_TILES = new Set([
   T.HOME_WHEAT, T.HOME_TURNIP, T.HOME_CARROT, T.HOME_POTATO, T.HOME_ONION,
   // Farm processing
   T.BUTTER_CHURN,
+  // Caravan portal — walkable (step-on trigger)
+  T.CARAVAN_PORTAL,
 ]);
 
 // Place a decoration tile and record the floor underneath in the floor layer

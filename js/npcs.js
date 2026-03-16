@@ -377,6 +377,59 @@ function getDynamicGreet(npc) {
 }
 
 
+function openWillaDialogue(npc) {
+  const panel     = document.getElementById('dialogue-panel');
+  const portrait  = document.getElementById('dialogue-portrait');
+  const nameEl    = document.getElementById('dialogue-npc-name');
+  const textEl    = document.getElementById('dialogue-text');
+  const optionsEl = document.getElementById('dialogue-options');
+
+  portrait.textContent       = 'W';
+  portrait.style.background  = '#0a1a14';
+  portrait.style.color       = '#60c890';
+  portrait.style.borderColor = '#60c890';
+  nameEl.textContent = 'WILLA — BANK TELLER';
+  optionsEl.innerHTML = '';
+
+  function say(text) { textEl.textContent = text; }
+  function opt(label, fn) {
+    const b = document.createElement('div');
+    b.className = 'dlg-option';
+    b.textContent = label;
+    b.onclick = fn;
+    optionsEl.appendChild(b);
+  }
+  function close() { document.getElementById('dialogue-close').click(); }
+
+  const greetings = [
+    "Welcome to Grimstone Savings Bank! Your gold is safer here than buried in a field — and far more profitable, too. How can I help you today?",
+    "Oh, hello! Lovely to see a face. We offer vault storage, stock shares, and savings bonds. Something for every adventurer!",
+    "Good day! Whether you're saving up for better gear or investing in Ashenveil's finest companies, you've come to the right place. What can I do for you?",
+  ];
+  say(greetings[Math.floor(Math.random() * greetings.length)]);
+
+  opt('▸ I\'d like to use the bank.', () => {
+    closeDialogue();
+    openBankPanel();
+  });
+  opt('▸ What services do you offer?', () => {
+    say("Three services! The Vault stores your gold safely — no monsters can pickpocket it there! The Market lets you buy shares in local companies; prices shift over time, so keep an eye out. And Savings Bonds lock your gold for a set period and return it with guaranteed interest. Longer wait, better reward!");
+    optionsEl.innerHTML = '';
+    opt('▸ Open the bank.', () => { closeDialogue(); openBankPanel(); });
+    opt('▸ Thanks, goodbye!', close);
+  });
+  opt('▸ Tell me about yourself.', () => {
+    say("Born and raised right here in Ashenveil! Four years behind this counter and I love every minute of it — numbers, ledgers, the satisfying clink of counted coin. When a farmer's bond matures and they can finally afford new tools... honestly, that never gets old. A bit nerdy, I know, but here we are!");
+    optionsEl.innerHTML = '';
+    opt('▸ Use the bank.', () => { closeDialogue(); openBankPanel(); });
+    opt('▸ Goodbye, Willa!', close);
+  });
+  opt('▸ Goodbye!', close);
+
+  panel.classList.add('show');
+  document.getElementById('dialogue-close').onclick = closeDialogue;
+}
+
 function openBertramDialogue(npc) {
   const qf = questFlags;
   const panel     = document.getElementById('dialogue-panel');
@@ -468,8 +521,7 @@ function openDialogue(npc) {
   }
   // Willa — bank teller
   if(npc.npcName === 'Willa') {
-    closeDialogue();
-    openBankPanel();
+    openWillaDialogue(npc);
     return;
   }
   dialogueNpc = npc;

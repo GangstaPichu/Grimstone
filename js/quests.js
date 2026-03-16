@@ -58,7 +58,7 @@ const QUESTS = [
     desc: 'Oswin has been waiting three days for a caravan from the west that never arrived. Something may have happened on the road.',
     detail: 'Oswin\'s caravan was due three days ago from the western pass. The road through the Ashwood Vale has been dangerous lately. Someone should investigate — or at least bring back word of what happened.',
     reward: '25 gold',
-    rewardFn: null, // placeholder
+    rewardFn: (p) => { bankAddCoins(p, 25); },
     isVisible: (qf) => true,
     isComplete: (qf) => qf.missing_caravan_done || false,
   },
@@ -177,9 +177,11 @@ function spawnNpcsFromMap() {
     // Apply named NPC override if this position has one
     const isFarm  = currentMap && currentMap.name === 'GREENFIELD PASTURES';
     const isForge = currentMap && currentMap.name === 'THE ASHEN FORGE';
+    const isBank  = currentMap && currentMap.name === 'GRIMSTONE SAVINGS BANK';
     const prefix  = currentMap.isInterior && currentMap.name && currentMap.name.includes('FLAGON') ? 'inn:'
                   : isForge ? 'forge:'
-                  : isFarm  ? 'farm:' : '';
+                  : isFarm  ? 'farm:'
+                  : isBank  ? 'bank:' : '';
     const key = `${prefix}${y},${x}`;
     const named = NAMED_NPCS[key];
     if(named) {
