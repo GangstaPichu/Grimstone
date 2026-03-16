@@ -65,6 +65,8 @@ function _applyRemoteState(id, data) {
       moving:false, colorIdx:_nextColorIdx(),
     };
     remotePlayers.set(id, rp);
+    const joinName = data.name || 'Adventurer';
+    _chatSystemMsg(`${joinName} joined the session.`);
   }
   if(data.pos) {
     rp.moving = (rp.pos.x !== data.pos.x || rp.pos.y !== data.pos.y);
@@ -80,7 +82,7 @@ function _applyRemoteState(id, data) {
 
 function _removeRemotePlayer(id) {
   const rp = remotePlayers.get(id);
-  if(rp) { log(`${rp.name} left the session.`, 'info'); remotePlayers.delete(id); }
+  if(rp) { log(`${rp.name} left the session.`, 'info'); _chatSystemMsg(`${rp.name} left the session.`); remotePlayers.delete(id); }
   updateOnlineHUD();
   updateSessionPanel();
 }
@@ -141,6 +143,12 @@ function _onHostReceive(guestId, data) {
     for(const [id, conn] of coopGuestConns) {
       if(id !== guestId && conn.open) conn.send(data);
     }
+  } else if(data.type === 'chat') {
+    _appendChatMsg(data.name, data.text);
+    // Relay to all other guests
+    for(const [id, conn] of coopGuestConns) {
+      if(id !== guestId && conn.open) conn.send(data);
+    }
   } else if(data.type === 'leave') {
     _removeRemotePlayer(guestId);
     coopGuestConns.delete(guestId);
@@ -157,8 +165,9 @@ function _buildWorldSnapshot() {
       zone:rp.zone, interior:rp.interior,
     })),
   ];
-  // Include current ground bags so joining guests get the full picture
-  return { type:'world', players, bags: groundBags };
+  // Include current ground bags so joining guests get the full picture.
+  // gameTime/gameDay keep all players on the same day-night cycle so music themes stay in sync.
+  return { type:'world', players, bags: groundBags, gameTime, gameDay };
 }
 
 // ── BAG SYNC ──────────────────────────────────────────────────────────────────
@@ -228,11 +237,16 @@ function joinSession(roomCode, onSuccess, onFail) {
           groundBags.length = 0;
           for(const b of data.bags) _applyBagAdd(b);
         }
+        // Sync day/night cycle from host so music themes stay identical
+        if(data.gameTime != null) gameTime = data.gameTime;
+        if(data.gameDay  != null) gameDay  = data.gameDay;
         updateOnlineHUD();
       } else if(data.type === 'bag_add') {
         _applyBagAdd(data.bag);
       } else if(data.type === 'bag_remove') {
         _applyBagRemove(data.bagX, data.bagY);
+      } else if(data.type === 'chat') {
+        _appendChatMsg(data.name, data.text);
       } else if(data.type === 'end') {
         log('The host ended the session.', 'info');
         endSession(true);
@@ -311,6 +325,7 @@ function updateSessionPanel() {
   const btnWrap = document.getElementById('session-btn-wrap');
   const btnLabel = document.getElementById('session-btn-label');
   if(btnWrap) btnWrap.style.display = 'flex';
+  _updateChatBtnVisibility();
   if(btnLabel) {
     if(coopRole === 'host')  btnLabel.textContent = `Host · ${remotePlayers.size} joined`;
     else if(coopRole === 'guest') btnLabel.textContent = 'Online';
@@ -618,3 +633,93 @@ function showOnlineBadge() {
   const bw = document.querySelector('.bar-wrap');
   if(bw) bw.appendChild(badge);
 }
+
+// ── CHAT ─────────────────────────────────────────────────────────────────────
+
+let _chatUnread = 0;
+let _chatOpen   = false;
+
+function broadcastChat(text) {
+  if(!coopRole || !text.trim()) return;
+  const name = state.players[0].name || 'Adventurer';
+  const msg = { type:'chat', name, text: text.trim() };
+  _appendChatMsg(name, text.trim()); // show locally immediately
+  if(coopRole === 'guest') {
+    if(coopHostConn && coopHostConn.open) coopHostConn.send(msg);
+  } else if(coopRole === 'host') {
+    for(const conn of coopGuestConns.values()) if(conn.open) conn.send(msg);
+  }
+}
+
+function _appendChatMsg(name, text) {
+  const box = document.getElementById('chat-messages');
+  if(!box) return;
+  const row = document.createElement('div');
+  row.className = 'chat-msg';
+  row.innerHTML = `<span class="chat-name">${_escHtml(name)}</span>: ${_escHtml(text)}`;
+  box.appendChild(row);
+  // Keep a max of 100 messages
+  while(box.children.length > 100) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+
+  if(!_chatOpen) {
+    _chatUnread++;
+    const badge = document.getElementById('chat-badge');
+    if(badge) { badge.style.display = 'block'; badge.textContent = _chatUnread > 9 ? '9+' : _chatUnread; }
+  }
+}
+
+function _chatSystemMsg(text) {
+  const box = document.getElementById('chat-messages');
+  if(!box) return;
+  const row = document.createElement('div');
+  row.className = 'chat-msg chat-system';
+  row.textContent = text;
+  box.appendChild(row);
+  box.scrollTop = box.scrollHeight;
+}
+
+function _escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function toggleChatPanel() {
+  const panel = document.getElementById('chat-panel');
+  if(!panel) return;
+  _chatOpen = !_chatOpen;
+  panel.classList.toggle('open', _chatOpen);
+  if(_chatOpen) {
+    _chatUnread = 0;
+    const badge = document.getElementById('chat-badge');
+    if(badge) badge.style.display = 'none';
+    const inp = document.getElementById('chat-input');
+    if(inp) inp.focus();
+    const box = document.getElementById('chat-messages');
+    if(box) box.scrollTop = box.scrollHeight;
+  }
+}
+
+function sendChatMessage() {
+  const inp = document.getElementById('chat-input');
+  if(!inp || !inp.value.trim()) return;
+  broadcastChat(inp.value.trim());
+  inp.value = '';
+}
+
+function chatInsertEmoji(emoji) {
+  const inp = document.getElementById('chat-input');
+  if(!inp) return;
+  const pos = inp.selectionStart ?? inp.value.length;
+  inp.value = inp.value.slice(0, pos) + emoji + inp.value.slice(pos);
+  inp.selectionStart = inp.selectionEnd = pos + emoji.length;
+  inp.focus();
+}
+
+// Show/hide the chat button alongside the session button
+function _updateChatBtnVisibility() {
+  const wrap = document.getElementById('chat-btn-wrap');
+  if(wrap) wrap.style.display = isOnline() ? 'flex' : 'none';
+}
+// Patch endSession to also close chat and clear state
+const _origEndSession = endSession;
+// Note: endSession is already defined above; hook visibility updates into updateSessionPanel instead

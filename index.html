@@ -271,6 +271,13 @@
         🌐 <span id="session-btn-label">Co-Op</span>
       </button>
     </div>
+    <!-- Chat toggle button (online only) -->
+    <div id="chat-btn-wrap" style="display:none;align-items:center;padding:0 4px;">
+      <button class="action-btn" id="chat-toggle-btn" onclick="toggleChatPanel()"
+              style="font-size:10px;padding:3px 9px;font-family:'Cinzel',serif;letter-spacing:0.5px;position:relative;">
+        💬 Chat<span id="chat-badge" style="display:none;position:absolute;top:-4px;right:-4px;background:var(--red-bright);color:#fff;font-size:8px;font-family:sans-serif;border-radius:50%;width:14px;height:14px;line-height:14px;text-align:center;"></span>
+      </button>
+    </div>
     <div class="topbar-sep"></div>
     <div id="ui-scale-control" style="display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0;">
       <span style="font-family:'Cinzel',serif;font-size:9px;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase;">Scale</span>
@@ -358,6 +365,34 @@
 
 <!-- CONTEXT MENU -->
 <div id="ctx-menu"></div>
+
+<!-- CHAT PANEL -->
+<div id="chat-panel">
+  <div id="chat-header">
+    <span style="font-family:'Cinzel',serif;font-size:11px;letter-spacing:1px;color:var(--gold-bright);">💬 CHAT</span>
+    <button onclick="toggleChatPanel()" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;line-height:1;padding:0 2px;">✕</button>
+  </div>
+  <div id="chat-messages"></div>
+  <div id="chat-emoji-bar">
+    <span class="chat-emoji" onclick="chatInsertEmoji('⚔️')">⚔️</span>
+    <span class="chat-emoji" onclick="chatInsertEmoji('🛡️')">🛡️</span>
+    <span class="chat-emoji" onclick="chatInsertEmoji('🔥')">🔥</span>
+    <span class="chat-emoji" onclick="chatInsertEmoji('💀')">💀</span>
+    <span class="chat-emoji" onclick="chatInsertEmoji('🐉')">🐉</span>
+    <span class="chat-emoji" onclick="chatInsertEmoji('💎')">💎</span>
+    <span class="chat-emoji" onclick="chatInsertEmoji('🍺')">🍺</span>
+    <span class="chat-emoji" onclick="chatInsertEmoji('🌙')">🌙</span>
+    <span class="chat-emoji" onclick="chatInsertEmoji('👍')">👍</span>
+    <span class="chat-emoji" onclick="chatInsertEmoji('😄')">😄</span>
+    <span class="chat-emoji" onclick="chatInsertEmoji('😮')">😮</span>
+    <span class="chat-emoji" onclick="chatInsertEmoji('😢')">😢</span>
+  </div>
+  <div id="chat-input-row">
+    <input id="chat-input" type="text" maxlength="200" placeholder="Say something..."
+           onkeydown="if(event.key==='Enter')sendChatMessage()">
+    <button onclick="sendChatMessage()" id="chat-send-btn">➤</button>
+  </div>
+</div>
 
 <!-- TURN-BASED COMBAT PANEL -->
 <div id="combat-panel">

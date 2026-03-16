@@ -1274,6 +1274,10 @@ const Music = (() => {
   function crossfadeTo(theme) {
     if(!isReady || theme===currentTheme) return;
     currentTheme = theme;
+    // Cancel any in-flight BPM automation before starting the new ramp to prevent
+    // stacked ramps causing wrong playback speed for guests who trigger zone/time
+    // changes out of phase with the host.
+    try { Tone.Transport.bpm.cancelScheduledValues(Tone.now()); } catch(_){}
     Tone.Transport.bpm.rampTo(THEMES[theme].bpm, 2.5);
   }
 
