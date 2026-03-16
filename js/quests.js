@@ -377,8 +377,33 @@ function drawNpcs() {
     const cx=px+TILE/2, cy=py+TILE/2;
     ctx2.save();
     if(n.isMystery) {
-      // Hooded figure — dark cloaked silhouette with eerie flicker
       const flicker = 0.7 + 0.15 * Math.sin(Date.now() * 0.003);
+      if(n.isMarket) {
+        // Hooded Trader — cloaked with amber/gold trim and coin glint
+        const tradeFlicker = 0.75 + 0.12 * Math.sin(Date.now() * 0.004);
+        // Cloak body
+        ctx2.fillStyle=`rgba(18,10,5,${tradeFlicker})`;
+        ctx2.beginPath(); ctx2.arc(cx,cy,TILE*.32,0,Math.PI*2); ctx2.fill();
+        ctx2.strokeStyle=`rgba(180,130,30,${tradeFlicker})`; ctx2.lineWidth=1.8; ctx2.stroke();
+        // Hood
+        ctx2.fillStyle=`rgba(10,5,0,0.8)`;
+        ctx2.beginPath(); ctx2.arc(cx,cy-3,TILE*.18,0,Math.PI*2); ctx2.fill();
+        // Amber eyes (less menacing than red)
+        const eyeGlow = 0.55 + 0.25*Math.sin(Date.now()*0.006);
+        ctx2.fillStyle=`rgba(200,140,20,${eyeGlow})`;
+        ctx2.beginPath(); ctx2.arc(cx-4,cy-2,2,0,Math.PI*2); ctx2.fill();
+        ctx2.beginPath(); ctx2.arc(cx+4,cy-2,2,0,Math.PI*2); ctx2.fill();
+        // Gold coin glint accent
+        const glint = 0.4 + 0.4*Math.abs(Math.sin(Date.now()*0.002));
+        ctx2.fillStyle=`rgba(220,170,40,${glint})`;
+        ctx2.beginPath(); ctx2.arc(cx+8,cy+6,2.5,0,Math.PI*2); ctx2.fill();
+        // Letter H
+        ctx2.fillStyle=`rgba(200,150,40,${tradeFlicker})`;
+        ctx2.font='bold 10px Cinzel,serif';
+        ctx2.textAlign='center'; ctx2.textBaseline='middle';
+        ctx2.fillText('H',cx,cy+4);
+      } else {
+      // Hooded figure — dark cloaked silhouette with eerie flicker
       // Shroud / cloak
       ctx2.fillStyle=`rgba(15,8,8,${flicker})`;
       ctx2.beginPath(); ctx2.arc(cx,cy,TILE*.32,0,Math.PI*2); ctx2.fill();
@@ -396,6 +421,7 @@ function drawNpcs() {
       ctx2.font='bold 10px Cinzel,serif';
       ctx2.textAlign='center'; ctx2.textBaseline='middle';
       ctx2.fillText('?',cx,cy+4);
+      }
     } else if(n.def.isAnimal) {
       // ── Animal pixel-art rendering ──────────────────────────────
       const bob = Math.sin(Date.now() * 0.002 + n.x * 1.3) * 1.2;

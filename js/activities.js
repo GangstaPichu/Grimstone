@@ -93,21 +93,66 @@ function startChop(x,y,logId,skill,xpAmt,duration){
 
 // ======= FISHING SYSTEM =======
 // Fish table: {id, name, icon, minLvl, tackle, zones, xp, healHp, rarity, weight}
+// timeOfDay: 'any'|'day'|'night'  (default 'any')
+// weather: array of Weather type constants, or omit for all weather
+// W_CLEAR=0, W_RAIN=1, W_HEAVY_RAIN=2, W_FOG=3, W_SNOW=4, W_SNOWSTORM=5
 const FISH_TABLE = [
-  {id:'raw_shrimp',    name:'Shrimp',        icon:'🦐', minLvl:1,  tackle:['bait'],            zones:[0,1,2,3], xp:10,  healHp:3,  rarity:1.0,  weight:0.2},
-  {id:'raw_trout',     name:'Trout',         icon:'🐟', minLvl:5,  tackle:['bait','fly'],       zones:[0,1,2,3], xp:50,  healHp:7,  rarity:0.75, weight:0.4},
-  {id:'raw_salmon',    name:'Salmon',        icon:'🐠', minLvl:10, tackle:['fly'],              zones:[0,1,2,3], xp:70,  healHp:9,  rarity:0.65, weight:0.5},
-  {id:'raw_pike',      name:'Pike',          icon:'🐡', minLvl:15, tackle:['bait','fly'],       zones:[1,2,3],   xp:90,  healHp:11, rarity:0.55, weight:0.6},
-  {id:'raw_tuna',      name:'Tuna',          icon:'🐟', minLvl:20, tackle:['harpoon'],          zones:[2,3],     xp:115, healHp:14, rarity:0.45, weight:0.8},
-  {id:'raw_swordfish', name:'Swordfish',     icon:'🐟', minLvl:35, tackle:['harpoon'],          zones:[2,3],     xp:155, healHp:18, rarity:0.30, weight:1.0},
-  {id:'raw_shark',     name:'Shark',         icon:'🦈', minLvl:50, tackle:['harpoon'],          zones:[3],       xp:220, healHp:25, rarity:0.15, weight:1.5},
-  {id:'raw_leviathan', name:'Leviathan Eel', icon:'🐍', minLvl:60, tackle:['harpoon'],          zones:[3],       xp:300, healHp:30, rarity:0.08, weight:2.0},
+  // ── Standard fish (any time, any weather) ──────────────────────────
+  {id:'raw_shrimp',       name:'Shrimp',          icon:'🦐', minLvl:1,  tackle:['bait'],           zones:[0,1,2,3], xp:10,  healHp:3,  rarity:1.0,  weight:0.2},
+  {id:'raw_trout',        name:'Trout',            icon:'🐟', minLvl:5,  tackle:['bait','fly'],      zones:[0,1,2,3], xp:50,  healHp:7,  rarity:0.75, weight:0.4},
+  {id:'raw_salmon',       name:'Salmon',           icon:'🐠', minLvl:10, tackle:['fly'],             zones:[0,1,2,3], xp:70,  healHp:9,  rarity:0.65, weight:0.5},
+  {id:'raw_pike',         name:'Pike',             icon:'🐡', minLvl:15, tackle:['bait','fly'],      zones:[1,2,3],   xp:90,  healHp:11, rarity:0.55, weight:0.6},
+  {id:'raw_tuna',         name:'Tuna',             icon:'🐟', minLvl:20, tackle:['harpoon'],         zones:[2,3],     xp:115, healHp:14, rarity:0.45, weight:0.8},
+  {id:'raw_swordfish',    name:'Swordfish',        icon:'🐟', minLvl:35, tackle:['harpoon'],         zones:[2,3],     xp:155, healHp:18, rarity:0.30, weight:1.0},
+  {id:'raw_shark',        name:'Shark',            icon:'🦈', minLvl:50, tackle:['harpoon'],         zones:[3],       xp:220, healHp:25, rarity:0.15, weight:1.5},
+  {id:'raw_leviathan',    name:'Leviathan Eel',    icon:'🐍', minLvl:60, tackle:['harpoon'],         zones:[3],       xp:300, healHp:30, rarity:0.08, weight:2.0},
+
+  // ── Day-only fish (clear / light conditions) ───────────────────────
+  {id:'raw_sunscale',     name:'Sunscale Bream',   icon:'🐟', minLvl:5,  tackle:['bait','fly'],      zones:[0,1,2],   xp:45,  healHp:7,  rarity:0.70, weight:0.3,
+   timeOfDay:'day', weather:[0]}, // clear only
+  {id:'raw_gilded_carp',  name:'Gilded Carp',      icon:'🐡', minLvl:22, tackle:['fly'],             zones:[0,1,2,3], xp:100, healHp:12, rarity:0.40, weight:0.55,
+   timeOfDay:'day', weather:[0,1]}, // clear or light rain
+
+  // ── Night-only fish ────────────────────────────────────────────────
+  {id:'raw_moonshadow',   name:'Moonshadow Eel',   icon:'🐍', minLvl:25, tackle:['fly'],             zones:[1,2,3],   xp:130, healHp:14, rarity:0.35, weight:0.7,
+   timeOfDay:'night', weather:[0,3]}, // clear or foggy nights
+  {id:'raw_ghostfin',     name:'Ghostfin Carp',    icon:'🐟', minLvl:40, tackle:['bait'],            zones:[2,3],     xp:175, healHp:18, rarity:0.20, weight:1.0,
+   timeOfDay:'night', weather:[0,1,2]}, // any non-fog night
+  {id:'raw_shadowcrawler',name:'Shadowcrawler',     icon:'🦑', minLvl:55, tackle:['harpoon'],         zones:[3],       xp:260, healHp:28, rarity:0.10, weight:1.6,
+   timeOfDay:'night'}, // any night weather
+
+  // ── Rain fish (thrive in rain / heavy rain) ────────────────────────
+  {id:'raw_stormcatch',   name:'Stormcatch Bass',  icon:'🐟', minLvl:18, tackle:['bait','fly'],      zones:[0,1,2],   xp:95,  healHp:12, rarity:0.45, weight:0.6,
+   weather:[1,2]}, // rain or heavy rain
+  {id:'raw_raindrop_dace',name:'Raindrop Dace',    icon:'🐟', minLvl:8,  tackle:['bait'],            zones:[0,1,2,3], xp:60,  healHp:8,  rarity:0.65, weight:0.35,
+   weather:[1,2]}, // rain or heavy rain
+  {id:'raw_torrent_fin',  name:'Torrent Fin',      icon:'🐠', minLvl:45, tackle:['harpoon'],         zones:[2,3],     xp:195, healHp:22, rarity:0.18, weight:1.3,
+   weather:[2]}, // heavy rain only
+
+  // ── Fog fish (surface feeders in low visibility) ───────────────────
+  {id:'raw_mistwalker',   name:'Mistwalker Perch', icon:'🐡', minLvl:12, tackle:['fly'],             zones:[0,1,2],   xp:80,  healHp:10, rarity:0.50, weight:0.45,
+   weather:[3]}, // fog only
+  {id:'raw_phantom_crab', name:'Phantom Crab',     icon:'🦀', minLvl:30, tackle:['bait'],            zones:[1,2,3],   xp:145, healHp:16, rarity:0.28, weight:0.8,
+   weather:[3]}, // fog only
+  {id:'raw_veilfish',     name:'Veilfish',         icon:'🐟', minLvl:50, tackle:['harpoon','fly'],   zones:[3],       xp:240, healHp:27, rarity:0.12, weight:1.7,
+   timeOfDay:'night', weather:[3]}, // foggy night only — rarest overlap
 ];
 
 const COOKED = {
   raw_shrimp:'cooked_shrimp', raw_trout:'cooked_trout', raw_salmon:'cooked_salmon',
   raw_pike:'cooked_pike', raw_tuna:'cooked_tuna', raw_swordfish:'cooked_swordfish',
   raw_shark:'cooked_shark', raw_leviathan:'cooked_leviathan',
+  // Day fish
+  raw_sunscale:'cooked_sunscale', raw_gilded_carp:'cooked_gilded_carp',
+  // Night fish
+  raw_moonshadow:'cooked_moonshadow', raw_ghostfin:'cooked_ghostfin',
+  raw_shadowcrawler:'cooked_shadowcrawler',
+  // Rain fish
+  raw_stormcatch:'cooked_stormcatch', raw_raindrop_dace:'cooked_raindrop_dace',
+  raw_torrent_fin:'cooked_torrent_fin',
+  // Fog fish
+  raw_mistwalker:'cooked_mistwalker', raw_phantom_crab:'cooked_phantom_crab',
+  raw_veilfish:'cooked_veilfish',
 };
 
 // Extend ITEMS with fish
@@ -125,8 +170,34 @@ Object.assign(ITEMS, {
   cooked_tuna:     {name:'Cooked Tuna',         icon:'🍗', color:'#5a5a7a'},
   cooked_swordfish:{name:'Cooked Swordfish',    icon:'🍗', color:'#4a5a7a'},
   cooked_shark:    {name:'Cooked Shark',        icon:'🍗', color:'#5a6a7a'},
-  cooked_leviathan:{name:'Cooked Leviathan',    icon:'🍗', color:'#3a5a4a'},
-  bait:            {name:'Fishing Bait',        icon:'🪱', color:'#7a5a3a'},
+  cooked_leviathan:    {name:'Cooked Leviathan',      icon:'🍗', color:'#3a5a4a'},
+  // Day fish
+  raw_sunscale:        {name:'Raw Sunscale Bream',   icon:'🐟', color:'#d4a840'},
+  raw_gilded_carp:     {name:'Raw Gilded Carp',      icon:'🐡', color:'#c8901a'},
+  cooked_sunscale:     {name:'Cooked Sunscale Bream',icon:'🍗', color:'#b87a20'},
+  cooked_gilded_carp:  {name:'Cooked Gilded Carp',   icon:'🍗', color:'#a86a10'},
+  // Night fish
+  raw_moonshadow:      {name:'Raw Moonshadow Eel',   icon:'🐍', color:'#3a3a6a'},
+  raw_ghostfin:        {name:'Raw Ghostfin Carp',    icon:'🐟', color:'#7a8aaa'},
+  raw_shadowcrawler:   {name:'Raw Shadowcrawler',    icon:'🦑', color:'#1a1a2a'},
+  cooked_moonshadow:   {name:'Cooked Moonshadow Eel',icon:'🍗', color:'#4a4a7a'},
+  cooked_ghostfin:     {name:'Cooked Ghostfin Carp', icon:'🍗', color:'#8a9aba'},
+  cooked_shadowcrawler:{name:'Cooked Shadowcrawler', icon:'🍗', color:'#2a2a3a'},
+  // Rain fish
+  raw_stormcatch:      {name:'Raw Stormcatch Bass',  icon:'🐟', color:'#2a4a6a'},
+  raw_raindrop_dace:   {name:'Raw Raindrop Dace',    icon:'🐟', color:'#4a7a9a'},
+  raw_torrent_fin:     {name:'Raw Torrent Fin',      icon:'🐠', color:'#1a3a5a'},
+  cooked_stormcatch:   {name:'Cooked Stormcatch Bass',icon:'🍗', color:'#3a5a7a'},
+  cooked_raindrop_dace:{name:'Cooked Raindrop Dace', icon:'🍗', color:'#5a8aaa'},
+  cooked_torrent_fin:  {name:'Cooked Torrent Fin',   icon:'🍗', color:'#2a4a6a'},
+  // Fog fish
+  raw_mistwalker:      {name:'Raw Mistwalker Perch', icon:'🐡', color:'#8a9aa0'},
+  raw_phantom_crab:    {name:'Raw Phantom Crab',     icon:'🦀', color:'#7a6a8a'},
+  raw_veilfish:        {name:'Raw Veilfish',         icon:'🐟', color:'#5a5a7a'},
+  cooked_mistwalker:   {name:'Cooked Mistwalker Perch',icon:'🍗',color:'#9aaab0'},
+  cooked_phantom_crab: {name:'Cooked Phantom Crab',  icon:'🍗', color:'#8a7a9a'},
+  cooked_veilfish:     {name:'Cooked Veilfish',      icon:'🍗', color:'#6a6a8a'},
+  bait:                {name:'Fishing Bait',         icon:'🪱', color:'#7a5a3a'},
   fly_lure:        {name:'Fly Lure',            icon:'🪰', color:'#5a3a8a'},
   harpoon:         {name:'Harpoon',             icon:'🔱', color:'#6a8a9a'},
 });
@@ -365,15 +436,38 @@ function startFish(tx,ty,tackle){
   currentActivity='Fishing';
   const lvl=p.skills.Fishing.lvl;
 
-  // Pick a fish based on level, tackle, zone, rarity
-  const eligible=FISH_TABLE.filter(f=>
-    f.minLvl<=lvl && f.tackle.includes(tackle) && f.zones.includes(zoneIndex)
-  );
+  // Time of day classification
+  const t = gameTime;
+  const isNight = t > 0.8 || t < 0.2;
+  const isDay   = t >= 0.25 && t <= 0.75;
+  const currentWeatherType = (typeof Weather !== 'undefined') ? Weather.current : 0;
+
+  // Pick a fish based on level, tackle, zone, rarity, time of day, and weather
+  const eligible=FISH_TABLE.filter(f=>{
+    if(f.minLvl>lvl) return false;
+    if(!f.tackle.includes(tackle)) return false;
+    if(!f.zones.includes(zoneIndex)) return false;
+    // Time of day filter
+    if(f.timeOfDay==='night' && !isNight) return false;
+    if(f.timeOfDay==='day'   && !isDay)   return false;
+    // Weather filter (if defined, fish only bites in specified weather types)
+    if(f.weather && !f.weather.includes(currentWeatherType)) return false;
+    return true;
+  });
   if(eligible.length===0){
     currentActivity=null;
-    log('No fish available here with this tackle.','bad');
+    // Give a hint about current conditions
+    if(isNight) log('Nothing is biting here at night with this tackle.','bad');
+    else        log('No fish available here with this tackle.','bad');
     return;
   }
+
+  // Atmospheric cast messages based on conditions
+  if(isNight && currentWeatherType===3) log('The fog clings to the water. Something moves beneath the surface...','');
+  else if(isNight)                       log('The dark water stirs. Night fish are different beasts.','');
+  else if(currentWeatherType===2)        log('Heavy rain drums the surface — the big ones are feeding.','');
+  else if(currentWeatherType===1)        log('The rain-stirred water attracts unusual fish...','');
+  else if(currentWeatherType===3)        log('Fog drifts across the water. Hard to tell what\'s down there.','');
   // Weighted random
   const totalWeight=eligible.reduce((a,f)=>a+f.rarity*(1+lvl*0.01),0);
   let roll=Math.random()*totalWeight;
@@ -383,7 +477,9 @@ function startFish(tx,ty,tackle){
     if(roll<=0){chosenFish=f;break;}
   }
 
-  log(`You cast your line with ${ITEMS[tackle==='bait'?'bait':tackle==='fly'?'fly_lure':'harpoon'].name}...`,'');
+  // Generic cast message only for normal conditions (others logged above)
+  const noConditionMsg = !isNight && currentWeatherType===0;
+  if(noConditionMsg) log(`You cast your line with ${ITEMS[tackle==='bait'?'bait':tackle==='fly'?'fly_lure':'harpoon'].name}...`,'');
   showFishingMinigame(tx,ty,chosenFish,tackle,lvl);
 }
 
