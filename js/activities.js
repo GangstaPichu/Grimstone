@@ -1493,7 +1493,7 @@ function searchChest(x, y) {
 }
 
 // ── Barrel search — dock barrels near Mira in Ashenveil ───
-const DOCK_BARREL_POSITIONS = [[22,28],[23,28],[22,30],[23,30],[22,33]];
+const DOCK_BARREL_POSITIONS = [[22,28],[23,28],[22,30],[23,30],[22,32],[23,32],[22,33]];
 function searchBarrel(x, y) {
   if(!currentMap) return;
   const isAshenveil = !currentMap.isInterior && zoneIndex === 0;
@@ -1791,7 +1791,8 @@ function checkZoneExit() {
         '28,3':  {fn:()=>makeHouseInterior('Elspeth'), name:"Elspeth's House", log:"Elspeth's home. Herbs hang drying from the rafters."},
         '28,11': {fn:()=>makeHouseInterior('Rowan'),   name:"Rowan's House",   log:"Rowan's house. A lantern flickers on the table."},
         '8,24':  {fn:()=>makeBlacksmithInterior(),     name:"The Ashen Forge", log:"Heat and the smell of iron hit you as you step inside the forge."},
-        '9,14':  {fn:()=>makeBankInterior(),            name:"GRIMSTONE SAVINGS BANK", log:"The door swings open. It smells of polished wood and old coin."},
+        '9,14':  {fn:()=>makeBankInterior(),  name:"GRIMSTONE SAVINGS BANK",  log:"The door swings open. It smells of polished wood and old coin."},
+        '21,15': {fn:()=>makeShopInterior(), name:"DORIN'S TRADING POST",     log:"A bell jingles as the door swings open. The smell of spices and leather fills the room."},
       };
       const key = `${playerPos.y},${playerPos.x}`;
       const hd = HOUSE_DOORS[key];

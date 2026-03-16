@@ -178,10 +178,12 @@ function spawnNpcsFromMap() {
     const isFarm  = currentMap && currentMap.name === 'GREENFIELD PASTURES';
     const isForge = currentMap && currentMap.name === 'THE ASHEN FORGE';
     const isBank  = currentMap && currentMap.name === 'GRIMSTONE SAVINGS BANK';
+    const isShop  = currentMap && currentMap.name === "DORIN'S TRADING POST";
     const prefix  = currentMap.isInterior && currentMap.name && currentMap.name.includes('FLAGON') ? 'inn:'
                   : isForge ? 'forge:'
                   : isFarm  ? 'farm:'
-                  : isBank  ? 'bank:' : '';
+                  : isBank  ? 'bank:'
+                  : isShop  ? 'shop:' : '';
     const key = `${prefix}${y},${x}`;
     const named = NAMED_NPCS[key];
     if(named) {
