@@ -505,14 +505,20 @@ function beginAdventure(){
   }
 
   // Online co-op: route to lobby after char create (no local P2 needed)
-  if(charCreate.mode === 'online-host') {
+  // Assign save slot first so the session is persisted for online players too.
+  if(charCreate.mode === 'online-host' || charCreate.mode === 'online-guest') {
+    charCreate._creatingP2 = false;
+    activeSaveSlot = pendingSaveSlot;
+    if(activeSaveSlot == null) {
+      for(let i = 0; i < MAX_SAVES; i++) {
+        if(!getSaveMeta(i)) { activeSaveSlot = i; break; }
+      }
+      if(activeSaveSlot == null) activeSaveSlot = 0;
+    }
+    pendingSaveSlot = null;
     document.getElementById('char-create-screen').style.display='none';
-    afterHostCharCreate();
-    return;
-  }
-  if(charCreate.mode === 'online-guest') {
-    document.getElementById('char-create-screen').style.display='none';
-    afterGuestCharCreate();
+    if(charCreate.mode === 'online-host') afterHostCharCreate();
+    else afterGuestCharCreate();
     return;
   }
 

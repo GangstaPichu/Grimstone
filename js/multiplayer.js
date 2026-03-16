@@ -443,8 +443,8 @@ function _resetLobbyUI() {
   document.getElementById('lobby-host-status').textContent = 'Create your character to generate a room code.';
   document.getElementById('lobby-host-status').className = 'lobby-status waiting';
   const btn = document.getElementById('lobby-start-btn');
-  btn.textContent = '⚔ Create Character & Host';
-  btn.onclick = () => goToCharCreate('online-host');
+  btn.textContent = '⚔ Choose Character & Host';
+  btn.onclick = () => _showOnlineCharSelect('host');
 }
 
 function closeOnlineLobby() {
@@ -514,8 +514,8 @@ function lobbyJoinRoom() {
   setJoinStatus('Connecting...','waiting');
   joinSession(code,
     () => {
-      setJoinStatus('✦ Connected! Creating character...','connected');
-      setTimeout(() => goToCharCreate('online-guest'), 600);
+      setJoinStatus('✦ Connected!','connected');
+      setTimeout(() => _showOnlineCharSelect('guest'), 400);
     },
     (err) => setJoinStatus(`Could not connect: ${err.type}`, 'error')
   );
@@ -632,6 +632,78 @@ function showOnlineBadge() {
   badge.innerHTML = '<span class="ping-dot"></span>ONLINE';
   const bw = document.querySelector('.bar-wrap');
   if(bw) bw.appendChild(badge);
+}
+
+// ── ONLINE CHARACTER SELECT ───────────────────────────────────────────────────
+
+let _ocsRole = null; // 'host' or 'guest'
+
+function _showOnlineCharSelect(role) {
+  _ocsRole = role;
+  const overlay = document.getElementById('online-char-select');
+  const slotsEl = document.getElementById('online-char-select-slots');
+  if(!overlay || !slotsEl) { goToCharCreate(`online-${role}`); return; }
+
+  // Gather existing saves
+  const saves = [];
+  for(let i = 0; i < MAX_SAVES; i++) {
+    const meta = getSaveMeta(i);
+    if(meta) saves.push({ slot: i, meta });
+  }
+
+  slotsEl.innerHTML = '';
+  if(saves.length === 0) {
+    // No saves at all — skip the overlay, go straight to char create
+    goToCharCreate(`online-${role}`);
+    return;
+  }
+
+  // Build save rows
+  saves.forEach(({ slot, meta }) => {
+    const row = document.createElement('div');
+    row.className = 'ocs-save-row';
+    const cl = typeof getCombatLevel === 'function' ? getCombatLevel(meta.players[0].skills) : '?';
+    const zoneNames = ['Ashenveil','Ashwood Vale','Iron Peaks','Cursed Marshes','Obsidian Depths'];
+    const zone = zoneNames[meta.zoneIndex] || 'Ashenveil';
+    const pt = typeof formatPlaytime === 'function' ? formatPlaytime(meta.playtime || 0) : '';
+    row.innerHTML = `
+      <div class="ocs-save-num">${slot + 1}</div>
+      <div class="ocs-save-info">
+        <div class="ocs-save-name">${meta.name}</div>
+        <div class="ocs-save-meta">Lvl ${cl} · ${zone}${pt ? ' · ' + pt : ''}</div>
+      </div>`;
+    row.onclick = () => _ocsLoadSave(slot);
+    slotsEl.appendChild(row);
+  });
+
+  overlay.classList.add('open');
+}
+
+function _ocsLoadSave(slot) {
+  const overlay = document.getElementById('online-char-select');
+  if(overlay) overlay.classList.remove('open');
+  if(!loadSaveForOnline(slot)) {
+    // Fallback to char create if load fails
+    goToCharCreate(`online-${_ocsRole}`);
+    return;
+  }
+  if(_ocsRole === 'host') afterHostCharCreate();
+  else afterGuestCharCreate();
+}
+
+function _ocsPickNew() {
+  const overlay = document.getElementById('online-char-select');
+  if(overlay) overlay.classList.remove('open');
+  goToCharCreate(`online-${_ocsRole}`);
+}
+
+function _ocsCancel() {
+  const overlay = document.getElementById('online-char-select');
+  if(overlay) overlay.classList.remove('open');
+  // If we're a guest who connected, end that session and return to lobby
+  if(_ocsRole === 'guest' && coopRole === 'guest') endSession(true);
+  // Return to appropriate screen
+  document.getElementById('online-lobby').style.display = 'flex';
 }
 
 // ── CHAT ─────────────────────────────────────────────────────────────────────
