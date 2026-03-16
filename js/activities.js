@@ -1493,7 +1493,7 @@ function searchChest(x, y) {
 }
 
 // ── Barrel search — dock barrels near Mira in Ashenveil ───
-const DOCK_BARREL_POSITIONS = [[22,28],[23,28],[22,30],[23,30],[22,32],[23,32],[22,33]];
+const DOCK_BARREL_POSITIONS = [[24,28],[25,28],[24,30],[25,30],[24,32],[25,32],[24,33]];
 function searchBarrel(x, y) {
   if(!currentMap) return;
   const isAshenveil = !currentMap.isInterior && zoneIndex === 0;
