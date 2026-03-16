@@ -1077,7 +1077,7 @@ function makeAshenveil() {
   tiles[32][4]=T.NPC_VILLAGER;  // Elspeth
   tiles[32][12]=T.NPC_VILLAGER; // Rowan
   // Old Bertram moved to Greenfield Pastures (farm zone)
-  tiles[10][14]=T.NPC_VILLAGER; // Willa — bank teller, stands at the bank entrance
+  // Willa is inside the bank interior (GRIMSTONE SAVINGS BANK)
 
   // ---- Town decorations ----
   placeDecor(tiles,floor,22,20,T.NOTICE_BOARD);
@@ -1329,6 +1329,12 @@ function makeGreenfieldMap() {
   tiles[laneY-1][W-1]=T.GRASS;
   tiles[laneY+1][W-1]=T.GRASS;
   pd(laneY, W-1, T.FARM_PORTAL);
+
+  // ---- CARAVAN PORTAL (west wall, y=laneY) → The Abandoned Road ----
+  tiles[laneY][0]=T.GRASS;
+  tiles[laneY-1][0]=T.GRASS;
+  tiles[laneY+1][0]=T.GRASS;
+  pd(laneY, 0, T.CARAVAN_PORTAL);
 
   // Named NPCs
   const namedNpcs = [
@@ -1966,6 +1972,118 @@ function examineAltar(x, y) {
 // load the interior, and pop back out when stepping on EXIT_INTERIOR.
 let interiorStack = []; // [{map, enemies, npcs, playerPos, zoneIndex, zoneName}]
 
+// ======= THE ABANDONED ROAD — Caravan Quest Zone =======
+function makeCaravanZoneMap() {
+  const W=50, H=20;
+  const tiles = Array.from({length:H}, ()=>Array(W).fill(T.GRASS));
+  const floor  = Array.from({length:H}, ()=>Array(W).fill(T.GRASS));
+
+  function pd(y,x,tile) { placeDecor(tiles,floor,y,x,tile); }
+
+  // Border walls
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++)
+    if(y===0||y===H-1||x===0||x===W-1) tiles[y][x]=T.WALL;
+
+  // The Abandoned Road — wide dirt path east-west
+  for(let x=1;x<W-1;x++) {
+    tiles[9][x]=T.DIRT;
+    tiles[10][x]=T.DIRT;
+    tiles[11][x]=T.DIRT;
+  }
+
+  // Open passage at east wall and place EXIT_INTERIOR
+  tiles[9][W-1]=T.GRASS; tiles[10][W-1]=T.GRASS; tiles[11][W-1]=T.GRASS;
+  pd(10, W-1, T.EXIT_INTERIOR);
+
+  // Dead trees — atmosphere along road edges
+  [[2,8],[2,18],[2,30],[2,42],[4,12],[4,24],[4,37],[4,46],
+   [14,5],[14,16],[14,28],[14,40],[16,10],[16,22],[16,35],[16,47]].forEach(([ty,tx])=>{
+    if(tiles[ty]&&tiles[ty][tx]===T.GRASS) tiles[ty][tx]=T.NORMAL_TREE;
+  });
+
+  // ---- GOBLIN CAMP (west, x=2–16) ----
+  // Overturned first wagon — debris field
+  pd(7,2,T.BARREL);  pd(7,3,T.BARREL);  pd(8,2,T.BARREL);
+  pd(6,4,T.CHEST);   pd(6,5,T.BARREL);
+  // Camp fire remnants
+  pd(8,6,T.COOKING_FIRE);
+  // Second wagon debris north of road
+  pd(5,12,T.BARREL); pd(6,12,T.BARREL); pd(5,13,T.CHEST);
+  // Third debris south of road
+  pd(13,4,T.BARREL); pd(12,4,T.BARREL); pd(13,5,T.CHEST);
+  pd(13,10,T.BARREL); pd(14,11,T.BARREL);
+  // Quest chest — contains the caravan manifest (y=5, x=9)
+  pd(5,9,T.CHEST);
+  // Goblin enemies
+  tiles[7][4]=T.GOBLIN; tiles[6][8]=T.GOBLIN; tiles[13][6]=T.GOBLIN;
+  tiles[5][14]=T.GOBLIN; tiles[8][11]=T.GOBLIN;
+
+  // ---- MID-ROAD DEBRIS (x=20–32) ----
+  pd(9,20,T.BARREL); pd(11,21,T.BARREL); pd(10,24,T.CHEST);
+  pd(8,27,T.BARREL); pd(12,28,T.BARREL); pd(9,31,T.BARREL);
+
+  // ---- EASTERN WRECKAGE (x=35–46) ----
+  pd(9,35,T.BARREL); pd(11,37,T.BARREL); pd(10,39,T.CHEST);
+  pd(8,41,T.BARREL); pd(12,43,T.BARREL); pd(10,45,T.BARREL);
+
+  // Wolf enemies — scattered throughout
+  tiles[3][22]=T.WOLF; tiles[16][25]=T.WOLF;
+  tiles[4][38]=T.WOLF; tiles[15][41]=T.WOLF; tiles[7][46]=T.WOLF;
+
+  return {tiles, floor, W, H, isInterior:true, name:'THE ABANDONED ROAD', entryX:47, entryY:10};
+}
+
+// ======= GRIMSTONE SAVINGS BANK INTERIOR =======
+function makeBankInterior() {
+  const W=14, H=10;
+  const tiles = Array.from({length:H}, ()=>Array(W).fill(T.STONE_FLOOR));
+  const floor  = Array.from({length:H}, ()=>Array(W).fill(T.STONE_FLOOR));
+
+  // Outer walls
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++)
+    if(y===0||y===H-1||x===0||x===W-1) tiles[y][x]=T.WALL;
+
+  // Teller counter row — solid barrier with a window opening at x=6
+  for(let x=1;x<=12;x++) if(x!==6) tiles[4][x]=T.WALL;
+
+  // ---- Snapshot floor before placing decorations ----
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++) floor[y][x]=tiles[y][x];
+
+  // Vault storage (upper-left behind counter)
+  placeDecor(tiles,floor,1,1,T.BARREL);
+  placeDecor(tiles,floor,1,2,T.BARREL);
+  placeDecor(tiles,floor,2,1,T.CHEST);
+  placeDecor(tiles,floor,2,2,T.CHEST);
+  placeDecor(tiles,floor,1,10,T.BARREL);
+  placeDecor(tiles,floor,1,11,T.CHEST);
+
+  // Atmosphere candles
+  placeDecor(tiles,floor,1,5,T.CANDLE);
+  placeDecor(tiles,floor,1,8,T.CANDLE);
+  placeDecor(tiles,floor,3,3,T.CANDLE);
+  placeDecor(tiles,floor,3,9,T.CANDLE);
+  placeDecor(tiles,floor,7,1,T.CANDLE);
+  placeDecor(tiles,floor,7,12,T.CANDLE);
+
+  // Waiting-area tables
+  placeDecor(tiles,floor,6,3,T.TABLE);
+  placeDecor(tiles,floor,6,4,T.TABLE);
+  placeDecor(tiles,floor,6,9,T.TABLE);
+  placeDecor(tiles,floor,6,10,T.TABLE);
+
+  // Bookshelf (regulations, account ledgers)
+  placeDecor(tiles,floor,2,12,T.BOOKSHELF);
+  placeDecor(tiles,floor,3,12,T.BOOKSHELF);
+
+  // Willa — bank teller
+  tiles[3][6]=T.NPC_VILLAGER;
+
+  // Exit door at bottom centre
+  placeDecor(tiles,floor,H-1,6,T.EXIT_INTERIOR);
+
+  return {tiles, floor, W, H, isInterior:true, name:'GRIMSTONE SAVINGS BANK', entryX:6, entryY:7};
+}
+
 function enterInterior(makeMapFn, entryName) {
   if(zoneTransitioning) return;
   zoneTransitioning = true;
@@ -2101,8 +2219,8 @@ const NAMED_NPCS = {
   'farm:9,25':  { name:'Aldous',  gender:'m', title:'Aldous',         col:'#6a9a3a', letter:'A' },
   // Old Bertram — homestead quest giver (now at Greenfield Pastures, outside the barn)
   'farm:17,7': { name:'Bertram', gender:'m', title:'Old Bertram', col:'#9a7850', letter:'B' },
-  // Willa — bank teller at Grimstone Savings Bank
-  '10,14': { name:'Willa', gender:'f', title:'Willa, Bank Teller', col:'#c8a060', letter:'W' },
+  // Willa — bank teller inside Grimstone Savings Bank interior
+  'bank:3,6': { name:'Willa', gender:'f', title:'Willa, Bank Teller', col:'#c8a060', letter:'W' },
 };
 
 // Per-v// unique rumour lines (keyed by name)

@@ -1395,6 +1395,18 @@ function searchChest(x, y) {
       { icon:'📦', text: '"The chest is mostly empty — a few copper coins, a broken belt buckle.\n\nAt the bottom, folded small, is a scrap of parchment:"' },
       { icon:'📦', text: '"To the next fool who opens this:\n\nI found what they buried. I shouldn\'t have looked. The figure at the docks will show you the way — but only on Grimtide. Wait until the eleventh bell, before the first.\n\nI\'m leaving Ashenveil before dawn.\n\n— K"' },
     ], 'clue_chest_note');
+  } else if(currentMap?.name === 'THE ABANDONED ROAD' && !questFlags.caravan_manifest_found && x===9 && y===5) {
+    // Quest chest — caravan manifest
+    SFX.chest();
+    const p = state.players[state.activePlayer];
+    addToInventory('caravan_manifest');
+    questFlags.caravan_manifest_found = true;
+    questFlags.missing_caravan_done = true;
+    bankAddCoins(p, 25);
+    buildInventory(); updateHUD();
+    log('📋 You wrench open a battered crate. Inside is a crumpled manifest stamped with Oswin\'s seal.','gold');
+    setTimeout(()=>log('✦ Quest complete: The Missing Caravan! You received 25g.','gold'),600);
+    currentMap.tiles[y][x] = currentMap.floor[y][x] || T.DIRT;
   } else {
     // Dungeon chest — better loot
     const inDungeon = currentMap && currentMap.isInterior &&
@@ -1741,6 +1753,7 @@ function checkZoneExit() {
         '28,3':  {fn:()=>makeHouseInterior('Elspeth'), name:"Elspeth's House", log:"Elspeth's home. Herbs hang drying from the rafters."},
         '28,11': {fn:()=>makeHouseInterior('Rowan'),   name:"Rowan's House",   log:"Rowan's house. A lantern flickers on the table."},
         '8,24':  {fn:()=>makeBlacksmithInterior(),     name:"The Ashen Forge", log:"Heat and the smell of iron hit you as you step inside the forge."},
+        '9,14':  {fn:()=>makeBankInterior(),            name:"GRIMSTONE SAVINGS BANK", log:"The door swings open. It smells of polished wood and old coin."},
       };
       const key = `${playerPos.y},${playerPos.x}`;
       const hd = HOUSE_DOORS[key];
@@ -1790,6 +1803,9 @@ function checkZoneExit() {
       enterInterior(makeGreenfieldMap, 'Greenfield Pastures');
       setTimeout(()=>log('🌾 The smell of cut grass and livestock drifts through the portal. The Greenfield Pastures stretch before you.','good'),600);
     }
+  } else if(t === T.CARAVAN_PORTAL) {
+    enterInterior(makeCaravanZoneMap, 'THE ABANDONED ROAD');
+    setTimeout(()=>log('🛤 The air turns cold. Tyre ruts and broken crates line the road ahead. Something went wrong here.','bad'),600);
   } else if(t === T.DUNGEON_STAIR_DOWN) {
     // Enter zone-specific dungeon
     let dungeonFn;

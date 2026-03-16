@@ -160,14 +160,6 @@ function showNpcCtxMenu(e, npc) {
   talk.innerHTML='<span class="ctx-icon">💬</span>Talk';
   talk.onclick=()=>{ hideCtxMenu(); walkThenDo(tx,ty,()=>openDialogue(npc)); };
   ctxMenu.appendChild(talk);
-  // Bank teller — shortcut to bank panel
-  if(npc.npcName === 'Willa') {
-    const bankBtn=document.createElement('div');
-    bankBtn.className='ctx-item';
-    bankBtn.innerHTML='<span class="ctx-icon">🏦</span>Visit Bank';
-    bankBtn.onclick=()=>{ hideCtxMenu(); walkThenDo(tx,ty,()=>openBankPanel()); };
-    ctxMenu.appendChild(bankBtn);
-  }
   if(NPC_DIALOGUE[npc.typeId]?.hasTrade) {
     const trade=document.createElement('div');
     trade.className='ctx-item';
@@ -263,6 +255,7 @@ function getTileLabel(t, tx, ty){
     [T.CHAPEL_RUNE]:'🔮 Carved Rune',
     // Farm
     [T.FARM_PORTAL]:'🌾 Portal to Greenfield Pastures',
+    [T.CARAVAN_PORTAL]:'🛤 The Abandoned Road — Investigate',
     [T.HAY_BALE]:'🌾 Hay Bale',
     [T.FENCE_POST]:'🪵 Fence Post',
     [T.WATER_TROUGH]:'💧 Water Trough',
@@ -491,7 +484,7 @@ function getTileActions(t){
       // Inn door
       if(x===8 && y===8) return [{icon:'🚪',label:'Enter The Tarnished Flagon', action:()=>movePlayerToward(8,9)}];
       // Bank door
-      if(x===14 && y===8) return [{icon:'🏦',label:'Grimstone Savings Bank', action:()=>walkThenDo(14,9,()=>openBankPanel())}];
+      if(x===14 && y===8) return [{icon:'🏦',label:'Enter Grimstone Savings Bank', action:()=>movePlayerToward(14,9)}];
       // House doors — approach tile is y+1
       const HOUSE_ACTIONS = {
         '3,33':{label:"Enter Mira's House"},   '3,40':{label:"Enter Aldric's House"},
@@ -514,6 +507,7 @@ function getTileActions(t){
   if(t===T.WIZARD_DOOR) {
     return [{icon:'🚪', label:'Enter the tower', action:(x,y)=>movePlayerToward(x,y)}];
   }
+  if(t===T.CARAVAN_PORTAL) return [{icon:'🛤',label:'Enter The Abandoned Road', action:(x,y)=>movePlayerToward(x,y)}];
   if(t===T.FOREST_PORTAL) {
     const inWood = currentMap && currentMap.name==='THE WHISPERWOOD';
     return [{icon:'🌲', label: inWood ? 'Leave the Whisperwood' : 'Enter the Whisperwood', action:(x,y)=>movePlayerToward(x,y)}];

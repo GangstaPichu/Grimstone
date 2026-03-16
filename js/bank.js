@@ -82,9 +82,10 @@ function openBankPanel(tab) {
   ensureBankState(p);
   const panel = document.getElementById('ctx-menu');
   panel.innerHTML = '';
-  panel.style.display = 'block';
+  panel.classList.add('show');
   panel.style.width   = '340px';
   panel.style.minWidth = '340px';
+  panel.onclick = e => e.stopPropagation();
 
   // Centre panel in map container
   const _r = document.getElementById('map-container').getBoundingClientRect();
@@ -124,7 +125,7 @@ function openBankPanel(tab) {
   closeBtn.className = 'ctx-item';
   closeBtn.innerHTML = '<span class="ctx-icon">✖</span>Leave Bank';
   closeBtn.style.marginTop = '4px';
-  closeBtn.onclick = () => { panel.style.width = ''; panel.style.minWidth = ''; hideCtxMenu(); };
+  closeBtn.onclick = (e) => { e.stopPropagation(); panel.style.width = ''; panel.style.minWidth = ''; panel.onclick = null; hideCtxMenu(); };
   panel.appendChild(closeBtn);
 }
 
