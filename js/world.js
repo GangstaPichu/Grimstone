@@ -348,6 +348,8 @@ const ITEMS = {
   cooked_salmon:{name:'Cooked Salmon',icon:'🍖', color:'#9a5a1a'},
   bronze_bar:   {name:'Bronze Bar',   icon:'🟫', color:'#8b5a2b'},
   iron_bar:     {name:'Iron Bar',     icon:'🔩', color:'#5a5a6a'},
+  steel_bar:    {name:'Steel Bar',    icon:'🔩', color:'#9a9aaa'},
+  mithril_bar:  {name:'Mithril Bar',  icon:'🔷', color:'#5a7aaa'},
   gold_bar:     {name:'Gold Bar',     icon:'🟨', color:'#c8922a'},
   plank:        {name:'Plank',        icon:'📋', color:'#7a5a3a'},
   bones:        {name:'Bones',        icon:'🦴', color:'#c8c0a8'},
@@ -467,6 +469,14 @@ const ITEMS = {
   // ── RUNE CRAFTING MATERIALS ───────────────────────────────────────────
   arcane_dust:    {name:'Arcane Dust',    icon:'✨', type:'material', color:'#c0a0ff', desc:'Ground from coal and copper ore. The base of all rune crafting.'},
   void_essence:   {name:'Void Essence',   icon:'💜', type:'material', color:'#8020c0', desc:'Distilled from Void Shards. Required for advanced runes.'},
+
+  // ── POTIONS (consumable brewed items) ────────────────────────────────
+  potion_heal:         {name:'Healing Draught',      icon:'🧪', type:'potion', color:'#40c040', healAmt:30, desc:'A bubbling green draught. Restores 30 HP when consumed.'},
+  potion_heal_greater: {name:'Greater Healing',       icon:'🧪', type:'potion', color:'#20e060', healAmt:50, desc:'A potent restorative. Restores 50 HP when consumed.'},
+  potion_power:        {name:'Power Draught',         icon:'🧪', type:'potion', color:'#e04010', tempBonus:{attack:5}, tempDuration:90000, desc:'Increases Attack by 5 for 90 seconds.'},
+  potion_iron_skin:    {name:'Iron Skin Draught',     icon:'🧪', type:'potion', color:'#7a7a9a', tempBonus:{defence:6}, tempDuration:90000, desc:'Increases Defence by 6 for 90 seconds.'},
+  potion_strength:     {name:'Strength Draught',      icon:'🧪', type:'potion', color:'#c08020', tempBonus:{strength:5}, tempDuration:90000, desc:'Increases Strength by 5 for 90 seconds.'},
+  potion_shadow:       {name:'Shadow Brew',           icon:'🧪', type:'potion', color:'#602080', tempBonus:{defence:8}, tempDuration:45000, desc:'Shadows fortify you. Increases Defence by 8 for 45 seconds.'},
 
   // ── TOME FRAGMENTS (quest items) ──────────────────────────────────────
   tome_fragment_1:{name:'Grimoire Fragment I',   icon:'📜', type:'quest', color:'#c0a060', desc:'A torn page from Aldermast\'s grimoire. Covered in arcane diagrams.'},

@@ -466,7 +466,13 @@ function getTileActions(t, x, y){
   if(t===T.SMELTER)       return [{icon:'🔥',label:'Smelt Bars',        action:(x,y)=>walkThenDo(x,y,()=>openSmelter())}];
   if(t===T.COOKING_FIRE)  return [{icon:'🍖',label:'Cook Food',          action:(x,y)=>walkThenDo(x,y,()=>openCooker())}];
   // T.SHOP removed — trading is done by talking to Dorin inside his shop
-  if(t===T.WORKBENCH)     return [{icon:'🪵',label:'Craft Woodwork',     action:(x,y)=>walkThenDo(x,y,()=>openWorkbench())}];
+  if(t===T.WORKBENCH) {
+    const wActions = [{icon:'🪵',label:'Craft Woodwork', action:(x,y)=>walkThenDo(x,y,()=>openWorkbench())}];
+    if(currentMap && currentMap.name === 'THE ASHEN FORGE')
+      wActions.push({icon:'⚒',label:'Smith Equipment', action:(x,y)=>walkThenDo(x,y,()=>openAnvil())});
+    return wActions;
+  }
+  if(t===T.CAULDRON)      return [{icon:'⚗️',label:'Brew Potion',        action:(x,y)=>walkThenDo(x,y,()=>openBrewingCauldron())}];
   if(t===T.BED) {
     const actions = [{icon:'🛏',label:'Sleep', action:(x,y)=>walkThenDo(x,y,()=>sleepUntilMorning())}];
     if(currentMap && currentMap.name==='YOUR CABIN')

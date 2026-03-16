@@ -240,6 +240,12 @@ function getItemActions(id){
     return [{icon:'🍽', label:`Eat (heal ${item.healAmt} HP)`, action:(si)=>eatFood(si,item.healAmt)}];
   }
 
+  // ── Potions ───────────────────────────────────────────────────────────
+  if(item.type === 'potion') {
+    const label = item.healAmt > 0 ? `Drink (heal ${item.healAmt} HP)` : `Drink (${Object.entries(item.tempBonus||{}).map(([k,v])=>`+${v} ${k[0].toUpperCase()+k.slice(1)}`).join(', ')} ${Math.round((item.tempDuration||90000)/1000)}s)`;
+    return [{icon:'🧪', label, action:(si)=>drinkPotion(si, id)}];
+  }
+
   // ── Homestead Sigil ──────────────────────────────────────────────────
   if(id === 'home_sigil') {
     return [{icon:'🏡', label:'Teleport to Homestead', action:(si)=>{
@@ -1064,7 +1070,9 @@ function combatPlayerAttack() {
   const p = state.players[state.activePlayer];
   const e = combatEnemy;
   const bonuses = getEquipBonuses(p);
-  const dmg = Math.floor(Math.random() * ((p.skills.Strength.lvl + bonuses.strBonus) * 2 + 4)) + 1 + Math.floor(bonuses.attackBonus / 3);
+  const tempStr = (p.tempBonuses && p.tempBonuses.strength) || 0;
+  const tempAtk = (p.tempBonuses && p.tempBonuses.attack)   || 0;
+  const dmg = Math.floor(Math.random() * ((p.skills.Strength.lvl + bonuses.strBonus + tempStr) * 2 + 4)) + 1 + Math.floor((bonuses.attackBonus + tempAtk) / 3);
   e.hp -= dmg;
   e.flashTimer = 0.6;
   SFX.hit();
@@ -1084,7 +1092,8 @@ function _combatEnemyTurn() {
   if(!e || e.state === 'dead') return;
 
   document.getElementById('combat-status').textContent = '';
-  const defBonus = Math.max(0, p.skills.Defence.lvl - 3) + getEquipBonuses(p).defBonus;
+  const tempDef = (p.tempBonuses && p.tempBonuses.defence) || 0;
+  const defBonus = Math.max(0, p.skills.Defence.lvl - 3) + getEquipBonuses(p).defBonus + tempDef;
   const rawDmg = Math.floor(Math.random() * (e.def.maxDmg - e.def.minDmg + 1)) + e.def.minDmg;
   const actualDmg = Math.max(0, rawDmg - defBonus);
 
@@ -1638,10 +1647,11 @@ function openSmelter(){
   const p = state.players[state.activePlayer];
   // Full smelting recipes — coal required as fuel for iron+
   const recipes = [
-    { name:'Bronze Bar',  requires:[{id:'copper_ore',qty:1}],                      output:'bronze_bar',  xp:6.2,  skill:'Smithing', reqLvl:1  },
-    { name:'Iron Bar',    requires:[{id:'iron_ore',  qty:1},{id:'coal',qty:1}],     output:'iron_bar',    xp:12.5, skill:'Smithing', reqLvl:15 },
-    { name:'Gold Bar',    requires:[{id:'gold_ore',  qty:1},{id:'coal',qty:2}],     output:'gold_bar',    xp:22.5, skill:'Smithing', reqLvl:40 },
-    { name:'Mithril Bar', requires:[{id:'mithril_ore',qty:1},{id:'coal',qty:4}],   output:'mithril_bar', xp:50,   skill:'Smithing', reqLvl:55 },
+    { name:'Bronze Bar',  requires:[{id:'copper_ore',qty:1}],                                    output:'bronze_bar',  xp:6.2,  skill:'Smithing', reqLvl:1  },
+    { name:'Iron Bar',    requires:[{id:'iron_ore',  qty:1},{id:'coal',qty:1}],                 output:'iron_bar',    xp:12.5, skill:'Smithing', reqLvl:15 },
+    { name:'Steel Bar',   requires:[{id:'iron_bar',  qty:1},{id:'coal',qty:3}],                 output:'steel_bar',   xp:35,   skill:'Smithing', reqLvl:30 },
+    { name:'Gold Bar',    requires:[{id:'gold_ore',  qty:1},{id:'coal',qty:2}],                 output:'gold_bar',    xp:22.5, skill:'Smithing', reqLvl:40 },
+    { name:'Mithril Bar', requires:[{id:'mithril_ore',qty:1},{id:'coal',qty:4}],               output:'mithril_bar', xp:50,   skill:'Smithing', reqLvl:55 },
   ];
 
   const smithLvl = p.skills.Smithing.lvl;
@@ -1797,6 +1807,161 @@ function openRuneCrafter() {
   ctxMenu.style.left = (_r.left + _r.width/2 - 70) + 'px';
   ctxMenu.style.top  = (_r.top  + _r.height/2 - 60) + 'px';
   ctxMenu.style.display = 'block';
+}
+
+function openAnvil(){
+  const p = state.players[state.activePlayer];
+  const smithLvl = p.skills.Smithing.lvl;
+
+  const FORGE_RECIPES = [
+    // Weapons
+    { name:'Bronze Sword',   output:'bronze_sword',  requires:[{id:'bronze_bar',qty:2}],                             xp:25,  skill:'Smithing', reqLvl:1,  cat:'Weapons'   },
+    { name:'Bone Dagger',    output:'bone_dagger',   requires:[{id:'bones',qty:4}],                                   xp:15,  skill:'Smithing', reqLvl:5,  cat:'Weapons'   },
+    { name:'War Axe',        output:'war_axe',        requires:[{id:'bronze_bar',qty:3}],                             xp:35,  skill:'Smithing', reqLvl:10, cat:'Weapons'   },
+    { name:'Iron Sword',     output:'iron_sword',     requires:[{id:'iron_bar',qty:2}],                               xp:60,  skill:'Smithing', reqLvl:20, cat:'Weapons'   },
+    { name:'Steel Sword',    output:'steel_sword',    requires:[{id:'steel_bar',qty:2}],                              xp:100, skill:'Smithing', reqLvl:40, cat:'Weapons'   },
+    { name:'Mithril Sword',  output:'mithril_sword',  requires:[{id:'mithril_bar',qty:2}],                            xp:160, skill:'Smithing', reqLvl:60, cat:'Weapons'   },
+    // Shields
+    { name:'Bronze Shield',  output:'bronze_shield',  requires:[{id:'bronze_bar',qty:2}],                             xp:24,  skill:'Smithing', reqLvl:5,  cat:'Shields'   },
+    { name:'Iron Shield',    output:'iron_shield',    requires:[{id:'iron_bar',qty:2}],                               xp:55,  skill:'Smithing', reqLvl:22, cat:'Shields'   },
+    { name:'Kite Shield',    output:'kite_shield',    requires:[{id:'steel_bar',qty:3}],                              xp:90,  skill:'Smithing', reqLvl:45, cat:'Shields'   },
+    // Helmets
+    { name:'Bronze Helm',    output:'bronze_helm',    requires:[{id:'bronze_bar',qty:2}],                             xp:22,  skill:'Smithing', reqLvl:3,  cat:'Helmets'   },
+    { name:'Iron Helm',      output:'iron_helm',      requires:[{id:'iron_bar',qty:2}],                               xp:50,  skill:'Smithing', reqLvl:18, cat:'Helmets'   },
+    { name:'Steel Helm',     output:'steel_helm',     requires:[{id:'steel_bar',qty:2}],                              xp:85,  skill:'Smithing', reqLvl:35, cat:'Helmets'   },
+    // Body Armour
+    { name:'Bronze Plate',   output:'bronze_plate',   requires:[{id:'bronze_bar',qty:4}],                             xp:40,  skill:'Smithing', reqLvl:6,  cat:'Body'      },
+    { name:'Iron Plate',     output:'iron_plate',     requires:[{id:'iron_bar',qty:4}],                               xp:80,  skill:'Smithing', reqLvl:24, cat:'Body'      },
+    { name:'Steel Plate',    output:'steel_plate',    requires:[{id:'steel_bar',qty:4}],                              xp:130, skill:'Smithing', reqLvl:42, cat:'Body'      },
+    { name:'Mithril Plate',  output:'mithril_plate',  requires:[{id:'mithril_bar',qty:4}],                            xp:200, skill:'Smithing', reqLvl:62, cat:'Body'      },
+    // Legs
+    { name:'Bronze Greaves', output:'bronze_legs',    requires:[{id:'bronze_bar',qty:3}],                             xp:32,  skill:'Smithing', reqLvl:4,  cat:'Legs'      },
+    { name:'Iron Greaves',   output:'iron_legs',      requires:[{id:'iron_bar',qty:3}],                               xp:65,  skill:'Smithing', reqLvl:20, cat:'Legs'      },
+    { name:'Steel Greaves',  output:'steel_legs',     requires:[{id:'steel_bar',qty:3}],                              xp:105, skill:'Smithing', reqLvl:38, cat:'Legs'      },
+    // Ammo
+    { name:'Bronze Arrows (×20)', output:'bronze_arrows', requires:[{id:'bronze_bar',qty:1},{id:'oak_log',qty:1}],   xp:18,  skill:'Smithing', reqLvl:1,  cat:'Ammo'      },
+    { name:'Iron Arrows (×20)',   output:'iron_arrows',   requires:[{id:'iron_bar',qty:1},{id:'oak_log',qty:1}],     xp:32,  skill:'Smithing', reqLvl:16, cat:'Ammo'      },
+  ];
+
+  const ctxMenu = document.getElementById('ctx-menu');
+  ctxMenu.innerHTML = `<div class="ctx-title">⚒ Ashen Forge — Smith Equipment</div>
+    <div style="font-size:10px;color:var(--text-dim);padding:2px 6px 6px;border-bottom:1px solid rgba(255,255,255,0.06);">Smithing Level: <span style="color:#e0a040;font-weight:600;">${smithLvl}</span></div>`;
+
+  let lastCat = '';
+  FORGE_RECIPES.forEach(r => {
+    const hasIngredients = r.requires.every(req => countInInventory(req.id) >= req.qty);
+    const meetsLevel     = smithLvl >= r.reqLvl;
+    const canForge       = hasIngredients && meetsLevel;
+    if(r.cat !== lastCat) {
+      const hdr = document.createElement('div');
+      hdr.style.cssText = 'font-size:10px;color:var(--text-dim);padding:4px 6px 2px;font-weight:600;text-transform:uppercase;letter-spacing:1px;opacity:0.6;';
+      hdr.textContent = r.cat;
+      ctxMenu.appendChild(hdr);
+      lastCat = r.cat;
+    }
+    const d = document.createElement('div');
+    d.className = 'ctx-item' + (canForge ? '' : ' danger');
+    const reqs = r.requires.map(req=>`${req.qty}x ${ITEMS[req.id]?.name||req.id}`).join(' + ');
+    const lockNote = !meetsLevel ? ` <span style="color:#a04040;font-size:10px">[Lv ${r.reqLvl}]</span>` : '';
+    d.innerHTML = `<span class="ctx-icon">${ITEMS[r.output]?.icon||'⬜'}</span>${r.name} <span style="font-size:10px;color:var(--text-dim);margin-left:3px">(${reqs})</span>${lockNote}`;
+    d.onclick = () => {
+      hideCtxMenu();
+      if(!meetsLevel){ log(`Need level ${r.reqLvl} Smithing to forge ${r.name}.`,'bad'); return; }
+      if(!hasIngredients){ log(`Missing materials for ${r.name}.`,'bad'); return; }
+      startActivity(`Forging ${r.name}`, 2500, () => {
+        r.requires.forEach(req => removeFromInventory(req.id, req.qty));
+        const qty = r.output.endsWith('_arrows') ? 20 : 1;
+        for(let i=0;i<qty;i++) addToInventory(r.output);
+        giveXP(r.skill, r.xp);
+        buildInventory(); buildEquipPanel(); updateHUD();
+        log(`⚒ You forge ${r.name}${qty>1?' ×'+qty:''}. (+${r.xp} Smithing xp)`, 'good');
+      });
+    };
+    ctxMenu.appendChild(d);
+  });
+
+  const _ra = document.getElementById('map-container').getBoundingClientRect();
+  ctxMenu.style.left = (_ra.left + _ra.width/2 - 70) + 'px';
+  ctxMenu.style.top  = (_ra.top  + _ra.height/2 - 60) + 'px';
+  ctxMenu.style.display = 'block';
+}
+
+function openBrewingCauldron(){
+  const p = state.players[state.activePlayer];
+  const magicLvl = p.skills.Magic ? p.skills.Magic.lvl : 1;
+
+  const BREW_RECIPES = [
+    { name:'Healing Draught',    output:'potion_heal',         requires:[{id:'goblin_hide',qty:1},{id:'rune_heal',qty:1},{id:'arcane_dust',qty:2}],                       xp:20, skill:'Magic', reqLvl:5,  desc:'Heals 30 HP'         },
+    { name:'Greater Healing',    output:'potion_heal_greater', requires:[{id:'gold_bar',qty:1},{id:'rune_heal',qty:2},{id:'arcane_dust',qty:3}],                           xp:45, skill:'Magic', reqLvl:20, desc:'Heals 50 HP'         },
+    { name:'Power Draught',      output:'potion_power',        requires:[{id:'iron_bar',qty:1},{id:'rune_fire',qty:2},{id:'arcane_dust',qty:2}],                           xp:35, skill:'Magic', reqLvl:15, desc:'+5 Attack, 90s'      },
+    { name:'Iron Skin Draught',  output:'potion_iron_skin',    requires:[{id:'iron_bar',qty:1},{id:'rune_shield',qty:2},{id:'arcane_dust',qty:2}],                         xp:40, skill:'Magic', reqLvl:20, desc:'+6 Defence, 90s'     },
+    { name:'Strength Draught',   output:'potion_strength',     requires:[{id:'gold_bar',qty:1},{id:'rune_earth',qty:2},{id:'arcane_dust',qty:2}],                          xp:38, skill:'Magic', reqLvl:18, desc:'+5 Strength, 90s'    },
+    { name:'Shadow Brew',        output:'potion_shadow',       requires:[{id:'goblin_hide',qty:2},{id:'void_essence',qty:1},{id:'arcane_dust',qty:3}],                     xp:55, skill:'Magic', reqLvl:25, desc:'+8 Defence, 45s'     },
+  ];
+
+  const ctxMenu = document.getElementById('ctx-menu');
+  ctxMenu.innerHTML = `<div class="ctx-title">⚗️ Cauldron — Brew Potions</div>
+    <div style="font-size:10px;color:var(--text-dim);padding:2px 6px 6px;border-bottom:1px solid rgba(255,255,255,0.06);">Magic Level: <span style="color:#a060e0;font-weight:600;">${magicLvl}</span></div>`;
+
+  BREW_RECIPES.forEach(r => {
+    const hasIngredients = r.requires.every(req => countInInventory(req.id) >= req.qty);
+    const meetsLevel     = magicLvl >= r.reqLvl;
+    const canBrew        = hasIngredients && meetsLevel;
+    const d = document.createElement('div');
+    d.className = 'ctx-item' + (canBrew ? '' : ' danger');
+    const reqs = r.requires.map(req=>`${req.qty}x ${ITEMS[req.id]?.name||req.id}`).join(' + ');
+    const lockNote = !meetsLevel ? ` <span style="color:#a04040;font-size:10px">[Lv ${r.reqLvl} Magic]</span>` : '';
+    const effNote  = `<span style="color:#a060e0;font-size:10px;margin-left:4px">${r.desc}</span>`;
+    d.innerHTML = `<span class="ctx-icon">${ITEMS[r.output]?.icon||'🧪'}</span>${r.name} <span style="font-size:10px;color:var(--text-dim);margin-left:3px">(${reqs})</span>${lockNote}${effNote}`;
+    d.onclick = () => {
+      hideCtxMenu();
+      if(!meetsLevel){ log(`Need level ${r.reqLvl} Magic to brew ${r.name}.`,'bad'); return; }
+      if(!hasIngredients){ log(`Missing ingredients for ${r.name}.`,'bad'); return; }
+      startActivity(`Brewing ${r.name}`, 3000, () => {
+        r.requires.forEach(req => removeFromInventory(req.id, req.qty));
+        addToInventory(r.output);
+        giveXP(r.skill, r.xp);
+        buildInventory(); buildEquipPanel(); updateHUD();
+        log(`⚗️ You brew a ${ITEMS[r.output].name}. (+${r.xp} Magic xp)`, 'good');
+      });
+    };
+    ctxMenu.appendChild(d);
+  });
+
+  const _rb = document.getElementById('map-container').getBoundingClientRect();
+  ctxMenu.style.left = (_rb.left + _rb.width/2 - 70) + 'px';
+  ctxMenu.style.top  = (_rb.top  + _rb.height/2 - 60) + 'px';
+  ctxMenu.style.display = 'block';
+}
+
+function drinkPotion(slotIdx, itemId){
+  const p = state.players[state.activePlayer];
+  const item = p.inventory[slotIdx];
+  if(!item) return;
+  const def = ITEMS[itemId];
+  if(!def) return;
+
+  if(def.healAmt > 0){
+    if(p.hp >= p.maxHp){ log('You are already at full health.', 'bad'); return; }
+    const actual = Math.min(def.healAmt, p.maxHp - p.hp);
+    p.hp = Math.min(p.maxHp, p.hp + def.healAmt);
+    log(`You drink the ${def.name}. Restored ${actual} HP.`, 'good');
+  } else if(def.tempBonus){
+    if(!p.tempBonuses) p.tempBonuses = {};
+    const bonus = def.tempBonus;
+    const dur   = def.tempDuration || 90000;
+    const labels = [];
+    if(bonus.attack)   { p.tempBonuses.attack   = (p.tempBonuses.attack||0)   + bonus.attack;   labels.push(`+${bonus.attack} Attack`);   setTimeout(()=>{ p.tempBonuses.attack   = Math.max(0,(p.tempBonuses.attack||0)   - bonus.attack);   updateHUD(); }, dur); }
+    if(bonus.strength) { p.tempBonuses.strength = (p.tempBonuses.strength||0) + bonus.strength; labels.push(`+${bonus.strength} Strength`); setTimeout(()=>{ p.tempBonuses.strength = Math.max(0,(p.tempBonuses.strength||0) - bonus.strength); updateHUD(); }, dur); }
+    if(bonus.defence)  { p.tempBonuses.defence  = (p.tempBonuses.defence||0)  + bonus.defence;  labels.push(`+${bonus.defence} Defence`);  setTimeout(()=>{ p.tempBonuses.defence  = Math.max(0,(p.tempBonuses.defence||0)  - bonus.defence);  updateHUD(); }, dur); }
+    const secs = Math.round(dur / 1000);
+    log(`You drink the ${def.name}. ${labels.join(', ')} for ${secs}s.`, 'good');
+  }
+
+  item.qty--;
+  if(item.qty <= 0) p.inventory[slotIdx] = null;
+  buildInventory(); updateHUD();
+  SFX.eat && SFX.eat();
 }
 
 function showCraftMenu(title,recipes,icon){
