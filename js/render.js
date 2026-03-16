@@ -1998,28 +1998,25 @@ function drawTile(x,y,t,floorT) {
     ctx2.moveTo(cx+10, cy+6); ctx2.lineTo(cx+14, cy+10);
     ctx2.moveTo(cx-5,  cy+11);ctx2.lineTo(cx-8,  cy+14);
     ctx2.stroke();
-  }
-
-  ctx2.restore();
-
-  // ─── CARAVAN PORTAL ────────────────────────────────────────────
   } else if(t===T.CARAVAN_PORTAL){
+    // ─── CARAVAN PORTAL ──────────────────────────────────────────
     const cp=ctx2.createRadialGradient(px+TILE/2,py+TILE/2,2,px+TILE/2,py+TILE/2,TILE/2);
     const cpPulse=0.6+Math.sin(frameNow*0.0018)*0.25;
     cp.addColorStop(0,`rgba(160,100,40,${cpPulse})`);
     cp.addColorStop(0.45,`rgba(90,55,20,${cpPulse*0.6})`);
     cp.addColorStop(1,'rgba(30,15,5,0)');
     ctx2.fillStyle=cp; ctx2.beginPath(); ctx2.arc(px+TILE/2,py+TILE/2,TILE/2,0,Math.PI*2); ctx2.fill();
-    // Drifting dust motes
     for(let di=0;di<5;di++){
       const da=(frameNow*0.0007+di*1.256)%(Math.PI*2);
       const dr=TILE*0.22+Math.sin(frameNow*0.0013+di)*TILE*0.06;
       ctx2.fillStyle=`rgba(200,160,80,${0.4+Math.sin(da)*0.2})`;
       ctx2.beginPath(); ctx2.arc(px+TILE/2+Math.cos(da)*dr, py+TILE/2+Math.sin(da)*dr, 1.5,0,Math.PI*2); ctx2.fill();
     }
-    // Label
     ctx2.fillStyle=`rgba(210,170,90,${cpPulse})`; ctx2.font='bold 7px Cinzel,serif';
     ctx2.textAlign='center'; ctx2.fillText('ROAD',px+TILE/2,py+TILE-4); ctx2.textAlign='left';
+  }
+
+  ctx2.restore();
 }
 
 function roundRect(ctx, x, y, w, h, r) {
