@@ -1030,8 +1030,9 @@ function makeAshenveil() {
 
   // Town well (centre of square)
   placeDecor(tiles,floor,15,18,T.TOWN_WELL);
-  // Dock barrels and lanterns (placed after floor snapshot so floor=DOCK_PLANK is saved)
+  // 5 dock barrels — one randomly holds Mira's Locket (see searchBarrel)
   placeDecor(tiles,floor,22,28,T.BARREL); placeDecor(tiles,floor,23,28,T.BARREL);
+  placeDecor(tiles,floor,22,30,T.BARREL); placeDecor(tiles,floor,23,30,T.BARREL);
   placeDecor(tiles,floor,22,33,T.BARREL);
 
   // ---- LAMPPOSTS ----
@@ -1970,7 +1971,7 @@ function examineAltar(x, y) {
 // load the interior, and pop back out when stepping on EXIT_INTERIOR.
 let interiorStack = []; // [{map, enemies, npcs, playerPos, zoneIndex, zoneName}]
 
-// ======= THE ABANDONED ROAD — Caravan Quest Zone =======
+// ======= THE WESTERN PASS — Caravan Quest Zone =======
 function makeCaravanZoneMap() {
   const W=50, H=20;
   const tiles = Array.from({length:H}, ()=>Array(W).fill(T.GRASS));
@@ -2024,11 +2025,11 @@ function makeCaravanZoneMap() {
   pd(9,35,T.BARREL); pd(11,37,T.BARREL); pd(10,39,T.CHEST);
   pd(8,41,T.BARREL); pd(12,43,T.BARREL); pd(10,45,T.BARREL);
 
-  // Wolf enemies — scattered throughout
+  // Wolf enemies — scattered throughout, kept clear of east entry (x=47)
   tiles[3][22]=T.WOLF; tiles[16][25]=T.WOLF;
-  tiles[4][38]=T.WOLF; tiles[15][41]=T.WOLF; tiles[7][46]=T.WOLF;
+  tiles[4][38]=T.WOLF; tiles[15][41]=T.WOLF; tiles[5][43]=T.WOLF;
 
-  return {tiles, floor, W, H, isInterior:true, name:'THE ABANDONED ROAD', entryX:47, entryY:10};
+  return {tiles, floor, W, H, isInterior:true, name:'THE WESTERN PASS', entryX:47, entryY:10};
 }
 
 // ======= GRIMSTONE SAVINGS BANK INTERIOR =======

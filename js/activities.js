@@ -1400,7 +1400,7 @@ function searchChest(x, y) {
       { icon:'📦', text: '"The chest is mostly empty — a few copper coins, a broken belt buckle.\n\nAt the bottom, folded small, is a scrap of parchment:"' },
       { icon:'📦', text: '"To the next fool who opens this:\n\nI found what they buried. I shouldn\'t have looked. The figure at the docks will show you the way — but only on Grimtide. Wait until the eleventh bell, before the first.\n\nI\'m leaving Ashenveil before dawn.\n\n— K"' },
     ], 'clue_chest_note');
-  } else if(currentMap?.name === 'THE ABANDONED ROAD' && !questFlags.caravan_manifest_found && x===9 && y===5) {
+  } else if(currentMap?.name === 'THE WESTERN PASS' && !questFlags.caravan_manifest_found && x===9 && y===5) {
     // Quest chest — caravan manifest
     SFX.chest();
     const p = state.players[state.activePlayer];
@@ -1481,13 +1481,46 @@ function searchChest(x, y) {
       // Generic chest — minor loot flavour
       const roll = Math.random();
       if(roll < 0.25) {
-        addToInventory('coins', Math.floor(Math.random()*8)+2);
-        log('You find a few loose coins in the chest.','gold');
+        const g = Math.floor(Math.random()*8)+2;
+        state.players[state.activePlayer].gold = (state.players[state.activePlayer].gold||0) + g;
+        log(`You find ${g} loose coins in the chest.`,'gold');
+        updateHUD();
       } else {
         log('The chest is empty.','');
       }
     }
   }
+}
+
+// ── Barrel search — dock barrels near Mira in Ashenveil ───
+const DOCK_BARREL_POSITIONS = [[22,28],[23,28],[22,30],[23,30],[22,33]];
+function searchBarrel(x, y) {
+  if(!currentMap) return;
+  const isAshenveil = !currentMap.isInterior && zoneIndex === 0;
+  if(isAshenveil) {
+    const idx = DOCK_BARREL_POSITIONS.findIndex(([by,bx]) => by===y && bx===x);
+    if(idx !== -1) {
+      if(questFlags.miras_locket_done) {
+        log('A weathered barrel — nothing left inside.', 'info');
+        return;
+      }
+      if(questFlags.locket_barrel_idx === undefined) {
+        questFlags.locket_barrel_idx = Math.floor(Math.random() * DOCK_BARREL_POSITIONS.length);
+      }
+      if(idx === questFlags.locket_barrel_idx) {
+        SFX.chest && SFX.chest();
+        addToInventory('miras_locket');
+        questFlags.miras_locket_found = true;
+        buildInventory(); updateHUD();
+        log("📿 Tucked under a coil of damp rope — a silver locket on a fine chain.", 'gold');
+        setTimeout(() => log("It has initials on the back. This must be what Mira was looking for.", 'good'), 700);
+        return;
+      }
+      log('Rope, salt, and kelp. Nothing of value.', 'info');
+      return;
+    }
+  }
+  log('The barrel is empty.', 'info');
 }
 
 function openSmelter(){
@@ -1809,7 +1842,7 @@ function checkZoneExit() {
       setTimeout(()=>log('🌾 The smell of cut grass and livestock drifts through the portal. The Greenfield Pastures stretch before you.','good'),600);
     }
   } else if(t === T.CARAVAN_PORTAL) {
-    enterInterior(makeCaravanZoneMap, 'THE ABANDONED ROAD');
+    enterInterior(makeCaravanZoneMap, 'THE WESTERN PASS');
     setTimeout(()=>log('🛤 The air turns cold. Tyre ruts and broken crates line the road ahead. Something went wrong here.','bad'),600);
   } else if(t === T.DUNGEON_STAIR_DOWN) {
     // Enter zone-specific dungeon
