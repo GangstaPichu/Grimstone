@@ -361,12 +361,17 @@ function buildSkillsPanel(){
   const p = state.players[state.activePlayer];
   const list = document.getElementById('skills-list');
   list.innerHTML='';
+  const bonuses = getEquipBonuses(p);
+  // Which skills visually gain from equipment bonus
+  const SKILL_BONUS_MAP = { Strength: bonuses.strBonus, Defence: bonuses.defBonus, Magic: bonuses.magicBonus };
   Object.entries(p.skills).forEach(([name,sk])=>{
     const d=document.createElement('div');
     d.className='skill-entry'; d.id='skill-'+name;
     const needed=xpForLevel(sk.lvl+1)-xpForLevel(sk.lvl);
     const progress=((sk.xp-xpForLevel(sk.lvl))/(needed))*100;
-    d.innerHTML=`<div class="skill-name"><span>${name}</span><span class="skill-lvl">${sk.lvl}</span></div>
+    const bonus = SKILL_BONUS_MAP[name] || 0;
+    const bonusHtml = bonus > 0 ? `<span class="skill-equip-bonus">+${bonus}</span>` : '';
+    d.innerHTML=`<div class="skill-name"><span>${name}</span><span class="skill-lvl">${sk.lvl}${bonusHtml}</span></div>
       <div class="skill-xp-bar"><div class="skill-xp-fill" style="width:${Math.min(100,progress)}%"></div></div>`;
     d.addEventListener('click', ()=>showSkillTooltip(name, d));
     list.appendChild(d);
@@ -413,6 +418,19 @@ function showSkillTooltip(name, entryEl) {
 
   const xpToNext = xpForLevel(sk.lvl+1) - sk.xp;
 
+  // Build equipment bonus line for relevant skills
+  const bonuses = getEquipBonuses(p);
+  const equipParts = [];
+  if(name === 'Strength') {
+    if(bonuses.strBonus)    equipParts.push(`+${bonuses.strBonus} Str (damage range)`);
+    if(bonuses.attackBonus) equipParts.push(`+${bonuses.attackBonus} Atk (flat damage)`);
+  }
+  if(name === 'Defence'  && bonuses.defBonus)    equipParts.push(`+${bonuses.defBonus} Def (damage reduction)`);
+  if(name === 'Magic'    && bonuses.magicBonus)  equipParts.push(`+${bonuses.magicBonus} Mag (rune ×1.25 when ≥5)`);
+  const equipBonusHtml = equipParts.length
+    ? `<div class="stt-equip-bonus">⚔ Equipment: ${equipParts.join(' · ')}</div>`
+    : '';
+
   tip.innerHTML = `
     <div class="stt-header">
       <span>${info.icon}</span>
@@ -420,6 +438,7 @@ function showSkillTooltip(name, entryEl) {
       <span style="margin-left:auto;font-size:11px;opacity:0.6">Lv ${sk.lvl}</span>
     </div>
     <div class="stt-desc">${info.desc}</div>
+    ${equipBonusHtml}
     <div style="font-size:11px;color:#6a8a50;margin-bottom:8px;">
       ${sk.lvl < 99 ? `${xpToNext.toLocaleString()} xp to level ${sk.lvl+1}` : 'Max level reached!'}
     </div>
@@ -457,7 +476,11 @@ function updateSkillDisplay(skillName){
   if(!el)return;
   const needed=xpForLevel(sk.lvl+1)-xpForLevel(sk.lvl);
   const progress=((sk.xp-xpForLevel(sk.lvl))/(needed))*100;
-  el.querySelector('.skill-lvl').textContent=sk.lvl;
+  const bonuses = getEquipBonuses(p);
+  const SKILL_BONUS_MAP = { Strength: bonuses.strBonus, Defence: bonuses.defBonus, Magic: bonuses.magicBonus };
+  const bonus = SKILL_BONUS_MAP[skillName] || 0;
+  const lvlEl = el.querySelector('.skill-lvl');
+  lvlEl.innerHTML = bonus > 0 ? `${sk.lvl}<span class="skill-equip-bonus">+${bonus}</span>` : sk.lvl;
   el.querySelector('.skill-xp-fill').style.width=Math.min(100,progress)+'%';
 }
 function xpForLevel(lvl){

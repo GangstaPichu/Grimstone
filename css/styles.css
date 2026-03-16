@@ -244,6 +244,8 @@
   #skill-tooltip .stt-milestone.next     { color: #e8c870; }
   .skill-name { font-family: 'Cinzel', serif; font-size: 10px; letter-spacing: 1px; color: var(--text-bright); display: flex; justify-content: space-between; }
   .skill-lvl { color: var(--gold); font-weight: 600; }
+  .skill-equip-bonus { color: var(--cyan-bright); font-size: 9px; font-weight: 400; margin-left: 3px; }
+  .stt-equip-bonus { font-size: 10px; color: var(--cyan-bright); margin-bottom: 8px; padding: 4px 6px; background: rgba(45,148,148,0.08); border-left: 2px solid var(--cyan); border-radius: 1px; }
   .skill-xp-bar { height: 3px; background: #0a0c10; width: 100%; }
   .skill-xp-fill { height: 100%; background: var(--gold-dim); transition: width 0.4s; }
 
