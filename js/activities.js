@@ -150,6 +150,15 @@ function getItemActions(id){
     return [{icon:'🍽', label:`Eat (heal ${hp} HP)`, action:(si)=>eatFood(si,hp)}];
   }
 
+  // ── Milk Bucket — drink milk, keep the bucket ─────────────────────────
+  if(id === 'milk_bucket') {
+    return [{icon:'🥛', label:`Drink Milk (heal ${item.healAmt} HP)`, action:(si)=>drinkMilk(si)}];
+  }
+  // ── Water Bucket — refreshing, keeps bucket ───────────────────────────
+  if(id === 'water_bucket') {
+    return [{icon:'💧', label:'Drink Water (refreshing)', action:(si)=>drinkWater(si)}];
+  }
+
   // ── Generic food (healAmt > 0) ────────────────────────────────────────
   if(item.type === 'food' && item.healAmt > 0) {
     return [{icon:'🍽', label:`Eat (heal ${item.healAmt} HP)`, action:(si)=>eatFood(si,item.healAmt)}];
@@ -180,6 +189,53 @@ function eatFood(slotIdx, hp) {
   buildInventory(); updateHUD();
   log(`You eat the ${it.name}. Restored ${actual} HP.`, 'good');
   SFX.eat && SFX.eat();
+}
+
+function drinkMilk(slotIdx) {
+  const p = state.players[state.activePlayer];
+  if(p.hp >= p.maxHp) { log('You are already at full health.', 'bad'); return; }
+  const item = p.inventory[slotIdx];
+  if(!item) return;
+  const hp = ITEMS.milk_bucket.healAmt;
+  const actual = Math.min(hp, p.maxHp - p.hp);
+  p.hp = Math.min(p.maxHp, p.hp + hp);
+  // Replace milk_bucket with wooden_bucket in the same slot
+  item.qty--;
+  if(item.qty <= 0) p.inventory[slotIdx] = null;
+  addToInventory('wooden_bucket');
+  buildInventory(); updateHUD();
+  log(`You drink the milk. Restored ${actual} HP. (You keep the bucket.)`, 'good');
+  SFX.eat && SFX.eat();
+}
+
+function drinkWater(slotIdx) {
+  const p = state.players[state.activePlayer];
+  const item = p.inventory[slotIdx];
+  if(!item) return;
+  item.qty--;
+  if(item.qty <= 0) p.inventory[slotIdx] = null;
+  addToInventory('wooden_bucket');
+  buildInventory(); updateHUD();
+  log('You drink the cool well water. Refreshing.', 'good');
+}
+
+function grindWheat() {
+  if(countInInventory('wheat') < 1) { log('You need wheat to grind at the windmill.', 'bad'); return; }
+  removeFromInventory('wheat', 1);
+  addToInventory('flour');
+  buildInventory();
+  giveXP('Farming', 5);
+  log('The millstone grinds the wheat into fine flour. (+5 Farming xp)', 'good');
+}
+
+function churnButter() {
+  if(countInInventory('milk_bucket') < 1) { log('You need a Milk Bucket to churn butter.', 'bad'); return; }
+  removeFromInventory('milk_bucket', 1);
+  addToInventory('butter');
+  addToInventory('wooden_bucket');
+  buildInventory();
+  giveXP('Farming', 6);
+  log('You churn the milk into rich butter — and keep the bucket. (+6 Farming xp)', 'good');
 }
 
 // ── Rune casting ────────────────────────────────────────────────────────
@@ -1481,9 +1537,11 @@ function openCooker(){
   }).filter(r => ITEMS[r.output]);
 
   const meatRecipes = [
-    { name:'Cook Chicken', requires:[{id:'raw_chicken',qty:1}], output:'cooked_chicken', xp:12, skill:'Cooking', reqLvl:1,  healHp:6  },
-    { name:'Cook Pork',    requires:[{id:'raw_pork',   qty:1}], output:'cooked_pork',    xp:16, skill:'Cooking', reqLvl:5,  healHp:9  },
-    { name:'Cook Beef',    requires:[{id:'raw_beef',   qty:1}], output:'cooked_beef',    xp:22, skill:'Cooking', reqLvl:10, healHp:14 },
+    { name:'Cook Chicken',    requires:[{id:'raw_chicken',  qty:1}],                         output:'cooked_chicken',  xp:12, skill:'Cooking', reqLvl:1,  healHp:6  },
+    { name:'Cook Pork',       requires:[{id:'raw_pork',     qty:1}],                         output:'cooked_pork',     xp:16, skill:'Cooking', reqLvl:5,  healHp:9  },
+    { name:'Cook Beef',       requires:[{id:'raw_beef',     qty:1}],                         output:'cooked_beef',     xp:22, skill:'Cooking', reqLvl:10, healHp:14 },
+    { name:'Hard Boiled Egg', requires:[{id:'egg',qty:1},{id:'water_bucket',qty:1}],         output:'hard_boiled_egg', xp:10, skill:'Cooking', reqLvl:1,  healHp:8,
+      extraReturn:{id:'wooden_bucket', qty:1} },
   ];
 
   const allRecipes = [...fishRecipes, ...meatRecipes];
@@ -1505,6 +1563,7 @@ function openCooker(){
       if(!hasIngredients){ log(`You don't have the ingredients to ${r.name.toLowerCase()}.`,'bad'); return; }
       r.requires.forEach(req => removeFromInventory(req.id, req.qty));
       addToInventory(r.output);
+      if(r.extraReturn) addToInventory(r.extraReturn.id);
       giveXP(r.skill, r.xp);
       buildInventory(); buildEquipPanel(); updateHUD();
       log(`You cook a ${ITEMS[r.output].name}. (+${r.xp} Cooking xp)`, 'good');

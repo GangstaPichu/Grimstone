@@ -466,6 +466,12 @@ function openDialogue(npc) {
     openBertramDialogue(npc);
     return;
   }
+  // Willa — bank teller
+  if(npc.npcName === 'Willa') {
+    closeDialogue();
+    openBankPanel();
+    return;
+  }
   dialogueNpc = npc;
   const data = NPC_DIALOGUE[npc.typeId] || NPC_DIALOGUE[T.NPC_VILLAGER];
   const panel = document.getElementById('dialogue-panel');
@@ -511,6 +517,7 @@ function openDialogue(npc) {
       Oswin:    `Oswin. ${he} travels between settlements buying and selling whatever fits in ${his} pack. ${he}'s been waiting on a caravan for three days. ${he} looks like ${he} regrets stopping here.`,
       Thessaly: `Thessaly. ${he} arrived in Ashenveil alone and hasn't said where from. ${he}'s been asking questions around town — quietly. ${he} seems to know more than ${he} lets on.`,
       Bertram:  `Old Bertram. ${he} worked a homestead east of town for thirty years before age slowed him down. ${he} still carries the sigil that binds that land — and ${he}'s been looking for someone worth passing it to.`,
+      Willa:    `Willa. ${he} manages the counter at Grimstone Savings Bank — deposits, withdrawals, shares, and bonds. ${he} says the job is boring. ${he} seems to like it.`,
     };
     const intro = nameLines[npc.npcName] || `${npc.npcName}. A resident of Ashenveil.`;
     const nameBtn = document.createElement('div');
