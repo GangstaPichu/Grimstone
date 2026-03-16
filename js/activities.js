@@ -1,4 +1,7 @@
 // ======= ACTIVITIES =======
+let combatEnemy = null;
+let _combatPlayerTurn = false;
+
 function startActivity(name, duration, onComplete){
   if(currentActivity) return;
   currentActivity=name;
@@ -42,6 +45,12 @@ function cancelActivity(){
   if(activityTimer){clearInterval(activityTimer);activityTimer=null;}
   currentActivity=null;
   document.getElementById('activity-bar').classList.remove('show');
+  // Close combat panel if open
+  if(combatEnemy !== null) {
+    document.getElementById('combat-panel').classList.remove('show');
+    combatEnemy = null;
+    _combatPlayerTurn = false;
+  }
 }
 
 // ======= MINING =======
@@ -796,63 +805,162 @@ function triggerEnemyAttack(e) {
   startCombatEntity(e);
 }
 
-// Rewrite combat to track the actual enemy entity
+// ======= TURN-BASED COMBAT =======
 function startCombatEntity(e) {
   if(currentActivity) return;
   if(e.state==='dead') return;
   currentActivity = 'Combat';
+  combatEnemy = e;
+  _combatPlayerTurn = false;
+
+  const portrait = document.getElementById('combat-enemy-portrait');
+  portrait.textContent = e.def.letter;
+  portrait.style.color = e.def.col;
+  portrait.style.borderColor = e.def.col;
+  document.getElementById('combat-enemy-name').textContent = e.def.name.toUpperCase();
+  document.getElementById('combat-log').innerHTML = '';
+  document.getElementById('combat-status').textContent = '';
+  _updateCombatPanel();
+  _addCombatLog(`You face the ${e.def.name}. What will you do?`);
+  document.getElementById('combat-panel').classList.add('show');
+  log(`⚔ You engage the ${e.def.name}!`, 'bad');
+
+  _setCombatButtons(false);
+  setTimeout(() => { _combatPlayerTurn = true; _setCombatButtons(true); }, 500);
+}
+
+function _updateCombatPanel() {
   const p = state.players[state.activePlayer];
-  log(`⚔ You fight the ${e.def.name}!`, 'bad');
+  const e = combatEnemy;
+  const ePct = Math.max(0, e.hp / e.maxHp);
+  const eBar = document.getElementById('combat-enemy-hp-bar');
+  eBar.style.width = (ePct * 100) + '%';
+  eBar.style.background = ePct > 0.5 ? '#2d9448' : ePct > 0.25 ? '#c8922a' : '#c43030';
+  document.getElementById('combat-enemy-hp-text').textContent = `${Math.max(0,e.hp)} / ${e.maxHp}`;
+  const pPct = Math.max(0, p.hp / p.maxHp);
+  const pBar = document.getElementById('combat-player-hp-bar');
+  pBar.style.width = (pPct * 100) + '%';
+  pBar.style.background = pPct > 0.5 ? '#2d9448' : pPct > 0.25 ? '#c8922a' : '#c43030';
+  document.getElementById('combat-player-hp-text').textContent = `${Math.max(0,p.hp)} / ${p.maxHp}`;
+}
 
-  let combatTimeout;
-  function doHit() {
-    if(!currentActivity || e.state==='dead') { currentActivity=null; return; }
-    const bonuses = getEquipBonuses(p);
-    const playerDmg = Math.floor(Math.random()*((p.skills.Strength.lvl + bonuses.strBonus)*2+4))+1 + Math.floor(bonuses.attackBonus/3);
-    e.hp -= playerDmg;
-    e.flashTimer = 1;
+function _addCombatLog(msg, cls='') {
+  const logEl = document.getElementById('combat-log');
+  const line = document.createElement('div');
+  line.className = 'combat-log-line' + (cls ? ' ' + cls : '');
+  line.textContent = msg;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function _setCombatButtons(enabled) {
+  document.getElementById('btn-combat-attack').disabled = !enabled;
+  document.getElementById('btn-combat-flee').disabled = !enabled;
+}
+
+function _closeCombatPanel() {
+  document.getElementById('combat-panel').classList.remove('show');
+  currentActivity = null;
+  combatEnemy = null;
+  _combatPlayerTurn = false;
+}
+
+function combatPlayerAttack() {
+  if(!_combatPlayerTurn || !combatEnemy) return;
+  _combatPlayerTurn = false;
+  _setCombatButtons(false);
+
+  const p = state.players[state.activePlayer];
+  const e = combatEnemy;
+  const bonuses = getEquipBonuses(p);
+  const dmg = Math.floor(Math.random() * ((p.skills.Strength.lvl + bonuses.strBonus) * 2 + 4)) + 1 + Math.floor(bonuses.attackBonus / 3);
+  e.hp -= dmg;
+  e.flashTimer = 0.6;
+  SFX.hit();
+  _addCombatLog(`You strike the ${e.def.name} for ${dmg} damage.`, 'combat-log-hit');
+  log(`You hit the ${e.def.name} for ${dmg}.`, '');
+  _updateCombatPanel();
+
+  if(e.hp <= 0) { _combatVictory(); return; }
+
+  document.getElementById('combat-status').textContent = `${e.def.name} prepares to strike...`;
+  setTimeout(_combatEnemyTurn, 800 + Math.random() * 300);
+}
+
+function _combatEnemyTurn() {
+  const p = state.players[state.activePlayer];
+  const e = combatEnemy;
+  if(!e || e.state === 'dead') return;
+
+  document.getElementById('combat-status').textContent = '';
+  const defBonus = Math.max(0, p.skills.Defence.lvl - 3) + getEquipBonuses(p).defBonus;
+  const rawDmg = Math.floor(Math.random() * (e.def.maxDmg - e.def.minDmg + 1)) + e.def.minDmg;
+  const actualDmg = Math.max(0, rawDmg - defBonus);
+
+  if(actualDmg > 0) {
+    p.hp = Math.max(0, p.hp - actualDmg);
     SFX.hit();
-    log(`You hit the ${e.def.name} for ${playerDmg}.`, '');
-
-    if(e.hp<=0) {
-      e.state='dead';
-      e.hp=0;
-      currentActivity=null;
-      giveXP('Attack', e.def.xp);
-      giveXP('Strength', e.def.xp);
-      giveXP('Defence', Math.floor(e.def.xp*0.5));
-      giveXP('Hitpoints', Math.floor(e.def.xp*0.33));
-      p.gold += e.def.gold;
-      updateHUD();
-      log(`✓ Defeated the ${e.def.name}! +${e.def.gold}g`, 'gold');
-      addToInventory('bones');
-      if(Math.random()<0.3) addToInventory('goblin_hide');
-      buildInventory(); buildEquipPanel();
-      // Respawn enemy after a delay — dungeons don't respawn (fresh map on re-entry)
-      // Overworld: 5–10 minutes real time
-      const isDungeon = currentMap && currentMap.isInterior;
-      if(!isDungeon) {
-        const respawnMs = (300 + Math.random()*300) * 1000; // 5–10 min
-        setTimeout(()=>respawnEnemy(e), respawnMs);
-      }
-      // Dungeon enemies stay dead until player exits and re-enters (map is regenerated)
-      return;
-    }
-
-    // Enemy counter-attack
-    const defBonus = Math.max(0, p.skills.Defence.lvl - 3) + bonuses.defBonus;
-    const rawDmg = Math.floor(Math.random()*(e.def.maxDmg-e.def.minDmg+1))+e.def.minDmg;
-    const actualDmg = Math.max(0, rawDmg-defBonus);
-    if(actualDmg>0) {
-      p.hp = Math.max(0, p.hp-actualDmg);
-      SFX.hit();
-      log(`The ${e.def.name} hits you for ${actualDmg}.`, 'bad');
-    }
-    updateHUD();
-    if(p.hp<=0) { log('You have been slain...','bad'); respawn(); return; }
-    combatTimeout = setTimeout(doHit, 1100+Math.random()*200);
+    _addCombatLog(`The ${e.def.name} strikes you for ${actualDmg} damage.`, 'combat-log-bad');
+    log(`The ${e.def.name} hits you for ${actualDmg}.`, 'bad');
+  } else {
+    _addCombatLog(`The ${e.def.name}'s attack glances off your armour.`, 'combat-log-dim');
   }
-  combatTimeout = setTimeout(doHit, 600);
+
+  _updateCombatPanel();
+  updateHUD();
+
+  if(p.hp <= 0) { _combatDefeat(); return; }
+
+  _combatPlayerTurn = true;
+  _setCombatButtons(true);
+}
+
+function combatFlee() {
+  if(!_combatPlayerTurn || !combatEnemy) return;
+  _combatPlayerTurn = false;
+  _setCombatButtons(false);
+
+  const e = combatEnemy;
+  const fleeChance = Math.max(0.2, 0.65 - (e.def.speed - 1.5) * 0.08);
+  if(Math.random() < fleeChance) {
+    _addCombatLog(`You managed to escape from the ${e.def.name}!`, 'combat-log-dim');
+    log(`You fled from the ${e.def.name}.`, 'info');
+    setTimeout(_closeCombatPanel, 1000);
+  } else {
+    _addCombatLog(`You couldn't escape! The ${e.def.name} blocks your path.`, 'combat-log-bad');
+    document.getElementById('combat-status').textContent = `${e.def.name} attacks as you try to flee...`;
+    setTimeout(_combatEnemyTurn, 900);
+  }
+}
+
+function _combatVictory() {
+  const p = state.players[state.activePlayer];
+  const e = combatEnemy;
+  e.state = 'dead';
+  e.hp = 0;
+  giveXP('Attack', e.def.xp);
+  giveXP('Strength', e.def.xp);
+  giveXP('Defence', Math.floor(e.def.xp * 0.5));
+  giveXP('Hitpoints', Math.floor(e.def.xp * 0.33));
+  p.gold += e.def.gold;
+  updateHUD();
+  _addCombatLog(`Victory! The ${e.def.name} falls. +${e.def.gold}g`, 'combat-log-gold');
+  log(`✓ Defeated the ${e.def.name}! +${e.def.gold}g`, 'gold');
+  addToInventory('bones');
+  if(Math.random() < 0.3) addToInventory('goblin_hide');
+  buildInventory(); buildEquipPanel();
+  const isDungeon = currentMap && currentMap.isInterior;
+  if(!isDungeon) {
+    const respawnMs = (300 + Math.random() * 300) * 1000;
+    setTimeout(() => respawnEnemy(e), respawnMs);
+  }
+  setTimeout(_closeCombatPanel, 1600);
+}
+
+function _combatDefeat() {
+  _addCombatLog('You have been slain...', 'combat-log-bad');
+  log('You have been slain...', 'bad');
+  setTimeout(() => { _closeCombatPanel(); respawn(); }, 1500);
 }
 
 function respawnEnemy(e) {

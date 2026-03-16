@@ -357,6 +357,31 @@
 <!-- CONTEXT MENU -->
 <div id="ctx-menu"></div>
 
+<!-- TURN-BASED COMBAT PANEL -->
+<div id="combat-panel">
+  <div id="combat-inner">
+    <div id="combat-header">
+      <div id="combat-enemy-portrait"></div>
+      <div id="combat-enemy-info">
+        <div id="combat-enemy-name"></div>
+        <div id="combat-enemy-hp-wrap"><div id="combat-enemy-hp-bar"></div></div>
+        <div id="combat-enemy-hp-text"></div>
+      </div>
+    </div>
+    <div id="combat-log"></div>
+    <div id="combat-status"></div>
+    <div id="combat-player-row">
+      <span class="combat-label">Your HP</span>
+      <div id="combat-player-hp-wrap"><div id="combat-player-hp-bar"></div></div>
+      <span id="combat-player-hp-text"></span>
+    </div>
+    <div id="combat-actions">
+      <button class="combat-btn" id="btn-combat-attack" onclick="combatPlayerAttack()">⚔ Attack</button>
+      <button class="combat-btn combat-btn-flee" id="btn-combat-flee" onclick="combatFlee()">↩ Flee</button>
+    </div>
+  </div>
+</div>
+
 <!-- NPC DIALOGUE PANEL -->
 <div id="dialogue-panel">
   <div id="dialogue-inner">
