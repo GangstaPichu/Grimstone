@@ -1291,9 +1291,10 @@ function makeGreenfieldMap() {
   }
 
   // ---- ANIMAL PASTURE (south-east, fenced, x=42–66, y=26–40) ----
-  // Fence posts around perimeter
-  for(let x=42;x<=66;x+=2) { pd(26,x,T.FENCE_POST); pd(40,x,T.FENCE_POST); }
-  for(let y=27;y<=39;y+=2) { pd(y,42,T.FENCE_POST); pd(y,66,T.FENCE_POST); }
+  // Continuous fence rails on top and bottom; posts on side columns; 2-tile gate gap at x=53,54
+  for(let x=42;x<=66;x++) { if(x!==53&&x!==54) pd(26,x,T.FENCE); }
+  for(let x=42;x<=66;x++) pd(40,x,T.FENCE);
+  for(let y=27;y<=39;y++) { pd(y,42,T.FENCE_POST); pd(y,66,T.FENCE_POST); }
   // Roaming animals inside
   pd(30,48,T.ANIMAL_PIG);
   pd(34,55,T.ANIMAL_COW);
@@ -1302,9 +1303,6 @@ function makeGreenfieldMap() {
   pd(32,63,T.ANIMAL_CHICKEN);
   // Water trough in pasture
   pd(33,46,T.WATER_TROUGH);
-  // Grass fills interior
-  // Gate gap at top of fence (for lane)
-  tiles[26][53]=T.GRASS; tiles[26][54]=T.GRASS; // open gate
 
   // ---- SCARECROWS dotted through fields ----
   pd(7,22,T.SCARECROW); pd(14,25,T.SCARECROW); pd(29,15,T.SCARECROW);

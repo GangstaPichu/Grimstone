@@ -2,6 +2,11 @@
 let combatEnemy = null;
 let _combatPlayerTurn = false;
 
+// Enemy respawn cooldown — tracks last spawn time per zone name
+const ZONE_SPAWN_RECORD = {};
+const ENEMY_RESPAWN_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+const DUNGEON_ZONE_NAMES = new Set(['THE ASHWOOD CRYPTS','THE IRON DEPTHS','THE CULTIST CATACOMBS','AETHERIC SPIRE']);
+
 function startActivity(name, duration, onComplete){
   if(currentActivity) return;
   currentActivity=name;
@@ -694,39 +699,39 @@ function spawnEnemiesFromMap() {
   enemies = [];
   if(!currentMap) return;
   const {tiles, W, H} = currentMap;
+  const zoneName = currentMap.name || '';
+  const isDungeon = DUNGEON_ZONE_NAMES.has(zoneName);
+  const lastSpawn = ZONE_SPAWN_RECORD[zoneName] || 0;
+  const onCooldown = !isDungeon && zoneName && (Date.now() - lastSpawn < ENEMY_RESPAWN_COOLDOWN_MS);
+
   for(let y=0;y<H;y++) for(let x=0;x<W;x++) {
     const t = tiles[y][x];
     if(ENEMY_DEFS[t]) {
-      const def = ENEMY_DEFS[t];
-      enemies.push({
-        id: enemyIdCounter++,
-        type: t,
-        def,
-        // tile-space position (can be fractional during movement)
-        x: x, y: y,
-        // home position for patrol
-        homeX: x, homeY: y,
-        // smooth render position
-        rx: x, ry: y,
-        hp: def.hp, maxHp: def.hp,
-        state: 'patrol',   // patrol | chase | attack | dead
-        // patrol target
-        patrolX: x, patrolY: y,
-        patrolTimer: Math.random()*3,
-        // movement
-        moveTimer: 0,
-        moveSpeed: def.speed,
-        // attack
-        attackTimer: 0,
-        // flash on hit
-        flashTimer: 0,
-        // engaged player (for combat tracking)
-        engaged: false,
-      });
-      // Remove from static tile map
+      // Always clear the tile so the map looks clean, but only push enemy if not on cooldown
       tiles[y][x] = T.GRASS;
+      if(!onCooldown) {
+        const def = ENEMY_DEFS[t];
+        enemies.push({
+          id: enemyIdCounter++,
+          type: t,
+          def,
+          x: x, y: y,
+          homeX: x, homeY: y,
+          rx: x, ry: y,
+          hp: def.hp, maxHp: def.hp,
+          state: 'patrol',
+          patrolX: x, patrolY: y,
+          patrolTimer: Math.random()*3,
+          moveTimer: 0,
+          moveSpeed: def.speed,
+          attackTimer: 0,
+          flashTimer: 0,
+          engaged: false,
+        });
+      }
     }
   }
+  if(!onCooldown && zoneName && !isDungeon) ZONE_SPAWN_RECORD[zoneName] = Date.now();
 }
 
 // Tile passable check for enemy movement
