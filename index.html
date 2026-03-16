@@ -423,9 +423,17 @@
       <div id="combat-player-hp-wrap"><div id="combat-player-hp-bar"></div></div>
       <span id="combat-player-hp-text"></span>
     </div>
+    <div id="combat-move-menu"></div>
     <div id="combat-actions">
-      <button class="combat-btn" id="btn-combat-attack" onclick="combatPlayerAttack()">⚔ Attack</button>
+      <button class="combat-btn" id="btn-combat-attack" onclick="openAttackMenu()">⚔ Attack</button>
+      <button class="combat-btn combat-btn-item" id="btn-combat-item" onclick="openCombatItemMenu()">🎒 Item</button>
       <button class="combat-btn combat-btn-flee" id="btn-combat-flee" onclick="combatFlee()">↩ Flee</button>
+    </div>
+    <div id="combat-auto-row">
+      <label class="combat-auto-label">
+        <input type="checkbox" id="cb-auto-attack" onchange="toggleAutoAttack(this.checked)">
+        Auto-attack
+      </label>
     </div>
   </div>
 </div>

@@ -996,12 +996,16 @@ function triggerEnemyAttack(e) {
 }
 
 // ======= TURN-BASED COMBAT =======
+let _autoAttack = false;
+let _combatTurnDefBoost = 0; // single-turn defence boost (from Riposte / Mana Shield)
+
 function startCombatEntity(e) {
   if(currentActivity) return;
   if(e.state==='dead') return;
   currentActivity = 'Combat';
   combatEnemy = e;
   _combatPlayerTurn = false;
+  _combatTurnDefBoost = 0;
 
   const portrait = document.getElementById('combat-enemy-portrait');
   portrait.textContent = e.def.letter;
@@ -1010,12 +1014,12 @@ function startCombatEntity(e) {
   document.getElementById('combat-enemy-name').textContent = e.def.name.toUpperCase();
   document.getElementById('combat-log').innerHTML = '';
   document.getElementById('combat-status').textContent = '';
+  _hideCombatMoveMenu();
   _updateCombatPanel();
   _addCombatLog(`You face the ${e.def.name}. What will you do?`);
   document.getElementById('combat-panel').classList.add('show');
   log(`⚔ You engage the ${e.def.name}!`, 'bad');
 
-  // Show flee % on button based on Attack level vs enemy speed
   const p = state.players[state.activePlayer];
   const attackBonus = Math.min(0.4, (p.skills.Attack.lvl - 1) / 98 * 0.4);
   const speedPenalty = Math.max(0, (e.def.speed - 1.5) * 0.08);
@@ -1023,7 +1027,11 @@ function startCombatEntity(e) {
   document.getElementById('btn-combat-flee').textContent = `↩ Flee (${fleePct}%)`;
 
   _setCombatButtons(false);
-  setTimeout(() => { _combatPlayerTurn = true; _setCombatButtons(true); }, 500);
+  setTimeout(() => {
+    _combatPlayerTurn = true;
+    _setCombatButtons(true);
+    if(_autoAttack) _triggerAutoAttack();
+  }, 500);
 }
 
 function _updateCombatPanel() {
@@ -1052,17 +1060,120 @@ function _addCombatLog(msg, cls='') {
 
 function _setCombatButtons(enabled) {
   document.getElementById('btn-combat-attack').disabled = !enabled;
-  document.getElementById('btn-combat-flee').disabled = !enabled;
+  document.getElementById('btn-combat-item').disabled   = !enabled;
+  document.getElementById('btn-combat-flee').disabled   = !enabled;
+  if(!enabled) _hideCombatMoveMenu();
 }
 
 function _closeCombatPanel() {
   document.getElementById('combat-panel').classList.remove('show');
+  _hideCombatMoveMenu();
   currentActivity = null;
   combatEnemy = null;
   _combatPlayerTurn = false;
+  _combatTurnDefBoost = 0;
 }
 
-function combatPlayerAttack() {
+// ── Weapon move definitions ──────────────────────────────────────────────────
+function _getWeaponMoves(p) {
+  const eq = getEquipment(p);
+  const wid = eq.weapon;
+  const bonuses = getEquipBonuses(p);
+
+  if(wid === 'old_staff' || bonuses.magicBonus > 0) {
+    const ml = (p.skills.Magic && p.skills.Magic.lvl) || 1;
+    const hasFireRune  = countInInventory('rune_fire')   > 0;
+    const hasIceRune   = countInInventory('rune_ice')    > 0;
+    const hasEarthRune = countInInventory('rune_earth')  > 0;
+    return [
+      { name:'Arcane Bolt',  icon:'✨', dmgMult:1.0, magicScale:ml, desc:'A bolt of raw arcane force.',           autoScore:2 },
+      { name:'Fire Burst',   icon:'🔥', dmgMult:1.4, magicScale:ml, runeReq:'rune_fire',  disabled:!hasFireRune,  desc:hasFireRune  ? 'Hurl a burst of flame.' : 'Requires a Fire Rune.',    autoScore:3 },
+      { name:'Frost Shard',  icon:'❄',  dmgMult:1.1, magicScale:ml, runeReq:'rune_ice',   disabled:!hasIceRune,   desc:hasIceRune   ? 'Slows and chills the enemy.' : 'Requires an Ice Rune.',   defBoostSelf:0, autoScore:2 },
+      { name:'Mana Shield',  icon:'🛡', dmgMult:0,   defBuff:10,    desc:'Raise a barrier (+10 Defence this turn).', autoScore:1 },
+    ];
+  }
+
+  if(wid === 'crude_bow') {
+    const hasArrows = eq.ammo ? countInInventory(eq.ammo) > 0 : false;
+    return [
+      { name:'Aimed Shot',   icon:'🏹', dmgMult:1.2, ammoReq:true,  disabled:!hasArrows, desc:hasArrows ? 'A precise aimed shot.' : 'No arrows equipped.',     autoScore:3 },
+      { name:'Rapid Fire',   icon:'🏹', dmgMult:0.7, hits:2, ammoReq:true, disabled:!hasArrows, desc:hasArrows ? 'Two quick shots.' : 'No arrows equipped.',  autoScore:3 },
+      { name:'Power Draw',   icon:'💪', dmgMult:1.8, ammoReq:true,  missChance:0.25, disabled:!hasArrows, desc:hasArrows ? 'Full draw — 25% miss chance.' : 'No arrows equipped.', autoScore:4 },
+      { name:'Point Blank',  icon:'🎯', dmgMult:1.0, atkBonus:6,    desc:'Strike with the bow at close range.',    autoScore:2 },
+    ];
+  }
+
+  if(wid === 'war_axe') {
+    return [
+      { name:'Chop',          icon:'🪓', dmgMult:1.0, desc:'A clean axe swing.',               autoScore:2 },
+      { name:'Cleave',        icon:'🪓', dmgMult:1.25, desc:'A wide sweeping cut.',             autoScore:3 },
+      { name:'Overhead Smash',icon:'💢', dmgMult:1.7, missChance:0.3, desc:'Massive blow — 30% miss chance.', autoScore:3 },
+      { name:'Battle Cry',    icon:'📣', dmgMult:0.5, strBuff:4, desc:'Boosts Strength +4 for 2 turns.',     autoScore:2 },
+    ];
+  }
+
+  if(wid === 'bone_dagger') {
+    return [
+      { name:'Quick Stab',    icon:'🗡', dmgMult:1.0,  desc:'A swift jab.',              autoScore:2 },
+      { name:'Double Jab',    icon:'🗡', dmgMult:0.65, hits:2, desc:'Two rapid stabs.',  autoScore:3 },
+      { name:'Precise Strike',icon:'🎯', dmgMult:1.35, desc:'A calculated thrust.',      autoScore:3 },
+      { name:'Cripple',       icon:'🦵', dmgMult:0.8,  enemyDebuf:2, desc:'Weakens foe — reduces their next hit by 2.', autoScore:2 },
+    ];
+  }
+
+  if(wid && ['bronze_sword','iron_sword','steel_sword','mithril_sword','sword'].includes(wid)) {
+    return [
+      { name:'Quick Slash',  icon:'⚔', dmgMult:1.0,  desc:'A fast reliable strike.',            autoScore:2 },
+      { name:'Heavy Strike', icon:'💥', dmgMult:1.5,  desc:'A powerful overhead blow.',           autoScore:4 },
+      { name:'Lunge',        icon:'🗡', dmgMult:1.2,  atkBonus:5, desc:'Reach forward and pierce.', autoScore:3 },
+      { name:'Riposte',      icon:'🛡', dmgMult:0.85, defBuff:8, desc:'Counter-attack (+8 Defence this turn).', autoScore:2 },
+    ];
+  }
+
+  if(wid === 'wooden_club') {
+    return [
+      { name:'Bludgeon',  icon:'🪃', dmgMult:1.0,  desc:'A solid club swing.',              autoScore:2 },
+      { name:'Heavy Blow',icon:'💥', dmgMult:1.4,  desc:'Two-handed overhead smash.',       autoScore:3 },
+      { name:'Pummel',    icon:'👊', dmgMult:0.65, hits:2, desc:'Two rapid strikes.',        autoScore:2 },
+      { name:'Headbutt',  icon:'🤛', dmgMult:1.2,  desc:'A stunning strike.',               autoScore:3 },
+    ];
+  }
+
+  // Unarmed default
+  return [
+    { name:'Punch',    icon:'👊', dmgMult:1.0,  desc:'A basic punch.',       autoScore:2 },
+    { name:'Haymaker', icon:'💥', dmgMult:1.5,  desc:'A wild swing.',        autoScore:3 },
+    { name:'Kick',     icon:'🦵', dmgMult:0.7,  hits:2, desc:'Two rapid kicks.', autoScore:2 },
+    { name:'Headbutt', icon:'🤛', dmgMult:1.2,  desc:'A stunning headbutt.', autoScore:3 },
+  ];
+}
+
+// ── Attack menu ──────────────────────────────────────────────────────────────
+function openAttackMenu() {
+  if(!_combatPlayerTurn || !combatEnemy) return;
+  const menu = document.getElementById('combat-move-menu');
+  if(menu.classList.contains('open')) { _hideCombatMoveMenu(); return; }
+
+  const p = state.players[state.activePlayer];
+  const moves = _getWeaponMoves(p);
+  menu.innerHTML = '';
+  moves.forEach(move => {
+    const row = document.createElement('div');
+    row.className = 'combat-move-row' + (move.disabled ? ' disabled' : '');
+    row.innerHTML = `<span class="combat-move-icon">${move.icon}</span>`
+      + `<span><div class="combat-move-name">${move.name}</div><div class="combat-move-desc">${move.desc}</div></span>`;
+    if(!move.disabled) row.onclick = () => executeCombatMove(move);
+    menu.appendChild(row);
+  });
+  menu.classList.add('open');
+}
+
+function _hideCombatMoveMenu() {
+  document.getElementById('combat-move-menu').classList.remove('open');
+}
+
+// ── Execute a combat move ────────────────────────────────────────────────────
+function executeCombatMove(move) {
   if(!_combatPlayerTurn || !combatEnemy) return;
   _combatPlayerTurn = false;
   _setCombatButtons(false);
@@ -1072,12 +1183,77 @@ function combatPlayerAttack() {
   const bonuses = getEquipBonuses(p);
   const tempStr = (p.tempBonuses && p.tempBonuses.strength) || 0;
   const tempAtk = (p.tempBonuses && p.tempBonuses.attack)   || 0;
-  const dmg = Math.floor(Math.random() * ((p.skills.Strength.lvl + bonuses.strBonus + tempStr) * 2 + 4)) + 1 + Math.floor((bonuses.attackBonus + tempAtk) / 3);
-  e.hp -= dmg;
+
+  // Defence-buff only move (Mana Shield, Riposte)
+  if(move.dmgMult === 0 && move.defBuff) {
+    _combatTurnDefBoost += move.defBuff;
+    _addCombatLog(`You use ${move.name}. (+${move.defBuff} Defence this turn)`, 'combat-log-dim');
+    document.getElementById('combat-status').textContent = `${e.def.name} prepares to strike...`;
+    setTimeout(_combatEnemyTurn, 800 + Math.random() * 300);
+    return;
+  }
+
+  // Riposte/defBuff WITH damage
+  if(move.defBuff && move.dmgMult > 0) {
+    _combatTurnDefBoost += move.defBuff;
+  }
+
+  // Miss chance
+  if(move.missChance && Math.random() < move.missChance) {
+    SFX.hit && SFX.hit();
+    _addCombatLog(`Your ${move.name} misses! The ${e.def.name} sidesteps.`, 'combat-log-dim');
+    document.getElementById('combat-status').textContent = `${e.def.name} prepares to strike...`;
+    setTimeout(_combatEnemyTurn, 800 + Math.random() * 300);
+    return;
+  }
+
+  // Battle Cry — str buff, minimal damage
+  if(move.strBuff) {
+    if(!p.tempBonuses) p.tempBonuses = {};
+    p.tempBonuses.strength = (p.tempBonuses.strength || 0) + move.strBuff;
+    const dur = 2; // tracked in turns, clear after 2 enemy attacks
+    _addCombatLog(`You let out a Battle Cry! (+${move.strBuff} Strength for 2 turns)`, 'combat-log-dim');
+    let turns = 0;
+    const clearStrBuff = () => {
+      turns++;
+      if(turns >= dur) {
+        p.tempBonuses.strength = Math.max(0, (p.tempBonuses.strength || 0) - move.strBuff);
+      }
+    };
+    // Attach to enemy turn count via a flag
+    if(!p._strBuffClears) p._strBuffClears = [];
+    p._strBuffClears.push({ remaining: dur, amount: move.strBuff });
+  }
+
+  const hits = move.hits || 1;
+  let totalDmg = 0;
+  for(let i = 0; i < hits; i++) {
+    const extraAtk = move.atkBonus || 0;
+    // Magic moves scale with Magic level instead of Strength
+    let base;
+    if(move.magicScale) {
+      const ml = move.magicScale;
+      base = Math.floor(Math.random() * (ml * 2 + 4)) + 1 + Math.floor((bonuses.magicBonus * 2 + extraAtk) / 3);
+    } else {
+      base = Math.floor(Math.random() * ((p.skills.Strength.lvl + bonuses.strBonus + tempStr) * 2 + 4)) + 1 + Math.floor((bonuses.attackBonus + tempAtk + extraAtk) / 3);
+    }
+    totalDmg += Math.max(1, Math.floor(base * (move.dmgMult || 1.0)));
+  }
+
+  // Enemy debuff (Cripple) — reduce next enemy attack
+  if(move.enemyDebuf) {
+    e._debufDmgReduce = (e._debufDmgReduce || 0) + move.enemyDebuf;
+  }
+
+  e.hp -= totalDmg;
   e.flashTimer = 0.6;
-  SFX.hit();
-  _addCombatLog(`You strike the ${e.def.name} for ${dmg} damage.`, 'combat-log-hit');
-  log(`You hit the ${e.def.name} for ${dmg}.`, '');
+  SFX.hit && SFX.hit();
+
+  const hitDesc = hits > 1
+    ? `You ${move.name.toLowerCase()} the ${e.def.name} twice for ${totalDmg} total damage.`
+    : `You use ${move.name} on the ${e.def.name} for ${totalDmg} damage.`;
+  _addCombatLog(hitDesc, 'combat-log-hit');
+  log(`You hit the ${e.def.name} for ${totalDmg}.`, '');
   _updateCombatPanel();
 
   if(e.hp <= 0) { _combatVictory(); return; }
@@ -1086,20 +1262,120 @@ function combatPlayerAttack() {
   setTimeout(_combatEnemyTurn, 800 + Math.random() * 300);
 }
 
+// ── Item menu in combat ───────────────────────────────────────────────────────
+function openCombatItemMenu() {
+  if(!_combatPlayerTurn || !combatEnemy) return;
+  const menu = document.getElementById('combat-move-menu');
+
+  // If showing item menu already, close it
+  if(menu.classList.contains('open') && menu.dataset.mode === 'item') {
+    _hideCombatMoveMenu(); return;
+  }
+
+  const p = state.players[state.activePlayer];
+  const usable = [];
+  p.inventory.forEach((slot, idx) => {
+    if(!slot) return;
+    const def = ITEMS[slot.id];
+    if(!def) return;
+    if(def.type === 'potion' || (def.type === 'food' && def.healAmt > 0) || (def.type === 'rune' && def.isHeal)) {
+      usable.push({ idx, id: slot.id, def });
+    }
+  });
+
+  menu.innerHTML = '';
+  menu.dataset.mode = 'item';
+
+  if(usable.length === 0) {
+    const row = document.createElement('div');
+    row.className = 'combat-move-row disabled';
+    row.innerHTML = `<span class="combat-move-icon">🎒</span><span><div class="combat-move-name">No usable items</div><div class="combat-move-desc">Carry potions or food for combat use.</div></span>`;
+    menu.appendChild(row);
+  } else {
+    usable.forEach(({ idx, id, def }) => {
+      const row = document.createElement('div');
+      row.className = 'combat-move-row';
+      const desc = def.healAmt > 0 ? `Restores ${def.healAmt} HP`
+        : def.tempBonus ? Object.entries(def.tempBonus).map(([k,v])=>`+${v} ${k[0].toUpperCase()+k.slice(1)}`).join(', ') + ` for ${Math.round((def.tempDuration||90000)/1000)}s`
+        : def.healMin ? `Restores ${def.healMin}–${def.healMax} HP`
+        : '';
+      row.innerHTML = `<span class="combat-move-icon">${def.icon}</span><span><div class="combat-move-name">${def.name}</div><div class="combat-move-desc">${desc}</div></span>`;
+      row.onclick = () => {
+        _hideCombatMoveMenu();
+        _combatPlayerTurn = false;
+        _setCombatButtons(false);
+        // Use the item
+        if(def.type === 'potion') {
+          drinkPotion(idx, id);
+        } else if(def.type === 'food' && def.healAmt > 0) {
+          eatFood(idx, def.healAmt);
+        } else if(def.type === 'rune' && def.isHeal) {
+          castRune(idx, id);
+          // castRune handles its own turn, don't double-trigger enemy turn
+          return;
+        }
+        _addCombatLog(`You use a ${def.name} during combat.`, 'combat-log-dim');
+        _updateCombatPanel();
+        document.getElementById('combat-status').textContent = `${combatEnemy.def.name} prepares to strike...`;
+        setTimeout(_combatEnemyTurn, 700);
+      };
+      menu.appendChild(row);
+    });
+  }
+  menu.classList.add('open');
+}
+
+// ── Auto-attack ───────────────────────────────────────────────────────────────
+function toggleAutoAttack(enabled) {
+  _autoAttack = enabled;
+  if(enabled && _combatPlayerTurn && combatEnemy) _triggerAutoAttack();
+}
+
+function _triggerAutoAttack() {
+  setTimeout(() => {
+    if(!_combatPlayerTurn || !combatEnemy || !_autoAttack) return;
+    const p = state.players[state.activePlayer];
+    const moves = _getWeaponMoves(p).filter(m => !m.disabled);
+    const best = moves.reduce((a, b) => b.autoScore > a.autoScore ? b : a, moves[0]);
+    if(best) executeCombatMove(best);
+  }, 400);
+}
+
 function _combatEnemyTurn() {
   const p = state.players[state.activePlayer];
   const e = combatEnemy;
   if(!e || e.state === 'dead') return;
 
   document.getElementById('combat-status').textContent = '';
+
+  // Consume turn-based str buffs
+  if(p._strBuffClears && p._strBuffClears.length > 0) {
+    p._strBuffClears = p._strBuffClears.filter(b => {
+      b.remaining--;
+      if(b.remaining <= 0) {
+        if(!p.tempBonuses) p.tempBonuses = {};
+        p.tempBonuses.strength = Math.max(0, (p.tempBonuses.strength || 0) - b.amount);
+        return false;
+      }
+      return true;
+    });
+  }
+
   const tempDef = (p.tempBonuses && p.tempBonuses.defence) || 0;
-  const defBonus = Math.max(0, p.skills.Defence.lvl - 3) + getEquipBonuses(p).defBonus + tempDef;
-  const rawDmg = Math.floor(Math.random() * (e.def.maxDmg - e.def.minDmg + 1)) + e.def.minDmg;
+  const defBonus = Math.max(0, p.skills.Defence.lvl - 3) + getEquipBonuses(p).defBonus + tempDef + _combatTurnDefBoost;
+  _combatTurnDefBoost = 0; // single-turn boost consumed
+
+  let rawDmg = Math.floor(Math.random() * (e.def.maxDmg - e.def.minDmg + 1)) + e.def.minDmg;
+  // Apply enemy debuff (Cripple move)
+  if(e._debufDmgReduce) {
+    rawDmg = Math.max(0, rawDmg - e._debufDmgReduce);
+    e._debufDmgReduce = 0;
+  }
   const actualDmg = Math.max(0, rawDmg - defBonus);
 
   if(actualDmg > 0) {
     p.hp = Math.max(0, p.hp - actualDmg);
-    SFX.hit();
+    SFX.hit && SFX.hit();
     _addCombatLog(`The ${e.def.name} strikes you for ${actualDmg} damage.`, 'combat-log-bad');
     log(`The ${e.def.name} hits you for ${actualDmg}.`, 'bad');
   } else {
@@ -1113,6 +1389,7 @@ function _combatEnemyTurn() {
 
   _combatPlayerTurn = true;
   _setCombatButtons(true);
+  if(_autoAttack) _triggerAutoAttack();
 }
 
 function combatFlee() {
