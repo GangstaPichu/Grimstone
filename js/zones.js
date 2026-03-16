@@ -879,22 +879,18 @@ function makeAshenveil() {
   tiles[7][25]=T.BWALL_PLAIN; tiles[7][26]=T.BWALL_FORGE;
   // Smelter and workbench are inside — see makeBlacksmithInterior()
 
-  // ---- MARKET STALL / SHOP (south side of square) ----
-  // Layout (6 wide x 3 tall, top-left at y=19 x=12):
-  //   Row y=19 (roof):   ROOF_L ROOF_M ROOF_M ROOF_M ROOF_M ROOF_R
-  //   Row y=20 (front):  AWNING AWNING AWNING AWNING AWNING AWNING  (open-front stall)
-  //   Row y=21 (ground): FLOOR  FLOOR  FLOOR  FLOOR  FLOOR  FLOOR   (open, walkable)
-  for(let fy=19;fy<=21;fy++) for(let fx=12;fx<=17;fx++) tiles[fy][fx]=T.STONE_FLOOR;
-  tiles[19][12]=T.ROOF_L;     tiles[19][13]=T.ROOF_M;  tiles[19][14]=T.ROOF_M;
-  tiles[19][15]=T.ROOF_M;     tiles[19][16]=T.ROOF_M;  tiles[19][17]=T.ROOF_R;
-  tiles[20][12]=T.BWALL_AWNING; tiles[20][13]=T.BWALL_AWNING; tiles[20][14]=T.BWALL_AWNING;
-  tiles[20][15]=T.BWALL_AWNING; tiles[20][16]=T.BWALL_AWNING; tiles[20][17]=T.BWALL_AWNING;
-  // Row y=21 stays as stone floor — open front of stall is walkable
-  // Interactive shop/cooking tiles on stall counter
-  tiles[20][14]=T.SHOP;
-  tiles[20][15]=T.COOKING_FIRE;
-  // Blacksmith interactive tiles (inside, reachable after entering via INN_DOOR logic)
-  // Smelter and workbench are inside — see makeBlacksmithInterior()
+  // ---- DORIN'S TRADING POST (6 wide × 4 tall, y=18..21, x=12..17) ----
+  //   y=18 (roof):   ROOF_L  ROOF_M  ROOF_M  ROOF_M  ROOF_M  ROOF_R
+  //   y=19 (upper):  SIDE    WIN     WIN     WIN     WIN     SIDE
+  //   y=20 (front):  PLAIN   WIN     WIN    BWALL_DOOR  WIN  PLAIN  ← door at x=15
+  //   y=21 (approach): stone floor (square cobble area)
+  for(let fy=18;fy<=21;fy++) for(let fx=12;fx<=17;fx++) tiles[fy][fx]=T.STONE_FLOOR;
+  tiles[18][12]=T.ROOF_L;    tiles[18][13]=T.ROOF_M;    tiles[18][14]=T.ROOF_M;
+  tiles[18][15]=T.ROOF_M;    tiles[18][16]=T.ROOF_M;    tiles[18][17]=T.ROOF_R;
+  tiles[19][12]=T.BWALL_SIDE; tiles[19][13]=T.BWALL_WIN; tiles[19][14]=T.BWALL_WIN;
+  tiles[19][15]=T.BWALL_WIN;  tiles[19][16]=T.BWALL_WIN; tiles[19][17]=T.BWALL_SIDE;
+  tiles[20][12]=T.BWALL_PLAIN; tiles[20][13]=T.BWALL_WIN; tiles[20][14]=T.BWALL_WIN;
+  tiles[20][15]=T.BWALL_DOOR;  tiles[20][16]=T.BWALL_WIN; tiles[20][17]=T.BWALL_PLAIN;
 
 
   // ---- GRIMSTONE SAVINGS BANK (5 wide × 4 tall, y=5..8, x=12..16) ----
@@ -1030,9 +1026,10 @@ function makeAshenveil() {
 
   // Town well (centre of square)
   placeDecor(tiles,floor,15,18,T.TOWN_WELL);
-  // 5 dock barrels — one randomly holds Mira's Locket (see searchBarrel)
+  // 7 dock barrels — all on DOCK_PLANK floor; one randomly holds Mira's Locket (see searchBarrel)
   placeDecor(tiles,floor,22,28,T.BARREL); placeDecor(tiles,floor,23,28,T.BARREL);
   placeDecor(tiles,floor,22,30,T.BARREL); placeDecor(tiles,floor,23,30,T.BARREL);
+  placeDecor(tiles,floor,22,32,T.BARREL); placeDecor(tiles,floor,23,32,T.BARREL);
   placeDecor(tiles,floor,22,33,T.BARREL);
 
   // ---- LAMPPOSTS ----
@@ -1072,7 +1069,7 @@ function makeAshenveil() {
   tiles[11][10]=T.NPC_GUARD;
   tiles[11][26]=T.NPC_GUARD;
   tiles[16][30]=T.NPC_GUARD;   // Edwyn — south road / docks patrol
-  tiles[18][15]=T.NPC_MERCHANT;
+  // Dorin is now inside the Trading Post interior (see makeShopInterior)
   tiles[6][35]=T.NPC_VILLAGER;  // Mira
   tiles[6][42]=T.NPC_VILLAGER;  // Aldric
   tiles[32][4]=T.NPC_VILLAGER;  // Elspeth
@@ -1083,7 +1080,7 @@ function makeAshenveil() {
   // ---- Town decorations ----
   placeDecor(tiles,floor,22,20,T.NOTICE_BOARD);
   placeDecor(tiles,floor,10,29,T.CHEST); placeDecor(tiles,floor,10,30,T.CHEST);
-  placeDecor(tiles,floor,22,32,T.BARREL); placeDecor(tiles,floor,22,33,T.BARREL); placeDecor(tiles,floor,22,34,T.BARREL);
+  // (dock barrels placed earlier in the dock section)
   placeDecor(tiles,floor,10,6,T.CANDLE); placeDecor(tiles,floor,10,10,T.CANDLE);
   placeDecor(tiles,floor,9,23,T.BARREL); // outside blacksmith
 
@@ -1971,6 +1968,46 @@ function examineAltar(x, y) {
 // load the interior, and pop back out when stepping on EXIT_INTERIOR.
 let interiorStack = []; // [{map, enemies, npcs, playerPos, zoneIndex, zoneName}]
 
+// ======= DORIN'S TRADING POST INTERIOR =======
+function makeShopInterior() {
+  const W=14, H=8;
+  const tiles = Array.from({length:H}, ()=>Array(W).fill(T.STONE_FLOOR));
+  const floor  = Array.from({length:H}, ()=>Array(W).fill(T.STONE_FLOOR));
+
+  function pd(y,x,tile) { placeDecor(tiles,floor,y,x,tile); }
+
+  // Outer walls
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++)
+    if(y===0||y===H-1||x===0||x===W-1) tiles[y][x]=T.WALL;
+
+  // Counter row — solid barrier separating Dorin's side from customer floor
+  for(let x=1;x<=W-2;x++) if(x!==6) tiles[3][x]=T.WALL;
+  // Gap at x=6 allows standing-adjacent interaction
+
+  // Snapshot floor before decorations
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++) floor[y][x]=tiles[y][x];
+
+  // ---- Behind-counter (Dorin's side, y=1..2) ----
+  pd(1,1,T.BOOKSHELF); pd(1,2,T.BOOKSHELF);    // shelves on west wall
+  pd(1,11,T.BOOKSHELF); pd(1,12,T.BOOKSHELF);  // shelves on east wall
+  pd(2,1,T.BARREL);    pd(2,2,T.BARREL);        // stock barrels west
+  pd(2,11,T.BARREL);   pd(2,12,T.BARREL);       // stock barrels east
+  pd(1,5,T.CANDLE);    pd(1,8,T.CANDLE);        // candles on back wall
+
+  // Dorin behind counter
+  tiles[2][6]=T.NPC_MERCHANT;
+
+  // ---- Customer floor (y=4..6) ----
+  pd(5,2,T.BARREL); pd(5,12,T.BARREL);          // display barrels flanking
+  pd(4,1,T.CANDLE); pd(4,12,T.CANDLE);           // entrance candles
+
+  // Exit — south wall centre
+  tiles[H-1][6]=T.GRASS; // break wall
+  pd(H-1,6,T.EXIT_INTERIOR);
+
+  return {tiles, floor, W, H, isInterior:true, name:"DORIN'S TRADING POST", entryX:6, entryY:5};
+}
+
 // ======= THE WESTERN PASS — Caravan Quest Zone =======
 function makeCaravanZoneMap() {
   const W=50, H=20;
@@ -2200,7 +2237,8 @@ const NAMED_NPCS = {
   '11,26': { name:'Sera',     gender:'f', title:'Guard Sera',       col:'#7a9aaa', letter:'S' },
   '16,30': { name:'Edwyn',    gender:'m', title:'Guard Edwyn',      col:'#6a8aaa', letter:'E' },
   // Merchant
-  '18,15': { name:'Dorin',    gender:'m', title:'Dorin the Trader', col:'#d8a040', letter:'D' },
+  // Dorin is now inside the Trading Post interior (NAMED_NPCS key uses 'shop:' prefix)
+  'shop:2,6': { name:'Dorin',  gender:'m', title:'Dorin the Trader', col:'#d8a040', letter:'D' },
   // Villagers
   '6,35':  { name:'Mira',     gender:'f', title:'Mira',             col:'#a09080', letter:'M' },
   '6,42':  { name:'Aldric',   gender:'m', title:'Aldric',           col:'#908070', letter:'A' },

@@ -465,7 +465,7 @@ function getTileActions(t, x, y){
   ];
   if(t===T.SMELTER)       return [{icon:'🔥',label:'Smelt Bars',        action:(x,y)=>walkThenDo(x,y,()=>openSmelter())}];
   if(t===T.COOKING_FIRE)  return [{icon:'🍖',label:'Cook Food',          action:(x,y)=>walkThenDo(x,y,()=>openCooker())}];
-  if(t===T.SHOP)          return [{icon:'🏪',label:'Visit Shop',         action:(x,y)=>walkThenDo(x,y,()=>openShop())}];
+  // T.SHOP removed — trading is done by talking to Dorin inside his shop
   if(t===T.WORKBENCH)     return [{icon:'🪵',label:'Craft Woodwork',     action:(x,y)=>walkThenDo(x,y,()=>openWorkbench())}];
   if(t===T.BED) {
     const actions = [{icon:'🛏',label:'Sleep', action:(x,y)=>walkThenDo(x,y,()=>sleepUntilMorning())}];
@@ -490,7 +490,7 @@ function getTileActions(t, x, y){
         '3,33':{label:"Enter Mira's House"},   '3,40':{label:"Enter Aldric's House"},
         '3,47':{label:'Enter Residence'},       '3,54':{label:'Enter Residence'},
         '27,3':{label:"Enter Elspeth's House"}, '27,11':{label:"Enter Rowan's House"},
-        '7,24':{label:'Enter The Ashen Forge'},
+        '7,24':{label:'Enter The Ashen Forge'}, '20,15':{label:"Enter Dorin's Trading Post"},
       };
       const ha = HOUSE_ACTIONS[`${y},${x}`];
       if(ha) return [{icon:'🚪',label:ha.label, action:()=>movePlayerToward(x, y+1)}];
