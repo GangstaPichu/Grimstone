@@ -154,6 +154,10 @@ function getItemActions(id){
   if(id === 'milk_bucket') {
     return [{icon:'🥛', label:`Drink Milk (heal ${item.healAmt} HP)`, action:(si)=>drinkMilk(si)}];
   }
+  // ── Water Bucket — refreshing, keeps bucket ───────────────────────────
+  if(id === 'water_bucket') {
+    return [{icon:'💧', label:'Drink Water (refreshing)', action:(si)=>drinkWater(si)}];
+  }
 
   // ── Generic food (healAmt > 0) ────────────────────────────────────────
   if(item.type === 'food' && item.healAmt > 0) {
@@ -202,6 +206,36 @@ function drinkMilk(slotIdx) {
   buildInventory(); updateHUD();
   log(`You drink the milk. Restored ${actual} HP. (You keep the bucket.)`, 'good');
   SFX.eat && SFX.eat();
+}
+
+function drinkWater(slotIdx) {
+  const p = state.players[state.activePlayer];
+  const item = p.inventory[slotIdx];
+  if(!item) return;
+  item.qty--;
+  if(item.qty <= 0) p.inventory[slotIdx] = null;
+  addToInventory('wooden_bucket');
+  buildInventory(); updateHUD();
+  log('You drink the cool well water. Refreshing.', 'good');
+}
+
+function grindWheat() {
+  if(countInInventory('wheat') < 1) { log('You need wheat to grind at the windmill.', 'bad'); return; }
+  removeFromInventory('wheat', 1);
+  addToInventory('flour');
+  buildInventory();
+  giveXP('Farming', 5);
+  log('The millstone grinds the wheat into fine flour. (+5 Farming xp)', 'good');
+}
+
+function churnButter() {
+  if(countInInventory('milk_bucket') < 1) { log('You need a Milk Bucket to churn butter.', 'bad'); return; }
+  removeFromInventory('milk_bucket', 1);
+  addToInventory('butter');
+  addToInventory('wooden_bucket');
+  buildInventory();
+  giveXP('Farming', 6);
+  log('You churn the milk into rich butter — and keep the bucket. (+6 Farming xp)', 'good');
 }
 
 // ── Rune casting ────────────────────────────────────────────────────────

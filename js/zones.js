@@ -897,6 +897,26 @@ function makeAshenveil() {
   // Smelter and workbench are inside — see makeBlacksmithInterior()
 
 
+  // ---- GRIMSTONE SAVINGS BANK (5 wide × 4 tall, y=5..8, x=12..16) ----
+  //   y=5 (roof):   ROOF_L  ROOF_M  ROOF_CHIMNEY  ROOF_M  ROOF_R
+  //   y=6 (upper):  SIDE    WIN     WIN            WIN     SIDE
+  //   y=7 (mid):    SIDE    WIN     WIN            WIN     SIDE
+  //   y=8 (front):  PLAIN   WIN     BWALL_DOOR     WIN     PLAIN  ← door opens bank UI
+  for(let fy=5;fy<=9;fy++) for(let fx=12;fx<=16;fx++) tiles[fy][fx]=T.STONE_FLOOR;
+  // Roof (y=5)
+  tiles[5][12]=T.ROOF_L; tiles[5][13]=T.ROOF_M; tiles[5][14]=T.ROOF_CHIMNEY;
+  tiles[5][15]=T.ROOF_M; tiles[5][16]=T.ROOF_R;
+  // Upper wall (y=6)
+  tiles[6][12]=T.BWALL_SIDE; tiles[6][13]=T.BWALL_WIN;
+  tiles[6][14]=T.BWALL_WIN;  tiles[6][15]=T.BWALL_WIN;  tiles[6][16]=T.BWALL_SIDE;
+  // Mid wall (y=7)
+  tiles[7][12]=T.BWALL_SIDE; tiles[7][13]=T.BWALL_WIN;
+  tiles[7][14]=T.BWALL_WIN;  tiles[7][15]=T.BWALL_WIN;  tiles[7][16]=T.BWALL_SIDE;
+  // Front face (y=8) — door at x=14 opens the bank panel
+  tiles[8][12]=T.BWALL_PLAIN; tiles[8][13]=T.BWALL_WIN;
+  tiles[8][14]=T.BWALL_DOOR;  tiles[8][15]=T.BWALL_WIN;  tiles[8][16]=T.BWALL_PLAIN;
+  // y=9 (stone floor) already set — serves as approach tile
+
     // ---- TOWN WELL and LAMPPOSTS — placed via placeDecor after floor snapshot ----
 
   // ---- DOCKS / WATER (south-east corner) ----
@@ -1057,6 +1077,7 @@ function makeAshenveil() {
   tiles[32][4]=T.NPC_VILLAGER;  // Elspeth
   tiles[32][12]=T.NPC_VILLAGER; // Rowan
   // Old Bertram moved to Greenfield Pastures (farm zone)
+  tiles[10][14]=T.NPC_VILLAGER; // Willa — bank teller, stands at the bank entrance
 
   // ---- Town decorations ----
   placeDecor(tiles,floor,22,20,T.NOTICE_BOARD);
@@ -1235,6 +1256,7 @@ function makeGreenfieldMap() {
   pd(12,7,T.WATER_TROUGH); pd(12,13,T.WATER_TROUGH);
   pd(10,7,T.ANIMAL_COW); pd(10,14,T.ANIMAL_CHICKEN);
   pd(13,10,T.BARREL); pd(9,16,T.CANDLE); pd(9,7,T.CANDLE);
+  pd(12,16,T.BUTTER_CHURN); // butter churn — south-east corner of barn
   // Path barn→lane
   for(let y=16;y<=laneY;y++) tiles[y][11]=T.DIRT;
 
@@ -2079,6 +2101,8 @@ const NAMED_NPCS = {
   'farm:9,25':  { name:'Aldous',  gender:'m', title:'Aldous',         col:'#6a9a3a', letter:'A' },
   // Old Bertram — homestead quest giver (now at Greenfield Pastures, outside the barn)
   'farm:17,7': { name:'Bertram', gender:'m', title:'Old Bertram', col:'#9a7850', letter:'B' },
+  // Willa — bank teller at Grimstone Savings Bank
+  '10,14': { name:'Willa', gender:'f', title:'Willa, Bank Teller', col:'#c8a060', letter:'W' },
 };
 
 // Per-v// unique rumour lines (keyed by name)
@@ -2095,6 +2119,7 @@ const VILLAGER_RUMOURS = {
   Grimward: "If you've got ore, I can smelt it. If you want gear, I've got stock. Just don't touch the cooling rack.",
   Thessaly: "I came to Ashenveil to find someone. Asked around. Nobody talks much. Maybe you know something — person in a dark cloak, never shows their face?",
   Bertram:  "I had a homestead once. Fine land, good soil. Haven't been back in years — gave the sigil to whoever needed it more. Maybe that's you.",
+  Willa:    "Grimstone Savings Bank — your gold is safer here than in a coat pocket. We also deal in shares and savings bonds, if you're the investing type.",
 };
 
 // ======= HOMESTEAD MAP =======

@@ -160,6 +160,14 @@ function showNpcCtxMenu(e, npc) {
   talk.innerHTML='<span class="ctx-icon">💬</span>Talk';
   talk.onclick=()=>{ hideCtxMenu(); walkThenDo(tx,ty,()=>openDialogue(npc)); };
   ctxMenu.appendChild(talk);
+  // Bank teller — shortcut to bank panel
+  if(npc.npcName === 'Willa') {
+    const bankBtn=document.createElement('div');
+    bankBtn.className='ctx-item';
+    bankBtn.innerHTML='<span class="ctx-icon">🏦</span>Visit Bank';
+    bankBtn.onclick=()=>{ hideCtxMenu(); walkThenDo(tx,ty,()=>openBankPanel()); };
+    ctxMenu.appendChild(bankBtn);
+  }
   if(NPC_DIALOGUE[npc.typeId]?.hasTrade) {
     const trade=document.createElement('div');
     trade.className='ctx-item';
@@ -261,7 +269,8 @@ function getTileLabel(t, tx, ty){
     [T.SCARECROW]:'🎃 Scarecrow',
     [T.CROP_WHEAT]:'🌾 Wheat — Harvest',
     [T.CROP_TURNIP]:'🥕 Turnip — Harvest',
-    [T.WINDMILL]:'⚙️ Windmill',
+    [T.WINDMILL]:'⚙️ Windmill — Grind Wheat',
+    [T.BUTTER_CHURN]:'🧈 Butter Churn',
     // Homestead tiles
     [T.TILLED_SOIL]:'🌱 Tilled Soil — Plant a seed',
     [T.SEEDLING]:'🌱 Seedling — Growing...',
@@ -285,6 +294,7 @@ function getTileLabel(t, tx, ty){
       "3,47":"🚪 Residence",        "3,54":"🚪 Residence",
       "27,3":"🚪 Elspeth's House", "27,11":"🚪 Rowan's House",
       "7,24":"🚪 The Ashen Forge — Enter",
+      "8,14":"🏦 Grimstone Savings Bank — Enter",
     };
     return HOUSE_LABELS[`${ly},${lx}`] || '';
   }
@@ -316,7 +326,7 @@ const SOLID_TILES = new Set([
   T.ROOF_L, T.ROOF_M, T.ROOF_R, T.ROOF_CHIMNEY,
   T.BWALL_DOOR, T.BWALL_WIN, T.BWALL_FORGE, T.BWALL_AWNING, T.BWALL_PLAIN, T.BWALL_SIDE,
   // Farm structures (solid)
-  T.HAY_BALE, T.FENCE_POST, T.WATER_TROUGH, T.SCARECROW, T.WINDMILL,
+  T.HAY_BALE, T.FENCE_POST, T.WATER_TROUGH, T.SCARECROW, T.WINDMILL, T.BUTTER_CHURN,
   // Crops are solid (walk-adjacent to harvest)
   T.CROP_WHEAT, T.CROP_TURNIP,
   T.HOME_WHEAT, T.HOME_TURNIP, T.HOME_CARROT, T.HOME_POTATO, T.HOME_ONION,
@@ -480,6 +490,8 @@ function getTileActions(t){
     if(currentMap && currentMap.name==='ASHENVEIL') {
       // Inn door
       if(x===8 && y===8) return [{icon:'🚪',label:'Enter The Tarnished Flagon', action:()=>movePlayerToward(8,9)}];
+      // Bank door
+      if(x===14 && y===8) return [{icon:'🏦',label:'Grimstone Savings Bank', action:()=>walkThenDo(14,9,()=>openBankPanel())}];
       // House doors — approach tile is y+1
       const HOUSE_ACTIONS = {
         '3,33':{label:"Enter Mira's House"},   '3,40':{label:"Enter Aldric's House"},
@@ -558,6 +570,10 @@ function getTileActions(t){
   if(t===T.HOME_CARROT)  return [{icon:'🥕',label:'Harvest Carrot', action:(x,y)=>walkThenDo(x,y,()=>harvestHomeCrop(x,y,'carrot', 'You pull up the carrot.'))}];
   if(t===T.HOME_POTATO)  return [{icon:'🥔',label:'Harvest Potato', action:(x,y)=>walkThenDo(x,y,()=>harvestHomeCrop(x,y,'potato', 'You dig up the potato.'))}];
   if(t===T.HOME_ONION)   return [{icon:'🧅',label:'Harvest Onion',  action:(x,y)=>walkThenDo(x,y,()=>harvestHomeCrop(x,y,'onion',  'You pull up the onion.'))}];
+  // Windmill — grind wheat into flour
+  if(t===T.WINDMILL) return [{icon:'⚙️', label:'Grind Wheat (→ Flour)', action:(x,y)=>walkThenDo(x,y,()=>grindWheat())}];
+  // Butter churn
+  if(t===T.BUTTER_CHURN) return [{icon:'🧈', label:'Churn Butter (needs Milk Bucket)', action:(x,y)=>walkThenDo(x,y,()=>churnButter())}];
   // Well — fill a wooden bucket with water
   if(t===T.TOWN_WELL) {
     const hasBucket = countInInventory('wooden_bucket') > 0;

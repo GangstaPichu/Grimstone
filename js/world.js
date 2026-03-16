@@ -431,6 +431,8 @@ const ITEMS = {
   turnip:      {name:'Turnip',       icon:'🥕', type:'food', healAmt:3, desc:'A firm turnip. Not exciting, but filling. Restores 3 HP.'},
   egg:         {name:'Egg',          icon:'🥚', type:'food', healAmt:2, desc:'A fresh egg from the farm. Restores 2 HP.'},
   hard_boiled_egg:{name:'Hard Boiled Egg',icon:'🍳',type:'food', healAmt:8, desc:'A perfectly boiled egg. Simple and filling. Restores 8 HP.'},
+  flour:       {name:'Flour',        icon:'🌾', type:'material', desc:'Finely ground wheat flour. Useful for baking.'},
+  butter:      {name:'Butter',       icon:'🧈', type:'food', healAmt:5, desc:'Freshly churned butter. Rich and creamy. Restores 5 HP.'},
   carrot:      {name:'Carrot',       icon:'🥕', type:'food', healAmt:5, desc:'A freshly pulled carrot. Crisp and sweet. Restores 5 HP.'},
   potato:      {name:'Potato',       icon:'🥔', type:'food', healAmt:7, desc:'A hearty potato. Plain but filling. Restores 7 HP.'},
   onion:       {name:'Onion',        icon:'🧅', type:'food', healAmt:2, desc:'A pungent onion. Not the best alone. Restores 2 HP.'},
@@ -559,6 +561,8 @@ const T = {
   HOME_CARROT:  198,
   HOME_POTATO:  199,
   HOME_ONION:   200,
+  // Farm processing
+  BUTTER_CHURN: 201,
 };
 
 // Set of tile IDs that are decorations drawn over a floor layer
@@ -582,6 +586,8 @@ const DECOR_TILES = new Set([
   // Homestead farming tiles
   T.TILLED_SOIL, T.SEEDLING, T.CROP_GROWING,
   T.HOME_WHEAT, T.HOME_TURNIP, T.HOME_CARROT, T.HOME_POTATO, T.HOME_ONION,
+  // Farm processing
+  T.BUTTER_CHURN,
 ]);
 
 // Place a decoration tile and record the floor underneath in the floor layer
