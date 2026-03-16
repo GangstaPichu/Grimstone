@@ -1056,7 +1056,7 @@ function makeAshenveil() {
   tiles[6][42]=T.NPC_VILLAGER;  // Aldric
   tiles[32][4]=T.NPC_VILLAGER;  // Elspeth
   tiles[32][12]=T.NPC_VILLAGER; // Rowan
-  tiles[14][6]=T.NPC_VILLAGER;  // Old Bertram — homestead quest giver
+  // Old Bertram moved to Greenfield Pastures (farm zone)
 
   // ---- Town decorations ----
   placeDecor(tiles,floor,22,20,T.NOTICE_BOARD);
@@ -1310,8 +1310,9 @@ function makeGreenfieldMap() {
 
   // Named NPCs
   const namedNpcs = [
-    { x:35, y:laneY-2, name:'Greta',  gender:'f' },
-    { x:25, y:9,       name:'Aldous', gender:'m' },
+    { x:35, y:laneY-2, name:'Greta',   gender:'f' },
+    { x:25, y:9,       name:'Aldous',  gender:'m' },
+    { x:7,  y:17,      name:'Bertram', gender:'m' },
   ];
 
   return { tiles, floor, W, H, name:'GREENFIELD PASTURES',
@@ -2076,8 +2077,8 @@ const NAMED_NPCS = {
   // Greenfield Pastures farmers
   'farm:20,35': { name:'Greta',   gender:'f', title:'Greta',          col:'#7aaa4a', letter:'G' },
   'farm:9,25':  { name:'Aldous',  gender:'m', title:'Aldous',         col:'#6a9a3a', letter:'A' },
-  // Old Bertram — homestead quest giver (west of inn cobble path)
-  '14,6': { name:'Bertram', gender:'m', title:'Old Bertram', col:'#9a7850', letter:'B' },
+  // Old Bertram — homestead quest giver (now at Greenfield Pastures, outside the barn)
+  'farm:17,7': { name:'Bertram', gender:'m', title:'Old Bertram', col:'#9a7850', letter:'B' },
 };
 
 // Per-v// unique rumour lines (keyed by name)

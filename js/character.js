@@ -15,7 +15,7 @@ const CLASSES = [
     lore:'A wanderer of the wilds who hunts from the shadows. Swift and deadly, masters of the hunt.',
     bonus:{Attack:3, Woodcutting:5, Fishing:3, Hitpoints:2},
     gear:['normal_log','raw_fish'],
-    startEquip:{weapon:'bone_dagger', body:'leather_body'},
+    startEquip:{weapon:'crude_bow', body:'leather_body'},
     hairStyle:2,
   },
   {
@@ -58,7 +58,7 @@ const CLASSES = [
     lore:'You came to the arcane through study, obsession, or accident. Either way, the runes answered — and now they always will.',
     bonus:{Magic:8, Crafting:3, Hitpoints:2},
     gear:['rune_fire','rune_fire','rune_heal'],
-    startEquip:{},
+    startEquip:{weapon:'old_staff'},
     hairStyle:1,
   },
 ];

@@ -558,11 +558,39 @@ function getTileActions(t){
   if(t===T.HOME_CARROT)  return [{icon:'🥕',label:'Harvest Carrot', action:(x,y)=>walkThenDo(x,y,()=>harvestHomeCrop(x,y,'carrot', 'You pull up the carrot.'))}];
   if(t===T.HOME_POTATO)  return [{icon:'🥔',label:'Harvest Potato', action:(x,y)=>walkThenDo(x,y,()=>harvestHomeCrop(x,y,'potato', 'You dig up the potato.'))}];
   if(t===T.HOME_ONION)   return [{icon:'🧅',label:'Harvest Onion',  action:(x,y)=>walkThenDo(x,y,()=>harvestHomeCrop(x,y,'onion',  'You pull up the onion.'))}];
+  // Well — fill a wooden bucket with water
+  if(t===T.TOWN_WELL) {
+    const hasBucket = countInInventory('wooden_bucket') > 0;
+    if(hasBucket) return [{icon:'💧', label:'Fill Bucket (Water Bucket)', action:(x,y)=>walkThenDo(x,y,()=>fillBucket())}];
+    return [{icon:'💧', label:'Town Well (need a Wooden Bucket)', action:()=>{log('You need a Wooden Bucket to collect water.','bad');}}];
+  }
   // Animal interactions
   if(t===T.ANIMAL_CHICKEN) return [{icon:'🐔',label:'Catch Chicken', action:(x,y)=>walkThenDo(x,y,()=>catchAnimal(x,y,'chicken'))}];
   if(t===T.ANIMAL_PIG)     return [{icon:'🐷',label:'Catch Pig',     action:(x,y)=>walkThenDo(x,y,()=>catchAnimal(x,y,'pig'))}];
-  if(t===T.ANIMAL_COW)     return [{icon:'🐄',label:'Approach Cow',  action:(x,y)=>walkThenDo(x,y,()=>catchAnimal(x,y,'cow'))}];
+  if(t===T.ANIMAL_COW) {
+    const hasBucket = countInInventory('wooden_bucket') > 0;
+    const actions = [{icon:'🐄', label:'Approach Cow', action:(x,y)=>walkThenDo(x,y,()=>catchAnimal(x,y,'cow'))}];
+    if(hasBucket) actions.push({icon:'🥛', label:'Milk Cow', action:(x,y)=>walkThenDo(x,y,()=>milkCow())});
+    return actions;
+  }
   return [];
+}
+
+// Fill a wooden bucket from a well
+function fillBucket() {
+  if(!removeFromInventory('wooden_bucket', 1)) { log('You need a Wooden Bucket.', 'bad'); return; }
+  addToInventory('water_bucket');
+  buildInventory();
+  log('You lower the bucket into the well and draw up cold, clear water.', 'good');
+}
+
+// Milk a cow with a wooden bucket
+function milkCow() {
+  if(!removeFromInventory('wooden_bucket', 1)) { log('You need a Wooden Bucket.', 'bad'); return; }
+  addToInventory('milk_bucket');
+  buildInventory();
+  log('You milk the cow. Fresh milk fills the bucket.', 'good');
+  giveXP('Farming', 3);
 }
 
 // Walk adjacent to a tile, then execute action

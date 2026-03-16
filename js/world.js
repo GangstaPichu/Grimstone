@@ -382,6 +382,8 @@ const ITEMS = {
   mithril_sword:  {name:'Mithril Sword',  icon:'⚔',  color:'#5a7aaa', slot:'weapon', attackBonus:15, strBonus:6},
   war_axe:        {name:'War Axe',        icon:'🪓', color:'#8a6a4a', slot:'weapon', attackBonus:8,  strBonus:5},
   bone_dagger:    {name:'Bone Dagger',    icon:'🗡',  color:'#c8c0a8', slot:'weapon', attackBonus:2,  strBonus:0},
+  old_staff:      {name:'Old Staff',      icon:'🪄',  color:'#8a6a3a', slot:'weapon', attackBonus:1,  strBonus:0, magicBonus:2, desc:'A battered mage\'s staff. The magic in it is faint but present.'},
+  crude_bow:      {name:'Crude Bow',      icon:'🏹',  color:'#7a5a2a', slot:'weapon', attackBonus:2,  strBonus:0, desc:'A rough-hewn bow lashed together with cord. Better than bare fists.'},
 
   // Shields (slot:'shield')
   wooden_shield:  {name:'Wooden Shield',  icon:'🪵',  color:'#5a3a0a', slot:'shield', defBonus:1},
@@ -412,6 +414,12 @@ const ITEMS = {
   // Ammo (slot:'ammo')
   bronze_arrows:  {name:'Bronze Arrows',  icon:'🏹', color:'#8b5a2b', slot:'ammo',   attackBonus:2},
   iron_arrows:    {name:'Iron Arrows',    icon:'🏹', color:'#7a7a8a', slot:'ammo',   attackBonus:4},
+
+  // Buckets
+  wooden_bucket:  {name:'Wooden Bucket',  icon:'🪣', type:'tool', desc:'An empty wooden bucket. Use it on a cow to get milk, or on a well for water.'},
+  milk_bucket:    {name:'Milk Bucket',    icon:'🥛', type:'food', healAmt:8, keepOnDrink:'wooden_bucket', desc:'Fresh milk straight from the cow. Drink to restore 8 HP — you\'ll keep the bucket.'},
+  water_bucket:   {name:'Water Bucket',   icon:'💧', type:'tool', desc:'A bucket of well water. Useful for boiling things.'},
+
   // === Farm ingredients ===
   raw_chicken: {name:'Raw Chicken',  icon:'🍗', type:'food', healAmt:0, desc:'Raw chicken meat. Needs cooking.'},
   raw_pork:    {name:'Raw Pork',     icon:'🥩', type:'food', healAmt:0, desc:'Raw pork. Smells gamey. Needs cooking.'},
@@ -422,6 +430,7 @@ const ITEMS = {
   wheat:       {name:'Wheat',        icon:'🌾', type:'material', desc:'A bundle of harvested wheat.'},
   turnip:      {name:'Turnip',       icon:'🥕', type:'food', healAmt:3, desc:'A firm turnip. Not exciting, but filling. Restores 3 HP.'},
   egg:         {name:'Egg',          icon:'🥚', type:'food', healAmt:2, desc:'A fresh egg from the farm. Restores 2 HP.'},
+  hard_boiled_egg:{name:'Hard Boiled Egg',icon:'🍳',type:'food', healAmt:8, desc:'A perfectly boiled egg. Simple and filling. Restores 8 HP.'},
   carrot:      {name:'Carrot',       icon:'🥕', type:'food', healAmt:5, desc:'A freshly pulled carrot. Crisp and sweet. Restores 5 HP.'},
   potato:      {name:'Potato',       icon:'🥔', type:'food', healAmt:7, desc:'A hearty potato. Plain but filling. Restores 7 HP.'},
   onion:       {name:'Onion',        icon:'🧅', type:'food', healAmt:2, desc:'A pungent onion. Not the best alone. Restores 2 HP.'},
