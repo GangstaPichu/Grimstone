@@ -93,21 +93,66 @@ function startChop(x,y,logId,skill,xpAmt,duration){
 
 // ======= FISHING SYSTEM =======
 // Fish table: {id, name, icon, minLvl, tackle, zones, xp, healHp, rarity, weight}
+// timeOfDay: 'any'|'day'|'night'  (default 'any')
+// weather: array of Weather type constants, or omit for all weather
+// W_CLEAR=0, W_RAIN=1, W_HEAVY_RAIN=2, W_FOG=3, W_SNOW=4, W_SNOWSTORM=5
 const FISH_TABLE = [
-  {id:'raw_shrimp',    name:'Shrimp',        icon:'🦐', minLvl:1,  tackle:['bait'],            zones:[0,1,2,3], xp:10,  healHp:3,  rarity:1.0,  weight:0.2},
-  {id:'raw_trout',     name:'Trout',         icon:'🐟', minLvl:5,  tackle:['bait','fly'],       zones:[0,1,2,3], xp:50,  healHp:7,  rarity:0.75, weight:0.4},
-  {id:'raw_salmon',    name:'Salmon',        icon:'🐠', minLvl:10, tackle:['fly'],              zones:[0,1,2,3], xp:70,  healHp:9,  rarity:0.65, weight:0.5},
-  {id:'raw_pike',      name:'Pike',          icon:'🐡', minLvl:15, tackle:['bait','fly'],       zones:[1,2,3],   xp:90,  healHp:11, rarity:0.55, weight:0.6},
-  {id:'raw_tuna',      name:'Tuna',          icon:'🐟', minLvl:20, tackle:['harpoon'],          zones:[2,3],     xp:115, healHp:14, rarity:0.45, weight:0.8},
-  {id:'raw_swordfish', name:'Swordfish',     icon:'🐟', minLvl:35, tackle:['harpoon'],          zones:[2,3],     xp:155, healHp:18, rarity:0.30, weight:1.0},
-  {id:'raw_shark',     name:'Shark',         icon:'🦈', minLvl:50, tackle:['harpoon'],          zones:[3],       xp:220, healHp:25, rarity:0.15, weight:1.5},
-  {id:'raw_leviathan', name:'Leviathan Eel', icon:'🐍', minLvl:60, tackle:['harpoon'],          zones:[3],       xp:300, healHp:30, rarity:0.08, weight:2.0},
+  // ── Standard fish (any time, any weather) ──────────────────────────
+  {id:'raw_shrimp',       name:'Shrimp',          icon:'🦐', minLvl:1,  tackle:['bait'],           zones:[0,1,2,3], xp:10,  healHp:3,  rarity:1.0,  weight:0.2},
+  {id:'raw_trout',        name:'Trout',            icon:'🐟', minLvl:5,  tackle:['bait','fly'],      zones:[0,1,2,3], xp:50,  healHp:7,  rarity:0.75, weight:0.4},
+  {id:'raw_salmon',       name:'Salmon',           icon:'🐠', minLvl:10, tackle:['fly'],             zones:[0,1,2,3], xp:70,  healHp:9,  rarity:0.65, weight:0.5},
+  {id:'raw_pike',         name:'Pike',             icon:'🐡', minLvl:15, tackle:['bait','fly'],      zones:[1,2,3],   xp:90,  healHp:11, rarity:0.55, weight:0.6},
+  {id:'raw_tuna',         name:'Tuna',             icon:'🐟', minLvl:20, tackle:['harpoon'],         zones:[2,3],     xp:115, healHp:14, rarity:0.45, weight:0.8},
+  {id:'raw_swordfish',    name:'Swordfish',        icon:'🐟', minLvl:35, tackle:['harpoon'],         zones:[2,3],     xp:155, healHp:18, rarity:0.30, weight:1.0},
+  {id:'raw_shark',        name:'Shark',            icon:'🦈', minLvl:50, tackle:['harpoon'],         zones:[3],       xp:220, healHp:25, rarity:0.15, weight:1.5},
+  {id:'raw_leviathan',    name:'Leviathan Eel',    icon:'🐍', minLvl:60, tackle:['harpoon'],         zones:[3],       xp:300, healHp:30, rarity:0.08, weight:2.0},
+
+  // ── Day-only fish (clear / light conditions) ───────────────────────
+  {id:'raw_sunscale',     name:'Sunscale Bream',   icon:'🐟', minLvl:5,  tackle:['bait','fly'],      zones:[0,1,2],   xp:45,  healHp:7,  rarity:0.70, weight:0.3,
+   timeOfDay:'day', weather:[0]}, // clear only
+  {id:'raw_gilded_carp',  name:'Gilded Carp',      icon:'🐡', minLvl:22, tackle:['fly'],             zones:[0,1,2,3], xp:100, healHp:12, rarity:0.40, weight:0.55,
+   timeOfDay:'day', weather:[0,1]}, // clear or light rain
+
+  // ── Night-only fish ────────────────────────────────────────────────
+  {id:'raw_moonshadow',   name:'Moonshadow Eel',   icon:'🐍', minLvl:25, tackle:['fly'],             zones:[1,2,3],   xp:130, healHp:14, rarity:0.35, weight:0.7,
+   timeOfDay:'night', weather:[0,3]}, // clear or foggy nights
+  {id:'raw_ghostfin',     name:'Ghostfin Carp',    icon:'🐟', minLvl:40, tackle:['bait'],            zones:[2,3],     xp:175, healHp:18, rarity:0.20, weight:1.0,
+   timeOfDay:'night', weather:[0,1,2]}, // any non-fog night
+  {id:'raw_shadowcrawler',name:'Shadowcrawler',     icon:'🦑', minLvl:55, tackle:['harpoon'],         zones:[3],       xp:260, healHp:28, rarity:0.10, weight:1.6,
+   timeOfDay:'night'}, // any night weather
+
+  // ── Rain fish (thrive in rain / heavy rain) ────────────────────────
+  {id:'raw_stormcatch',   name:'Stormcatch Bass',  icon:'🐟', minLvl:18, tackle:['bait','fly'],      zones:[0,1,2],   xp:95,  healHp:12, rarity:0.45, weight:0.6,
+   weather:[1,2]}, // rain or heavy rain
+  {id:'raw_raindrop_dace',name:'Raindrop Dace',    icon:'🐟', minLvl:8,  tackle:['bait'],            zones:[0,1,2,3], xp:60,  healHp:8,  rarity:0.65, weight:0.35,
+   weather:[1,2]}, // rain or heavy rain
+  {id:'raw_torrent_fin',  name:'Torrent Fin',      icon:'🐠', minLvl:45, tackle:['harpoon'],         zones:[2,3],     xp:195, healHp:22, rarity:0.18, weight:1.3,
+   weather:[2]}, // heavy rain only
+
+  // ── Fog fish (surface feeders in low visibility) ───────────────────
+  {id:'raw_mistwalker',   name:'Mistwalker Perch', icon:'🐡', minLvl:12, tackle:['fly'],             zones:[0,1,2],   xp:80,  healHp:10, rarity:0.50, weight:0.45,
+   weather:[3]}, // fog only
+  {id:'raw_phantom_crab', name:'Phantom Crab',     icon:'🦀', minLvl:30, tackle:['bait'],            zones:[1,2,3],   xp:145, healHp:16, rarity:0.28, weight:0.8,
+   weather:[3]}, // fog only
+  {id:'raw_veilfish',     name:'Veilfish',         icon:'🐟', minLvl:50, tackle:['harpoon','fly'],   zones:[3],       xp:240, healHp:27, rarity:0.12, weight:1.7,
+   timeOfDay:'night', weather:[3]}, // foggy night only — rarest overlap
 ];
 
 const COOKED = {
   raw_shrimp:'cooked_shrimp', raw_trout:'cooked_trout', raw_salmon:'cooked_salmon',
   raw_pike:'cooked_pike', raw_tuna:'cooked_tuna', raw_swordfish:'cooked_swordfish',
   raw_shark:'cooked_shark', raw_leviathan:'cooked_leviathan',
+  // Day fish
+  raw_sunscale:'cooked_sunscale', raw_gilded_carp:'cooked_gilded_carp',
+  // Night fish
+  raw_moonshadow:'cooked_moonshadow', raw_ghostfin:'cooked_ghostfin',
+  raw_shadowcrawler:'cooked_shadowcrawler',
+  // Rain fish
+  raw_stormcatch:'cooked_stormcatch', raw_raindrop_dace:'cooked_raindrop_dace',
+  raw_torrent_fin:'cooked_torrent_fin',
+  // Fog fish
+  raw_mistwalker:'cooked_mistwalker', raw_phantom_crab:'cooked_phantom_crab',
+  raw_veilfish:'cooked_veilfish',
 };
 
 // Extend ITEMS with fish
@@ -125,8 +170,34 @@ Object.assign(ITEMS, {
   cooked_tuna:     {name:'Cooked Tuna',         icon:'🍗', color:'#5a5a7a'},
   cooked_swordfish:{name:'Cooked Swordfish',    icon:'🍗', color:'#4a5a7a'},
   cooked_shark:    {name:'Cooked Shark',        icon:'🍗', color:'#5a6a7a'},
-  cooked_leviathan:{name:'Cooked Leviathan',    icon:'🍗', color:'#3a5a4a'},
-  bait:            {name:'Fishing Bait',        icon:'🪱', color:'#7a5a3a'},
+  cooked_leviathan:    {name:'Cooked Leviathan',      icon:'🍗', color:'#3a5a4a'},
+  // Day fish
+  raw_sunscale:        {name:'Raw Sunscale Bream',   icon:'🐟', color:'#d4a840'},
+  raw_gilded_carp:     {name:'Raw Gilded Carp',      icon:'🐡', color:'#c8901a'},
+  cooked_sunscale:     {name:'Cooked Sunscale Bream',icon:'🍗', color:'#b87a20'},
+  cooked_gilded_carp:  {name:'Cooked Gilded Carp',   icon:'🍗', color:'#a86a10'},
+  // Night fish
+  raw_moonshadow:      {name:'Raw Moonshadow Eel',   icon:'🐍', color:'#3a3a6a'},
+  raw_ghostfin:        {name:'Raw Ghostfin Carp',    icon:'🐟', color:'#7a8aaa'},
+  raw_shadowcrawler:   {name:'Raw Shadowcrawler',    icon:'🦑', color:'#1a1a2a'},
+  cooked_moonshadow:   {name:'Cooked Moonshadow Eel',icon:'🍗', color:'#4a4a7a'},
+  cooked_ghostfin:     {name:'Cooked Ghostfin Carp', icon:'🍗', color:'#8a9aba'},
+  cooked_shadowcrawler:{name:'Cooked Shadowcrawler', icon:'🍗', color:'#2a2a3a'},
+  // Rain fish
+  raw_stormcatch:      {name:'Raw Stormcatch Bass',  icon:'🐟', color:'#2a4a6a'},
+  raw_raindrop_dace:   {name:'Raw Raindrop Dace',    icon:'🐟', color:'#4a7a9a'},
+  raw_torrent_fin:     {name:'Raw Torrent Fin',      icon:'🐠', color:'#1a3a5a'},
+  cooked_stormcatch:   {name:'Cooked Stormcatch Bass',icon:'🍗', color:'#3a5a7a'},
+  cooked_raindrop_dace:{name:'Cooked Raindrop Dace', icon:'🍗', color:'#5a8aaa'},
+  cooked_torrent_fin:  {name:'Cooked Torrent Fin',   icon:'🍗', color:'#2a4a6a'},
+  // Fog fish
+  raw_mistwalker:      {name:'Raw Mistwalker Perch', icon:'🐡', color:'#8a9aa0'},
+  raw_phantom_crab:    {name:'Raw Phantom Crab',     icon:'🦀', color:'#7a6a8a'},
+  raw_veilfish:        {name:'Raw Veilfish',         icon:'🐟', color:'#5a5a7a'},
+  cooked_mistwalker:   {name:'Cooked Mistwalker Perch',icon:'🍗',color:'#9aaab0'},
+  cooked_phantom_crab: {name:'Cooked Phantom Crab',  icon:'🍗', color:'#8a7a9a'},
+  cooked_veilfish:     {name:'Cooked Veilfish',      icon:'🍗', color:'#6a6a8a'},
+  bait:                {name:'Fishing Bait',         icon:'🪱', color:'#7a5a3a'},
   fly_lure:        {name:'Fly Lure',            icon:'🪰', color:'#5a3a8a'},
   harpoon:         {name:'Harpoon',             icon:'🔱', color:'#6a8a9a'},
 });
@@ -167,6 +238,12 @@ function getItemActions(id){
   // ── Generic food (healAmt > 0) ────────────────────────────────────────
   if(item.type === 'food' && item.healAmt > 0) {
     return [{icon:'🍽', label:`Eat (heal ${item.healAmt} HP)`, action:(si)=>eatFood(si,item.healAmt)}];
+  }
+
+  // ── Potions ───────────────────────────────────────────────────────────
+  if(item.type === 'potion') {
+    const label = item.healAmt > 0 ? `Drink (heal ${item.healAmt} HP)` : `Drink (${Object.entries(item.tempBonus||{}).map(([k,v])=>`+${v} ${k[0].toUpperCase()+k.slice(1)}`).join(', ')} ${Math.round((item.tempDuration||90000)/1000)}s)`;
+    return [{icon:'🧪', label, action:(si)=>drinkPotion(si, id)}];
   }
 
   // ── Homestead Sigil ──────────────────────────────────────────────────
@@ -365,15 +442,38 @@ function startFish(tx,ty,tackle){
   currentActivity='Fishing';
   const lvl=p.skills.Fishing.lvl;
 
-  // Pick a fish based on level, tackle, zone, rarity
-  const eligible=FISH_TABLE.filter(f=>
-    f.minLvl<=lvl && f.tackle.includes(tackle) && f.zones.includes(zoneIndex)
-  );
+  // Time of day classification
+  const t = gameTime;
+  const isNight = t > 0.8 || t < 0.2;
+  const isDay   = t >= 0.25 && t <= 0.75;
+  const currentWeatherType = (typeof Weather !== 'undefined') ? Weather.current : 0;
+
+  // Pick a fish based on level, tackle, zone, rarity, time of day, and weather
+  const eligible=FISH_TABLE.filter(f=>{
+    if(f.minLvl>lvl) return false;
+    if(!f.tackle.includes(tackle)) return false;
+    if(!f.zones.includes(zoneIndex)) return false;
+    // Time of day filter
+    if(f.timeOfDay==='night' && !isNight) return false;
+    if(f.timeOfDay==='day'   && !isDay)   return false;
+    // Weather filter (if defined, fish only bites in specified weather types)
+    if(f.weather && !f.weather.includes(currentWeatherType)) return false;
+    return true;
+  });
   if(eligible.length===0){
     currentActivity=null;
-    log('No fish available here with this tackle.','bad');
+    // Give a hint about current conditions
+    if(isNight) log('Nothing is biting here at night with this tackle.','bad');
+    else        log('No fish available here with this tackle.','bad');
     return;
   }
+
+  // Atmospheric cast messages based on conditions
+  if(isNight && currentWeatherType===3) log('The fog clings to the water. Something moves beneath the surface...','');
+  else if(isNight)                       log('The dark water stirs. Night fish are different beasts.','');
+  else if(currentWeatherType===2)        log('Heavy rain drums the surface — the big ones are feeding.','');
+  else if(currentWeatherType===1)        log('The rain-stirred water attracts unusual fish...','');
+  else if(currentWeatherType===3)        log('Fog drifts across the water. Hard to tell what\'s down there.','');
   // Weighted random
   const totalWeight=eligible.reduce((a,f)=>a+f.rarity*(1+lvl*0.01),0);
   let roll=Math.random()*totalWeight;
@@ -383,7 +483,9 @@ function startFish(tx,ty,tackle){
     if(roll<=0){chosenFish=f;break;}
   }
 
-  log(`You cast your line with ${ITEMS[tackle==='bait'?'bait':tackle==='fly'?'fly_lure':'harpoon'].name}...`,'');
+  // Generic cast message only for normal conditions (others logged above)
+  const noConditionMsg = !isNight && currentWeatherType===0;
+  if(noConditionMsg) log(`You cast your line with ${ITEMS[tackle==='bait'?'bait':tackle==='fly'?'fly_lure':'harpoon'].name}...`,'');
   showFishingMinigame(tx,ty,chosenFish,tackle,lvl);
 }
 
@@ -894,12 +996,16 @@ function triggerEnemyAttack(e) {
 }
 
 // ======= TURN-BASED COMBAT =======
+let _autoAttack = false;
+let _combatTurnDefBoost = 0; // single-turn defence boost (from Riposte / Mana Shield)
+
 function startCombatEntity(e) {
   if(currentActivity) return;
   if(e.state==='dead') return;
   currentActivity = 'Combat';
   combatEnemy = e;
   _combatPlayerTurn = false;
+  _combatTurnDefBoost = 0;
 
   const portrait = document.getElementById('combat-enemy-portrait');
   portrait.textContent = e.def.letter;
@@ -908,12 +1014,12 @@ function startCombatEntity(e) {
   document.getElementById('combat-enemy-name').textContent = e.def.name.toUpperCase();
   document.getElementById('combat-log').innerHTML = '';
   document.getElementById('combat-status').textContent = '';
+  _hideCombatMoveMenu();
   _updateCombatPanel();
   _addCombatLog(`You face the ${e.def.name}. What will you do?`);
   document.getElementById('combat-panel').classList.add('show');
   log(`⚔ You engage the ${e.def.name}!`, 'bad');
 
-  // Show flee % on button based on Attack level vs enemy speed
   const p = state.players[state.activePlayer];
   const attackBonus = Math.min(0.4, (p.skills.Attack.lvl - 1) / 98 * 0.4);
   const speedPenalty = Math.max(0, (e.def.speed - 1.5) * 0.08);
@@ -921,7 +1027,11 @@ function startCombatEntity(e) {
   document.getElementById('btn-combat-flee').textContent = `↩ Flee (${fleePct}%)`;
 
   _setCombatButtons(false);
-  setTimeout(() => { _combatPlayerTurn = true; _setCombatButtons(true); }, 500);
+  setTimeout(() => {
+    _combatPlayerTurn = true;
+    _setCombatButtons(true);
+    if(_autoAttack) _triggerAutoAttack();
+  }, 500);
 }
 
 function _updateCombatPanel() {
@@ -950,17 +1060,120 @@ function _addCombatLog(msg, cls='') {
 
 function _setCombatButtons(enabled) {
   document.getElementById('btn-combat-attack').disabled = !enabled;
-  document.getElementById('btn-combat-flee').disabled = !enabled;
+  document.getElementById('btn-combat-item').disabled   = !enabled;
+  document.getElementById('btn-combat-flee').disabled   = !enabled;
+  if(!enabled) _hideCombatMoveMenu();
 }
 
 function _closeCombatPanel() {
   document.getElementById('combat-panel').classList.remove('show');
+  _hideCombatMoveMenu();
   currentActivity = null;
   combatEnemy = null;
   _combatPlayerTurn = false;
+  _combatTurnDefBoost = 0;
 }
 
-function combatPlayerAttack() {
+// ── Weapon move definitions ──────────────────────────────────────────────────
+function _getWeaponMoves(p) {
+  const eq = getEquipment(p);
+  const wid = eq.weapon;
+  const bonuses = getEquipBonuses(p);
+
+  if(wid === 'old_staff' || bonuses.magicBonus > 0) {
+    const ml = (p.skills.Magic && p.skills.Magic.lvl) || 1;
+    const hasFireRune  = countInInventory('rune_fire')   > 0;
+    const hasIceRune   = countInInventory('rune_ice')    > 0;
+    const hasEarthRune = countInInventory('rune_earth')  > 0;
+    return [
+      { name:'Arcane Bolt',  icon:'✨', dmgMult:1.0, magicScale:ml, desc:'A bolt of raw arcane force.',           autoScore:2 },
+      { name:'Fire Burst',   icon:'🔥', dmgMult:1.4, magicScale:ml, runeReq:'rune_fire',  disabled:!hasFireRune,  desc:hasFireRune  ? 'Hurl a burst of flame.' : 'Requires a Fire Rune.',    autoScore:3 },
+      { name:'Frost Shard',  icon:'❄',  dmgMult:1.1, magicScale:ml, runeReq:'rune_ice',   disabled:!hasIceRune,   desc:hasIceRune   ? 'Slows and chills the enemy.' : 'Requires an Ice Rune.',   defBoostSelf:0, autoScore:2 },
+      { name:'Mana Shield',  icon:'🛡', dmgMult:0,   defBuff:10,    desc:'Raise a barrier (+10 Defence this turn).', autoScore:1 },
+    ];
+  }
+
+  if(wid === 'crude_bow') {
+    const hasArrows = eq.ammo ? countInInventory(eq.ammo) > 0 : false;
+    return [
+      { name:'Aimed Shot',   icon:'🏹', dmgMult:1.2, ammoReq:true,  disabled:!hasArrows, desc:hasArrows ? 'A precise aimed shot.' : 'No arrows equipped.',     autoScore:3 },
+      { name:'Rapid Fire',   icon:'🏹', dmgMult:0.7, hits:2, ammoReq:true, disabled:!hasArrows, desc:hasArrows ? 'Two quick shots.' : 'No arrows equipped.',  autoScore:3 },
+      { name:'Power Draw',   icon:'💪', dmgMult:1.8, ammoReq:true,  missChance:0.25, disabled:!hasArrows, desc:hasArrows ? 'Full draw — 25% miss chance.' : 'No arrows equipped.', autoScore:4 },
+      { name:'Point Blank',  icon:'🎯', dmgMult:1.0, atkBonus:6,    desc:'Strike with the bow at close range.',    autoScore:2 },
+    ];
+  }
+
+  if(wid === 'war_axe') {
+    return [
+      { name:'Chop',          icon:'🪓', dmgMult:1.0, desc:'A clean axe swing.',               autoScore:2 },
+      { name:'Cleave',        icon:'🪓', dmgMult:1.25, desc:'A wide sweeping cut.',             autoScore:3 },
+      { name:'Overhead Smash',icon:'💢', dmgMult:1.7, missChance:0.3, desc:'Massive blow — 30% miss chance.', autoScore:3 },
+      { name:'Battle Cry',    icon:'📣', dmgMult:0.5, strBuff:4, desc:'Boosts Strength +4 for 2 turns.',     autoScore:2 },
+    ];
+  }
+
+  if(wid === 'bone_dagger') {
+    return [
+      { name:'Quick Stab',    icon:'🗡', dmgMult:1.0,  desc:'A swift jab.',              autoScore:2 },
+      { name:'Double Jab',    icon:'🗡', dmgMult:0.65, hits:2, desc:'Two rapid stabs.',  autoScore:3 },
+      { name:'Precise Strike',icon:'🎯', dmgMult:1.35, desc:'A calculated thrust.',      autoScore:3 },
+      { name:'Cripple',       icon:'🦵', dmgMult:0.8,  enemyDebuf:2, desc:'Weakens foe — reduces their next hit by 2.', autoScore:2 },
+    ];
+  }
+
+  if(wid && ['bronze_sword','iron_sword','steel_sword','mithril_sword','sword'].includes(wid)) {
+    return [
+      { name:'Quick Slash',  icon:'⚔', dmgMult:1.0,  desc:'A fast reliable strike.',            autoScore:2 },
+      { name:'Heavy Strike', icon:'💥', dmgMult:1.5,  desc:'A powerful overhead blow.',           autoScore:4 },
+      { name:'Lunge',        icon:'🗡', dmgMult:1.2,  atkBonus:5, desc:'Reach forward and pierce.', autoScore:3 },
+      { name:'Riposte',      icon:'🛡', dmgMult:0.85, defBuff:8, desc:'Counter-attack (+8 Defence this turn).', autoScore:2 },
+    ];
+  }
+
+  if(wid === 'wooden_club') {
+    return [
+      { name:'Bludgeon',  icon:'🪃', dmgMult:1.0,  desc:'A solid club swing.',              autoScore:2 },
+      { name:'Heavy Blow',icon:'💥', dmgMult:1.4,  desc:'Two-handed overhead smash.',       autoScore:3 },
+      { name:'Pummel',    icon:'👊', dmgMult:0.65, hits:2, desc:'Two rapid strikes.',        autoScore:2 },
+      { name:'Headbutt',  icon:'🤛', dmgMult:1.2,  desc:'A stunning strike.',               autoScore:3 },
+    ];
+  }
+
+  // Unarmed default
+  return [
+    { name:'Punch',    icon:'👊', dmgMult:1.0,  desc:'A basic punch.',       autoScore:2 },
+    { name:'Haymaker', icon:'💥', dmgMult:1.5,  desc:'A wild swing.',        autoScore:3 },
+    { name:'Kick',     icon:'🦵', dmgMult:0.7,  hits:2, desc:'Two rapid kicks.', autoScore:2 },
+    { name:'Headbutt', icon:'🤛', dmgMult:1.2,  desc:'A stunning headbutt.', autoScore:3 },
+  ];
+}
+
+// ── Attack menu ──────────────────────────────────────────────────────────────
+function openAttackMenu() {
+  if(!_combatPlayerTurn || !combatEnemy) return;
+  const menu = document.getElementById('combat-move-menu');
+  if(menu.classList.contains('open')) { _hideCombatMoveMenu(); return; }
+
+  const p = state.players[state.activePlayer];
+  const moves = _getWeaponMoves(p);
+  menu.innerHTML = '';
+  moves.forEach(move => {
+    const row = document.createElement('div');
+    row.className = 'combat-move-row' + (move.disabled ? ' disabled' : '');
+    row.innerHTML = `<span class="combat-move-icon">${move.icon}</span>`
+      + `<span><div class="combat-move-name">${move.name}</div><div class="combat-move-desc">${move.desc}</div></span>`;
+    if(!move.disabled) row.onclick = () => executeCombatMove(move);
+    menu.appendChild(row);
+  });
+  menu.classList.add('open');
+}
+
+function _hideCombatMoveMenu() {
+  document.getElementById('combat-move-menu').classList.remove('open');
+}
+
+// ── Execute a combat move ────────────────────────────────────────────────────
+function executeCombatMove(move) {
   if(!_combatPlayerTurn || !combatEnemy) return;
   _combatPlayerTurn = false;
   _setCombatButtons(false);
@@ -968,12 +1181,79 @@ function combatPlayerAttack() {
   const p = state.players[state.activePlayer];
   const e = combatEnemy;
   const bonuses = getEquipBonuses(p);
-  const dmg = Math.floor(Math.random() * ((p.skills.Strength.lvl + bonuses.strBonus) * 2 + 4)) + 1 + Math.floor(bonuses.attackBonus / 3);
-  e.hp -= dmg;
+  const tempStr = (p.tempBonuses && p.tempBonuses.strength) || 0;
+  const tempAtk = (p.tempBonuses && p.tempBonuses.attack)   || 0;
+
+  // Defence-buff only move (Mana Shield, Riposte)
+  if(move.dmgMult === 0 && move.defBuff) {
+    _combatTurnDefBoost += move.defBuff;
+    _addCombatLog(`You use ${move.name}. (+${move.defBuff} Defence this turn)`, 'combat-log-dim');
+    document.getElementById('combat-status').textContent = `${e.def.name} prepares to strike...`;
+    setTimeout(_combatEnemyTurn, 800 + Math.random() * 300);
+    return;
+  }
+
+  // Riposte/defBuff WITH damage
+  if(move.defBuff && move.dmgMult > 0) {
+    _combatTurnDefBoost += move.defBuff;
+  }
+
+  // Miss chance
+  if(move.missChance && Math.random() < move.missChance) {
+    SFX.hit && SFX.hit();
+    _addCombatLog(`Your ${move.name} misses! The ${e.def.name} sidesteps.`, 'combat-log-dim');
+    document.getElementById('combat-status').textContent = `${e.def.name} prepares to strike...`;
+    setTimeout(_combatEnemyTurn, 800 + Math.random() * 300);
+    return;
+  }
+
+  // Battle Cry — str buff, minimal damage
+  if(move.strBuff) {
+    if(!p.tempBonuses) p.tempBonuses = {};
+    p.tempBonuses.strength = (p.tempBonuses.strength || 0) + move.strBuff;
+    const dur = 2; // tracked in turns, clear after 2 enemy attacks
+    _addCombatLog(`You let out a Battle Cry! (+${move.strBuff} Strength for 2 turns)`, 'combat-log-dim');
+    let turns = 0;
+    const clearStrBuff = () => {
+      turns++;
+      if(turns >= dur) {
+        p.tempBonuses.strength = Math.max(0, (p.tempBonuses.strength || 0) - move.strBuff);
+      }
+    };
+    // Attach to enemy turn count via a flag
+    if(!p._strBuffClears) p._strBuffClears = [];
+    p._strBuffClears.push({ remaining: dur, amount: move.strBuff });
+  }
+
+  const hits = move.hits || 1;
+  let totalDmg = 0;
+  for(let i = 0; i < hits; i++) {
+    const extraAtk = move.atkBonus || 0;
+    // Magic moves scale with Magic level instead of Strength
+    let base;
+    if(move.magicScale) {
+      const ml = move.magicScale;
+      base = Math.floor(Math.random() * (ml * 2 + 4)) + 1 + Math.floor((bonuses.magicBonus * 2 + extraAtk) / 3);
+    } else {
+      base = Math.floor(Math.random() * ((p.skills.Strength.lvl + bonuses.strBonus + tempStr) * 2 + 4)) + 1 + Math.floor((bonuses.attackBonus + tempAtk + extraAtk) / 3);
+    }
+    totalDmg += Math.max(1, Math.floor(base * (move.dmgMult || 1.0)));
+  }
+
+  // Enemy debuff (Cripple) — reduce next enemy attack
+  if(move.enemyDebuf) {
+    e._debufDmgReduce = (e._debufDmgReduce || 0) + move.enemyDebuf;
+  }
+
+  e.hp -= totalDmg;
   e.flashTimer = 0.6;
-  SFX.hit();
-  _addCombatLog(`You strike the ${e.def.name} for ${dmg} damage.`, 'combat-log-hit');
-  log(`You hit the ${e.def.name} for ${dmg}.`, '');
+  SFX.hit && SFX.hit();
+
+  const hitDesc = hits > 1
+    ? `You ${move.name.toLowerCase()} the ${e.def.name} twice for ${totalDmg} total damage.`
+    : `You use ${move.name} on the ${e.def.name} for ${totalDmg} damage.`;
+  _addCombatLog(hitDesc, 'combat-log-hit');
+  log(`You hit the ${e.def.name} for ${totalDmg}.`, '');
   _updateCombatPanel();
 
   if(e.hp <= 0) { _combatVictory(); return; }
@@ -982,19 +1262,120 @@ function combatPlayerAttack() {
   setTimeout(_combatEnemyTurn, 800 + Math.random() * 300);
 }
 
+// ── Item menu in combat ───────────────────────────────────────────────────────
+function openCombatItemMenu() {
+  if(!_combatPlayerTurn || !combatEnemy) return;
+  const menu = document.getElementById('combat-move-menu');
+
+  // If showing item menu already, close it
+  if(menu.classList.contains('open') && menu.dataset.mode === 'item') {
+    _hideCombatMoveMenu(); return;
+  }
+
+  const p = state.players[state.activePlayer];
+  const usable = [];
+  p.inventory.forEach((slot, idx) => {
+    if(!slot) return;
+    const def = ITEMS[slot.id];
+    if(!def) return;
+    if(def.type === 'potion' || (def.type === 'food' && def.healAmt > 0) || (def.type === 'rune' && def.isHeal)) {
+      usable.push({ idx, id: slot.id, def });
+    }
+  });
+
+  menu.innerHTML = '';
+  menu.dataset.mode = 'item';
+
+  if(usable.length === 0) {
+    const row = document.createElement('div');
+    row.className = 'combat-move-row disabled';
+    row.innerHTML = `<span class="combat-move-icon">🎒</span><span><div class="combat-move-name">No usable items</div><div class="combat-move-desc">Carry potions or food for combat use.</div></span>`;
+    menu.appendChild(row);
+  } else {
+    usable.forEach(({ idx, id, def }) => {
+      const row = document.createElement('div');
+      row.className = 'combat-move-row';
+      const desc = def.healAmt > 0 ? `Restores ${def.healAmt} HP`
+        : def.tempBonus ? Object.entries(def.tempBonus).map(([k,v])=>`+${v} ${k[0].toUpperCase()+k.slice(1)}`).join(', ') + ` for ${Math.round((def.tempDuration||90000)/1000)}s`
+        : def.healMin ? `Restores ${def.healMin}–${def.healMax} HP`
+        : '';
+      row.innerHTML = `<span class="combat-move-icon">${def.icon}</span><span><div class="combat-move-name">${def.name}</div><div class="combat-move-desc">${desc}</div></span>`;
+      row.onclick = () => {
+        _hideCombatMoveMenu();
+        _combatPlayerTurn = false;
+        _setCombatButtons(false);
+        // Use the item
+        if(def.type === 'potion') {
+          drinkPotion(idx, id);
+        } else if(def.type === 'food' && def.healAmt > 0) {
+          eatFood(idx, def.healAmt);
+        } else if(def.type === 'rune' && def.isHeal) {
+          castRune(idx, id);
+          // castRune handles its own turn, don't double-trigger enemy turn
+          return;
+        }
+        _addCombatLog(`You use a ${def.name} during combat.`, 'combat-log-dim');
+        _updateCombatPanel();
+        document.getElementById('combat-status').textContent = `${combatEnemy.def.name} prepares to strike...`;
+        setTimeout(_combatEnemyTurn, 700);
+      };
+      menu.appendChild(row);
+    });
+  }
+  menu.classList.add('open');
+}
+
+// ── Auto-attack ───────────────────────────────────────────────────────────────
+function toggleAutoAttack(enabled) {
+  _autoAttack = enabled;
+  if(enabled && _combatPlayerTurn && combatEnemy) _triggerAutoAttack();
+}
+
+function _triggerAutoAttack() {
+  setTimeout(() => {
+    if(!_combatPlayerTurn || !combatEnemy || !_autoAttack) return;
+    const p = state.players[state.activePlayer];
+    const moves = _getWeaponMoves(p).filter(m => !m.disabled);
+    const best = moves.reduce((a, b) => b.autoScore > a.autoScore ? b : a, moves[0]);
+    if(best) executeCombatMove(best);
+  }, 400);
+}
+
 function _combatEnemyTurn() {
   const p = state.players[state.activePlayer];
   const e = combatEnemy;
   if(!e || e.state === 'dead') return;
 
   document.getElementById('combat-status').textContent = '';
-  const defBonus = Math.max(0, p.skills.Defence.lvl - 3) + getEquipBonuses(p).defBonus;
-  const rawDmg = Math.floor(Math.random() * (e.def.maxDmg - e.def.minDmg + 1)) + e.def.minDmg;
+
+  // Consume turn-based str buffs
+  if(p._strBuffClears && p._strBuffClears.length > 0) {
+    p._strBuffClears = p._strBuffClears.filter(b => {
+      b.remaining--;
+      if(b.remaining <= 0) {
+        if(!p.tempBonuses) p.tempBonuses = {};
+        p.tempBonuses.strength = Math.max(0, (p.tempBonuses.strength || 0) - b.amount);
+        return false;
+      }
+      return true;
+    });
+  }
+
+  const tempDef = (p.tempBonuses && p.tempBonuses.defence) || 0;
+  const defBonus = Math.max(0, p.skills.Defence.lvl - 3) + getEquipBonuses(p).defBonus + tempDef + _combatTurnDefBoost;
+  _combatTurnDefBoost = 0; // single-turn boost consumed
+
+  let rawDmg = Math.floor(Math.random() * (e.def.maxDmg - e.def.minDmg + 1)) + e.def.minDmg;
+  // Apply enemy debuff (Cripple move)
+  if(e._debufDmgReduce) {
+    rawDmg = Math.max(0, rawDmg - e._debufDmgReduce);
+    e._debufDmgReduce = 0;
+  }
   const actualDmg = Math.max(0, rawDmg - defBonus);
 
   if(actualDmg > 0) {
     p.hp = Math.max(0, p.hp - actualDmg);
-    SFX.hit();
+    SFX.hit && SFX.hit();
     _addCombatLog(`The ${e.def.name} strikes you for ${actualDmg} damage.`, 'combat-log-bad');
     log(`The ${e.def.name} hits you for ${actualDmg}.`, 'bad');
   } else {
@@ -1008,6 +1389,7 @@ function _combatEnemyTurn() {
 
   _combatPlayerTurn = true;
   _setCombatButtons(true);
+  if(_autoAttack) _triggerAutoAttack();
 }
 
 function combatFlee() {
@@ -1400,6 +1782,21 @@ function searchChest(x, y) {
       { icon:'📦', text: '"The chest is mostly empty — a few copper coins, a broken belt buckle.\n\nAt the bottom, folded small, is a scrap of parchment:"' },
       { icon:'📦', text: '"To the next fool who opens this:\n\nI found what they buried. I shouldn\'t have looked. The figure at the docks will show you the way — but only on Grimtide. Wait until the eleventh bell, before the first.\n\nI\'m leaving Ashenveil before dawn.\n\n— K"' },
     ], 'clue_chest_note');
+  } else if(currentMap?.name === "DORIN'S TRADING POST" && questFlags.old_bones_accepted && !questFlags.old_bones_contract_found) {
+    // Dorin's hidden ledger — only findable at night when he's absent
+    if(getNightAlpha() <= 0.5) {
+      log("Just an ordinary chest. Nothing unusual.", 'neutral');
+      return;
+    }
+    SFX.chest();
+    addToInventory('forged_contract', 1);
+    questFlags.old_bones_contract_found = true;
+    buildInventory(); updateHUD();
+    log('📋 Behind the barrels, a loose board hides a leather-bound ledger.', 'gold');
+    log('The numbers are wrong. Thirty gold recorded as owed — but the original entry shows six.', 'gold');
+    setTimeout(() => log('✦ Quest updated: Old Bones, New Debts — bring this to Vayne or Edwyn.', 'gold'), 700);
+    // Remove the chest tile from the map now that it's been searched
+    currentMap.tiles[y][x] = currentMap.floor[y][x] || T.STONE_FLOOR;
   } else if(currentMap?.name === 'THE WESTERN PASS' && !questFlags.caravan_manifest_found && x===9 && y===5) {
     // Quest chest — caravan manifest
     SFX.chest();
@@ -1527,10 +1924,11 @@ function openSmelter(){
   const p = state.players[state.activePlayer];
   // Full smelting recipes — coal required as fuel for iron+
   const recipes = [
-    { name:'Bronze Bar',  requires:[{id:'copper_ore',qty:1}],                      output:'bronze_bar',  xp:6.2,  skill:'Smithing', reqLvl:1  },
-    { name:'Iron Bar',    requires:[{id:'iron_ore',  qty:1},{id:'coal',qty:1}],     output:'iron_bar',    xp:12.5, skill:'Smithing', reqLvl:15 },
-    { name:'Gold Bar',    requires:[{id:'gold_ore',  qty:1},{id:'coal',qty:2}],     output:'gold_bar',    xp:22.5, skill:'Smithing', reqLvl:40 },
-    { name:'Mithril Bar', requires:[{id:'mithril_ore',qty:1},{id:'coal',qty:4}],   output:'mithril_bar', xp:50,   skill:'Smithing', reqLvl:55 },
+    { name:'Bronze Bar',  requires:[{id:'copper_ore',qty:1}],                                    output:'bronze_bar',  xp:6.2,  skill:'Smithing', reqLvl:1  },
+    { name:'Iron Bar',    requires:[{id:'iron_ore',  qty:1},{id:'coal',qty:1}],                 output:'iron_bar',    xp:12.5, skill:'Smithing', reqLvl:15 },
+    { name:'Steel Bar',   requires:[{id:'iron_bar',  qty:1},{id:'coal',qty:3}],                 output:'steel_bar',   xp:35,   skill:'Smithing', reqLvl:30 },
+    { name:'Gold Bar',    requires:[{id:'gold_ore',  qty:1},{id:'coal',qty:2}],                 output:'gold_bar',    xp:22.5, skill:'Smithing', reqLvl:40 },
+    { name:'Mithril Bar', requires:[{id:'mithril_ore',qty:1},{id:'coal',qty:4}],               output:'mithril_bar', xp:50,   skill:'Smithing', reqLvl:55 },
   ];
 
   const smithLvl = p.skills.Smithing.lvl;
@@ -1688,6 +2086,161 @@ function openRuneCrafter() {
   ctxMenu.style.display = 'block';
 }
 
+function openAnvil(){
+  const p = state.players[state.activePlayer];
+  const smithLvl = p.skills.Smithing.lvl;
+
+  const FORGE_RECIPES = [
+    // Weapons
+    { name:'Bronze Sword',   output:'bronze_sword',  requires:[{id:'bronze_bar',qty:2}],                             xp:25,  skill:'Smithing', reqLvl:1,  cat:'Weapons'   },
+    { name:'Bone Dagger',    output:'bone_dagger',   requires:[{id:'bones',qty:4}],                                   xp:15,  skill:'Smithing', reqLvl:5,  cat:'Weapons'   },
+    { name:'War Axe',        output:'war_axe',        requires:[{id:'bronze_bar',qty:3}],                             xp:35,  skill:'Smithing', reqLvl:10, cat:'Weapons'   },
+    { name:'Iron Sword',     output:'iron_sword',     requires:[{id:'iron_bar',qty:2}],                               xp:60,  skill:'Smithing', reqLvl:20, cat:'Weapons'   },
+    { name:'Steel Sword',    output:'steel_sword',    requires:[{id:'steel_bar',qty:2}],                              xp:100, skill:'Smithing', reqLvl:40, cat:'Weapons'   },
+    { name:'Mithril Sword',  output:'mithril_sword',  requires:[{id:'mithril_bar',qty:2}],                            xp:160, skill:'Smithing', reqLvl:60, cat:'Weapons'   },
+    // Shields
+    { name:'Bronze Shield',  output:'bronze_shield',  requires:[{id:'bronze_bar',qty:2}],                             xp:24,  skill:'Smithing', reqLvl:5,  cat:'Shields'   },
+    { name:'Iron Shield',    output:'iron_shield',    requires:[{id:'iron_bar',qty:2}],                               xp:55,  skill:'Smithing', reqLvl:22, cat:'Shields'   },
+    { name:'Kite Shield',    output:'kite_shield',    requires:[{id:'steel_bar',qty:3}],                              xp:90,  skill:'Smithing', reqLvl:45, cat:'Shields'   },
+    // Helmets
+    { name:'Bronze Helm',    output:'bronze_helm',    requires:[{id:'bronze_bar',qty:2}],                             xp:22,  skill:'Smithing', reqLvl:3,  cat:'Helmets'   },
+    { name:'Iron Helm',      output:'iron_helm',      requires:[{id:'iron_bar',qty:2}],                               xp:50,  skill:'Smithing', reqLvl:18, cat:'Helmets'   },
+    { name:'Steel Helm',     output:'steel_helm',     requires:[{id:'steel_bar',qty:2}],                              xp:85,  skill:'Smithing', reqLvl:35, cat:'Helmets'   },
+    // Body Armour
+    { name:'Bronze Plate',   output:'bronze_plate',   requires:[{id:'bronze_bar',qty:4}],                             xp:40,  skill:'Smithing', reqLvl:6,  cat:'Body'      },
+    { name:'Iron Plate',     output:'iron_plate',     requires:[{id:'iron_bar',qty:4}],                               xp:80,  skill:'Smithing', reqLvl:24, cat:'Body'      },
+    { name:'Steel Plate',    output:'steel_plate',    requires:[{id:'steel_bar',qty:4}],                              xp:130, skill:'Smithing', reqLvl:42, cat:'Body'      },
+    { name:'Mithril Plate',  output:'mithril_plate',  requires:[{id:'mithril_bar',qty:4}],                            xp:200, skill:'Smithing', reqLvl:62, cat:'Body'      },
+    // Legs
+    { name:'Bronze Greaves', output:'bronze_legs',    requires:[{id:'bronze_bar',qty:3}],                             xp:32,  skill:'Smithing', reqLvl:4,  cat:'Legs'      },
+    { name:'Iron Greaves',   output:'iron_legs',      requires:[{id:'iron_bar',qty:3}],                               xp:65,  skill:'Smithing', reqLvl:20, cat:'Legs'      },
+    { name:'Steel Greaves',  output:'steel_legs',     requires:[{id:'steel_bar',qty:3}],                              xp:105, skill:'Smithing', reqLvl:38, cat:'Legs'      },
+    // Ammo
+    { name:'Bronze Arrows (×20)', output:'bronze_arrows', requires:[{id:'bronze_bar',qty:1},{id:'oak_log',qty:1}],   xp:18,  skill:'Smithing', reqLvl:1,  cat:'Ammo'      },
+    { name:'Iron Arrows (×20)',   output:'iron_arrows',   requires:[{id:'iron_bar',qty:1},{id:'oak_log',qty:1}],     xp:32,  skill:'Smithing', reqLvl:16, cat:'Ammo'      },
+  ];
+
+  const ctxMenu = document.getElementById('ctx-menu');
+  ctxMenu.innerHTML = `<div class="ctx-title">⚒ Ashen Forge — Smith Equipment</div>
+    <div style="font-size:10px;color:var(--text-dim);padding:2px 6px 6px;border-bottom:1px solid rgba(255,255,255,0.06);">Smithing Level: <span style="color:#e0a040;font-weight:600;">${smithLvl}</span></div>`;
+
+  let lastCat = '';
+  FORGE_RECIPES.forEach(r => {
+    const hasIngredients = r.requires.every(req => countInInventory(req.id) >= req.qty);
+    const meetsLevel     = smithLvl >= r.reqLvl;
+    const canForge       = hasIngredients && meetsLevel;
+    if(r.cat !== lastCat) {
+      const hdr = document.createElement('div');
+      hdr.style.cssText = 'font-size:10px;color:var(--text-dim);padding:4px 6px 2px;font-weight:600;text-transform:uppercase;letter-spacing:1px;opacity:0.6;';
+      hdr.textContent = r.cat;
+      ctxMenu.appendChild(hdr);
+      lastCat = r.cat;
+    }
+    const d = document.createElement('div');
+    d.className = 'ctx-item' + (canForge ? '' : ' danger');
+    const reqs = r.requires.map(req=>`${req.qty}x ${ITEMS[req.id]?.name||req.id}`).join(' + ');
+    const lockNote = !meetsLevel ? ` <span style="color:#a04040;font-size:10px">[Lv ${r.reqLvl}]</span>` : '';
+    d.innerHTML = `<span class="ctx-icon">${ITEMS[r.output]?.icon||'⬜'}</span>${r.name} <span style="font-size:10px;color:var(--text-dim);margin-left:3px">(${reqs})</span>${lockNote}`;
+    d.onclick = () => {
+      hideCtxMenu();
+      if(!meetsLevel){ log(`Need level ${r.reqLvl} Smithing to forge ${r.name}.`,'bad'); return; }
+      if(!hasIngredients){ log(`Missing materials for ${r.name}.`,'bad'); return; }
+      startActivity(`Forging ${r.name}`, 2500, () => {
+        r.requires.forEach(req => removeFromInventory(req.id, req.qty));
+        const qty = r.output.endsWith('_arrows') ? 20 : 1;
+        for(let i=0;i<qty;i++) addToInventory(r.output);
+        giveXP(r.skill, r.xp);
+        buildInventory(); buildEquipPanel(); updateHUD();
+        log(`⚒ You forge ${r.name}${qty>1?' ×'+qty:''}. (+${r.xp} Smithing xp)`, 'good');
+      });
+    };
+    ctxMenu.appendChild(d);
+  });
+
+  const _ra = document.getElementById('map-container').getBoundingClientRect();
+  ctxMenu.style.left = (_ra.left + _ra.width/2 - 70) + 'px';
+  ctxMenu.style.top  = (_ra.top  + _ra.height/2 - 60) + 'px';
+  ctxMenu.style.display = 'block';
+}
+
+function openBrewingCauldron(){
+  const p = state.players[state.activePlayer];
+  const magicLvl = p.skills.Magic ? p.skills.Magic.lvl : 1;
+
+  const BREW_RECIPES = [
+    { name:'Healing Draught',    output:'potion_heal',         requires:[{id:'goblin_hide',qty:1},{id:'rune_heal',qty:1},{id:'arcane_dust',qty:2}],                       xp:20, skill:'Magic', reqLvl:5,  desc:'Heals 30 HP'         },
+    { name:'Greater Healing',    output:'potion_heal_greater', requires:[{id:'gold_bar',qty:1},{id:'rune_heal',qty:2},{id:'arcane_dust',qty:3}],                           xp:45, skill:'Magic', reqLvl:20, desc:'Heals 50 HP'         },
+    { name:'Power Draught',      output:'potion_power',        requires:[{id:'iron_bar',qty:1},{id:'rune_fire',qty:2},{id:'arcane_dust',qty:2}],                           xp:35, skill:'Magic', reqLvl:15, desc:'+5 Attack, 90s'      },
+    { name:'Iron Skin Draught',  output:'potion_iron_skin',    requires:[{id:'iron_bar',qty:1},{id:'rune_shield',qty:2},{id:'arcane_dust',qty:2}],                         xp:40, skill:'Magic', reqLvl:20, desc:'+6 Defence, 90s'     },
+    { name:'Strength Draught',   output:'potion_strength',     requires:[{id:'gold_bar',qty:1},{id:'rune_earth',qty:2},{id:'arcane_dust',qty:2}],                          xp:38, skill:'Magic', reqLvl:18, desc:'+5 Strength, 90s'    },
+    { name:'Shadow Brew',        output:'potion_shadow',       requires:[{id:'goblin_hide',qty:2},{id:'void_essence',qty:1},{id:'arcane_dust',qty:3}],                     xp:55, skill:'Magic', reqLvl:25, desc:'+8 Defence, 45s'     },
+  ];
+
+  const ctxMenu = document.getElementById('ctx-menu');
+  ctxMenu.innerHTML = `<div class="ctx-title">⚗️ Cauldron — Brew Potions</div>
+    <div style="font-size:10px;color:var(--text-dim);padding:2px 6px 6px;border-bottom:1px solid rgba(255,255,255,0.06);">Magic Level: <span style="color:#a060e0;font-weight:600;">${magicLvl}</span></div>`;
+
+  BREW_RECIPES.forEach(r => {
+    const hasIngredients = r.requires.every(req => countInInventory(req.id) >= req.qty);
+    const meetsLevel     = magicLvl >= r.reqLvl;
+    const canBrew        = hasIngredients && meetsLevel;
+    const d = document.createElement('div');
+    d.className = 'ctx-item' + (canBrew ? '' : ' danger');
+    const reqs = r.requires.map(req=>`${req.qty}x ${ITEMS[req.id]?.name||req.id}`).join(' + ');
+    const lockNote = !meetsLevel ? ` <span style="color:#a04040;font-size:10px">[Lv ${r.reqLvl} Magic]</span>` : '';
+    const effNote  = `<span style="color:#a060e0;font-size:10px;margin-left:4px">${r.desc}</span>`;
+    d.innerHTML = `<span class="ctx-icon">${ITEMS[r.output]?.icon||'🧪'}</span>${r.name} <span style="font-size:10px;color:var(--text-dim);margin-left:3px">(${reqs})</span>${lockNote}${effNote}`;
+    d.onclick = () => {
+      hideCtxMenu();
+      if(!meetsLevel){ log(`Need level ${r.reqLvl} Magic to brew ${r.name}.`,'bad'); return; }
+      if(!hasIngredients){ log(`Missing ingredients for ${r.name}.`,'bad'); return; }
+      startActivity(`Brewing ${r.name}`, 3000, () => {
+        r.requires.forEach(req => removeFromInventory(req.id, req.qty));
+        addToInventory(r.output);
+        giveXP(r.skill, r.xp);
+        buildInventory(); buildEquipPanel(); updateHUD();
+        log(`⚗️ You brew a ${ITEMS[r.output].name}. (+${r.xp} Magic xp)`, 'good');
+      });
+    };
+    ctxMenu.appendChild(d);
+  });
+
+  const _rb = document.getElementById('map-container').getBoundingClientRect();
+  ctxMenu.style.left = (_rb.left + _rb.width/2 - 70) + 'px';
+  ctxMenu.style.top  = (_rb.top  + _rb.height/2 - 60) + 'px';
+  ctxMenu.style.display = 'block';
+}
+
+function drinkPotion(slotIdx, itemId){
+  const p = state.players[state.activePlayer];
+  const item = p.inventory[slotIdx];
+  if(!item) return;
+  const def = ITEMS[itemId];
+  if(!def) return;
+
+  if(def.healAmt > 0){
+    if(p.hp >= p.maxHp){ log('You are already at full health.', 'bad'); return; }
+    const actual = Math.min(def.healAmt, p.maxHp - p.hp);
+    p.hp = Math.min(p.maxHp, p.hp + def.healAmt);
+    log(`You drink the ${def.name}. Restored ${actual} HP.`, 'good');
+  } else if(def.tempBonus){
+    if(!p.tempBonuses) p.tempBonuses = {};
+    const bonus = def.tempBonus;
+    const dur   = def.tempDuration || 90000;
+    const labels = [];
+    if(bonus.attack)   { p.tempBonuses.attack   = (p.tempBonuses.attack||0)   + bonus.attack;   labels.push(`+${bonus.attack} Attack`);   setTimeout(()=>{ p.tempBonuses.attack   = Math.max(0,(p.tempBonuses.attack||0)   - bonus.attack);   updateHUD(); }, dur); }
+    if(bonus.strength) { p.tempBonuses.strength = (p.tempBonuses.strength||0) + bonus.strength; labels.push(`+${bonus.strength} Strength`); setTimeout(()=>{ p.tempBonuses.strength = Math.max(0,(p.tempBonuses.strength||0) - bonus.strength); updateHUD(); }, dur); }
+    if(bonus.defence)  { p.tempBonuses.defence  = (p.tempBonuses.defence||0)  + bonus.defence;  labels.push(`+${bonus.defence} Defence`);  setTimeout(()=>{ p.tempBonuses.defence  = Math.max(0,(p.tempBonuses.defence||0)  - bonus.defence);  updateHUD(); }, dur); }
+    const secs = Math.round(dur / 1000);
+    log(`You drink the ${def.name}. ${labels.join(', ')} for ${secs}s.`, 'good');
+  }
+
+  item.qty--;
+  if(item.qty <= 0) p.inventory[slotIdx] = null;
+  buildInventory(); updateHUD();
+  SFX.eat && SFX.eat();
+}
+
 function showCraftMenu(title,recipes,icon){
   ctxMenu.innerHTML=`<div class="ctx-title">${icon} ${title}</div>`;
   recipes.forEach(r=>{
@@ -1792,14 +2345,25 @@ function checkZoneExit() {
         '28,11': {fn:()=>makeHouseInterior('Rowan'),   name:"Rowan's House",   log:"Rowan's house. A lantern flickers on the table."},
         '8,24':  {fn:()=>makeBlacksmithInterior(),     name:"The Ashen Forge", log:"Heat and the smell of iron hit you as you step inside the forge."},
         '9,14':  {fn:()=>makeBankInterior(),  name:"GRIMSTONE SAVINGS BANK",  log:"The door swings open. It smells of polished wood and old coin."},
-        '21,15': {fn:()=>makeShopInterior(), name:"DORIN'S TRADING POST",     log:"A bell jingles as the door swings open. The smell of spices and leather fills the room."},
+        '21,15': {fn:()=>makeShopInterior(), name:"DORIN'S TRADING POST",
+          log:getNightAlpha()>0.5
+            ? (questFlags.old_bones_accepted
+               ? "You slip inside through the unlocked door. The shop is dark — Dorin is out."
+               : "A bell jingles as the door swings open. The smell of spices and leather fills the room.")
+            : "A bell jingles as the door swings open. The smell of spices and leather fills the room.",
+          nightBlock: true},
       };
       const key = `${playerPos.y},${playerPos.x}`;
       const hd = HOUSE_DOORS[key];
       if(hd) {
-        SFX.door();
-        enterInterior(hd.fn, hd.name);
-        setTimeout(()=>log(hd.log,'neutral'),600);
+        // Trading Post is closed at night — unless Old Bones quest is active
+        if(hd.nightBlock && getNightAlpha() > 0.5 && !questFlags.old_bones_accepted) {
+          log('📝 A sign on the door: "CLOSED — Back at dawn. — Dorin"', 'neutral');
+        } else {
+          SFX.door();
+          enterInterior(hd.fn, hd.name);
+          setTimeout(()=>log(hd.log,'neutral'),600);
+        }
       }
     }
     if(northTile === T.BWALL_DOOR && currentMap.name === 'YOUR HOMESTEAD') {

@@ -711,7 +711,18 @@ const Weather = (() => {
     lastDay = -1;
   }
 
-  return { tick, draw, initParticles, getName, forceChange, getIntensity,
+  let nightMarketActive = false;
+  function forceNightMarket(enable) {
+    nightMarketActive = enable;
+    if(enable) {
+      targetWeather = FOG;
+      weatherAlpha = 0; // blend in smoothly
+    } else {
+      lastDay = -1; // recalculate normal weather
+    }
+  }
+
+  return { tick, draw, initParticles, getName, forceChange, forceNightMarket, getIntensity,
            get current() { return currentWeather; },
            CLEAR, RAIN, HEAVY_RAIN, FOG, SNOW, SNOWSTORM };
 })();

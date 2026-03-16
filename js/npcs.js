@@ -144,8 +144,8 @@ function getDynamicGreet(npc) {
   const w  = Weather.current;
   const wn = Weather.getName();
   const isNight = getNightAlpha() > 0.5;
-  const isDawn  = gameTime > 0.2 && gameTime < 0.3;
-  const isDusk  = gameTime > 0.7 && gameTime < 0.8;
+  const isDawn  = gameTime > 0.133 && gameTime < 0.2;
+  const isDusk  = gameTime > 0.8   && gameTime < 0.867;
   const dayName = DAY_NAMES[gameDay % DAY_NAMES.length];
   const isGrimtide = dayName === 'Grimtide';
   const isRaining  = w === Weather.RAIN || w === Weather.HEAVY_RAIN;
@@ -496,6 +496,98 @@ function openBertramDialogue(npc) {
     return;
   }
 
+  if(qf.homestead_rewarded && !qf.old_bones_accepted && !qf.old_bones_done) {
+    say("My grandson Ferris came to me yesterday with a debt notice from Dorin the Trader. Thirty gold, he says, owed for goods never delivered. I traded forty years and I know falsified books when I hear of them. But I can't prove it — and Ferris can't afford a guard's ear. I don't suppose...");
+    opt("▸ I'll look into it.", () => {
+      qf.old_bones_accepted = true;
+      log('✦ Quest accepted: Old Bones, New Debts — find evidence in Dorin\'s Trading Post at night.', 'gold');
+      say("Dorin's shop closes at dark — but that man forgets to lock the back door more nights than not. Wait until after dusk. If there's a falsified ledger in there, it'll be behind the counter. Bring what you find to Corporal Vayne or Guard Edwyn. They'll know what to do.");
+      optionsEl.innerHTML = '';
+      opt('▸ I\'ll take a look tonight.', close);
+    });
+    opt("▸ Not my concern.", () => {
+      say("No, I understand. You've your own troubles. I'll find another way.");
+      optionsEl.innerHTML = '';
+      opt('▸ Goodbye, Bertram.', close);
+    });
+    panel.classList.add('show');
+    document.getElementById('dialogue-close').onclick = closeDialogue;
+    return;
+  }
+
+  if(qf.old_bones_accepted && !qf.old_bones_done) {
+    const hint = qf.old_bones_contract_found
+      ? "You've got the proof — now get it to Vayne or Edwyn before Dorin notices anything's missing."
+      : "Dorin's shop closes at dark. Try the Trading Post after dusk — and watch the counter area.";
+    say(hint);
+    opt("▸ I'm working on it.", close);
+    opt("▸ Goodbye, Bertram.", close);
+    panel.classList.add('show');
+    document.getElementById('dialogue-close').onclick = closeDialogue;
+    return;
+  }
+
+  if(qf.old_bones_done) {
+    const discountLine = qf.bertram_discount
+      ? " And as I promised — seeds from me at half the usual cost."
+      : "";
+    say(`The guards handled it quietly. Dorin repaid Ferris before sundown and left town before questions could pile. First honest outcome I've seen from this business in years.${discountLine}`);
+    if(qf.bertram_discount && !qf.bertram_discount_offered) {
+      qf.bertram_discount_offered = true;
+      opt('▸ I\'ll take some seeds.', () => {
+        optionsEl.innerHTML = '';
+        const seedCosts = [
+          {id:'wheat_seed',  name:'Wheat Seeds (×5)',   full:4, disc:2},
+          {id:'turnip_seed', name:'Turnip Seeds (×5)',  full:5, disc:3},
+          {id:'carrot_seed', name:'Carrot Seeds (×5)',  full:6, disc:3},
+          {id:'potato_seed', name:'Potato Seeds (×5)',  full:7, disc:4},
+          {id:'onion_seed',  name:'Onion Seeds (×5)',   full:5, disc:3},
+        ];
+        const p = state.players[state.activePlayer];
+        say("Take your pick. Half price, for your trouble.");
+        seedCosts.forEach(s => {
+          opt(`▸ ${s.name} — ${s.disc}g`, () => {
+            if(p.gold < s.disc) { say("You're a bit short on coin. Come back when you have it."); return; }
+            p.gold -= s.disc;
+            addToInventory(s.id, 5);
+            buildInventory(); updateHUD();
+            log(`Bought ${s.name} from Bertram for ${s.disc}g.`, 'gold');
+            say("Good choice. Treat the soil well.");
+          });
+        });
+        opt('▸ Maybe later.', close);
+      });
+    } else if(qf.bertram_discount) {
+      opt('▸ I\'d like some seeds.', () => {
+        optionsEl.innerHTML = '';
+        const seedCosts = [
+          {id:'wheat_seed',  name:'Wheat Seeds (×5)',   disc:2},
+          {id:'turnip_seed', name:'Turnip Seeds (×5)',  disc:3},
+          {id:'carrot_seed', name:'Carrot Seeds (×5)',  disc:3},
+          {id:'potato_seed', name:'Potato Seeds (×5)',  disc:4},
+          {id:'onion_seed',  name:'Onion Seeds (×5)',   disc:3},
+        ];
+        const p = state.players[state.activePlayer];
+        say("Still at half price, same as always.");
+        seedCosts.forEach(s => {
+          opt(`▸ ${s.name} — ${s.disc}g`, () => {
+            if(p.gold < s.disc) { say("Not enough coin."); return; }
+            p.gold -= s.disc;
+            addToInventory(s.id, 5);
+            buildInventory(); updateHUD();
+            log(`Bought ${s.name} from Bertram for ${s.disc}g.`, 'gold');
+            say("Good choice. Treat the soil well.");
+          });
+        });
+        opt('▸ Nothing today.', close);
+      });
+    }
+    opt("▸ Glad it worked out.", close);
+    panel.classList.add('show');
+    document.getElementById('dialogue-close').onclick = closeDialogue;
+    return;
+  }
+
   if(qf.homestead_rewarded) {
     say("How goes the homestead? I hope the soil is treating you well. Till with the hoe, plant your seeds, water with patience. The land gives back what you put into it.");
     opt("▸ It's coming along.", close);
@@ -522,6 +614,55 @@ function openDialogue(npc) {
   // Willa — bank teller
   if(npc.npcName === 'Willa') {
     openWillaDialogue(npc);
+    return;
+  }
+  // Vayne / Edwyn — accept forged contract for Old Bones, New Debts
+  if((npc.npcName === 'Vayne' || npc.npcName === 'Edwyn') &&
+      questFlags.old_bones_contract_found && !questFlags.old_bones_done) {
+    const panel2 = document.getElementById('dialogue-panel');
+    const portrait2 = document.getElementById('dialogue-portrait');
+    const nameEl2 = document.getElementById('dialogue-npc-name');
+    const textEl2 = document.getElementById('dialogue-text');
+    const optEl2 = document.getElementById('dialogue-options');
+    portrait2.textContent = npc.def.letter;
+    portrait2.style.background = npc.def.bg;
+    portrait2.style.color = npc.def.col;
+    portrait2.style.borderColor = npc.def.col;
+    nameEl2.textContent = npc.def.name.toUpperCase();
+    textEl2.textContent = "Evening. Quiet night. Something on your mind?";
+    optEl2.innerHTML = '';
+    dialogueNpc = npc;
+    const handInBtn = document.createElement('div');
+    handInBtn.className = 'dlg-option';
+    handInBtn.textContent = '▸ [Show the forged contract]';
+    handInBtn.onclick = () => {
+      removeFromInventory('forged_contract', 1);
+      questFlags.old_bones_done = true;
+      questFlags.homestead_extended = true;
+      questFlags.bertram_discount = true;
+      const p = state.players[state.activePlayer];
+      p.gold = (p.gold || 0) + 40;
+      addToInventory('homestead_deed', 1);
+      buildInventory(); buildEquipPanel(); updateHUD();
+      textEl2.textContent = "... Well. These numbers don't match any ledger I've seen. This is fraud. We'll bring Dorin in before morning. You've done Ashenveil a service — take this from the guard fund. And tell Bertram his grandson is clear.";
+      optEl2.innerHTML = '';
+      log('📋 Handed the forged contract to the guard.', 'gold');
+      log('✦ Quest complete: Old Bones, New Debts! +40g, Homestead Extension Deed.', 'gold');
+      setTimeout(() => log('Your homestead has been extended — new crop rows await.', 'gold'), 800);
+      const doneBtn = document.createElement('div');
+      doneBtn.className = 'dlg-option';
+      doneBtn.textContent = "▸ I'll let Bertram know.";
+      doneBtn.onclick = closeDialogue;
+      optEl2.appendChild(doneBtn);
+    };
+    optEl2.appendChild(handInBtn);
+    const skipBtn = document.createElement('div');
+    skipBtn.className = 'dlg-option';
+    skipBtn.textContent = '▸ Nothing. Good evening.';
+    skipBtn.onclick = closeDialogue;
+    optEl2.appendChild(skipBtn);
+    document.getElementById('dialogue-close').onclick = closeDialogue;
+    panel2.classList.add('show');
     return;
   }
   dialogueNpc = npc;
@@ -797,13 +938,87 @@ const MERCHANT_SHOP_CONFIG = {
     { id:'normal_log',  price:3,  desc:'Freshly chopped wood.' },
     { id:'oak_log',     price:6,  desc:'Dense hardwood.' },
     { id:'willow_log',  price:12, desc:'Flexible willow timber.' },
-    { id:'raw_trout',   price:4,  desc:'Fresh catch.' },
-    { id:'raw_salmon',  price:7,  desc:'Prized fish.' },
+    { id:'raw_trout',          price:4,  desc:'Fresh catch.' },
+    { id:'raw_salmon',         price:7,  desc:'Prized fish.' },
+    { id:'raw_sunscale',       price:6,  desc:'Bright day catch.' },
+    { id:'raw_gilded_carp',    price:14, desc:'Shimmers like gold.' },
+    { id:'raw_raindrop_dace',  price:8,  desc:'Caught in the rain.' },
+    { id:'raw_stormcatch',     price:13, desc:'Storm-fed bass.' },
+    { id:'raw_mistwalker',     price:10, desc:'Fog-caught perch.' },
+    { id:'raw_phantom_crab',   price:18, desc:'Unusual fog creature.' },
+    { id:'raw_moonshadow',     price:20, desc:'Rare night eel.' },
+    { id:'raw_ghostfin',       price:28, desc:'Elusive night carp.' },
     { id:'wheat',       price:3,  desc:'Harvested from your homestead.' },
     { id:'turnip',      price:4,  desc:'Harvested from your homestead.' },
     { id:'carrot',      price:5,  desc:'Harvested from your homestead.' },
     { id:'potato',      price:6,  desc:'Harvested from your homestead.' },
     { id:'onion',       price:3,  desc:'Harvested from your homestead.' },
+  ],
+};
+
+// ======= NIGHT MARKET SHOP CONFIG =======
+// Available after mystery_key_given — Hooded Figure becomes a black market trader
+const NIGHT_MARKET_SHOP_CONFIG = {
+  title: "The Hooded Figure's Wares",
+  portraitLetter: 'H',
+  portraitBg: '#0a0808',
+  portraitCol: '#c8922a',
+  hasSellTab: true,
+  sellBonus: 0.05, // 5% more gold when selling here
+  buyStock: [
+    // ---- Rare Weapons ----
+    { id:'mithril_sword',     qty:1, cost:650,  category:'Rare Weapons',  desc:'Mithril blade — forged by none you know. Cuts through armour like cloth.' },
+    { id:'staff_of_aldermast',qty:1, cost:900,  category:'Rare Weapons',  desc:'A replica of Aldermast\'s staff. Amplifies magic by 25%.' },
+    { id:'old_staff',         qty:1, cost:120,  category:'Rare Weapons',  desc:'A worn but functional magic staff. Channels arcane energy.' },
+    { id:'crude_bow',         qty:1, cost:80,   category:'Rare Weapons',  desc:'Roughly strung but effective at range.' },
+    // ---- Rare Armour ----
+    { id:'mithril_helm',      qty:1, cost:580,  category:'Rare Armour',   desc:'Lightweight mithril helm. No dent has ever held.' },
+    { id:'mithril_plate',     qty:1, cost:850,  category:'Rare Armour',   desc:'Near-weightless mithril plate. Exceptional protection.' },
+    { id:'mithril_legs',      qty:1, cost:700,  category:'Rare Armour',   desc:'Mithril greaves. Move as if unarmoured.' },
+    { id:'cultist_robe',      qty:1, cost:200,  category:'Rare Armour',   desc:'Taken from a fallen cultist. Dark wards sewn into the hem.' },
+    // ---- Accessories ----
+    { id:'ring_of_warding',   qty:1, cost:480,  category:'Accessories',   desc:'Ancient iron ring. +6 defence. "Don\'t ask where it came from."' },
+    { id:'amulet_of_stars',   qty:1, cost:750,  category:'Accessories',   desc:'Cold silver amulet. +5 atk, +3 str, +3 def.' },
+    // ---- Runes ----
+    { id:'rune_void',         qty:3, cost:90,   category:'Runes',         desc:'Void rune. Rare arcane energy. Pack of 3.' },
+    { id:'rune_heal',         qty:3, cost:75,   category:'Runes',         desc:'Heal rune. Restore HP in combat. Pack of 3.' },
+    { id:'rune_shield',       qty:3, cost:60,   category:'Runes',         desc:'Shield rune. Temporary +8 defence. Pack of 3.' },
+    { id:'rune_fire',         qty:5, cost:50,   category:'Runes',         desc:'Fire rune. Pack of 5.' },
+    { id:'arcane_dust',       qty:5, cost:40,   category:'Runes',         desc:'Refined arcane dust for rune crafting. Pack of 5.' },
+    { id:'void_essence',      qty:3, cost:70,   category:'Runes',         desc:'Compressed void essence. Rare. Pack of 3.' },
+    // ---- Ammo ----
+    { id:'iron_arrows',       qty:40, cost:60,  category:'Ammo',          desc:'Double bundle of iron arrows. Untraceable origin.' },
+  ],
+  sellAccepts: [
+    // Same as merchant but with 5% bonus applied in renderShopContent via sellBonus
+    { id:'bones',       price:5,  desc:'Dropped by skeletons.' },
+    { id:'goblin_hide', price:8,  desc:'Rough hide from goblins.' },
+    { id:'bronze_bar',  price:20, desc:'Smelted from copper ore.' },
+    { id:'iron_bar',    price:30, desc:'Smelted from iron ore.' },
+    { id:'gold_bar',    price:55, desc:'Smelted from gold ore.' },
+    { id:'mithril_bar', price:90, desc:'Rare and valuable metal.' },
+    { id:'coal',        price:8,  desc:'Used as fuel for smelting.' },
+    { id:'copper_ore',  price:4,  desc:'Raw copper ore.' },
+    { id:'iron_ore',    price:7,  desc:'Raw iron ore.' },
+    { id:'normal_log',  price:3,  desc:'Freshly chopped wood.' },
+    { id:'oak_log',     price:6,  desc:'Dense hardwood.' },
+    { id:'willow_log',  price:12, desc:'Flexible willow timber.' },
+    { id:'raw_trout',   price:4,  desc:'Fresh catch.' },
+    { id:'raw_salmon',  price:7,  desc:'Prized fish.' },
+    { id:'raw_shark',   price:30, desc:'A prize catch.' },
+    { id:'wheat',       price:3,  desc:'Harvested grain.' },
+    { id:'turnip',      price:4,  desc:'Root vegetable.' },
+    { id:'carrot',      price:5,  desc:'Crisp and fresh.' },
+    { id:'potato',      price:6,  desc:'Starchy and filling.' },
+    { id:'onion',       price:3,  desc:'Strong flavour.' },
+    { id:'raw_moonshadow',    price:22, desc:'Rare night eel. I know collectors.' },
+    { id:'raw_ghostfin',      price:30, desc:'Ghostfin are hard to come by.' },
+    { id:'raw_shadowcrawler', price:45, desc:'Deep night specimen. Impressive.' },
+    { id:'raw_phantom_crab',  price:20, desc:'Fog-caught. Good for alchemy.' },
+    { id:'raw_veilfish',      price:55, desc:'Fog and night both? Exceptional.' },
+    { id:'raw_torrent_fin',   price:25, desc:'Storm-fed. Strong flavour.' },
+    { id:'void_shard',  price:120, desc:'A fragment of the void. I know a buyer.' },
+    { id:'mithril_ore', price:18, desc:'Rare ore. No questions asked.' },
   ],
 };
 
@@ -938,6 +1153,11 @@ function renderShopContent() {
       hasSellable = true;
       const item = ITEMS[entry.id];
       if(!item) return;
+      const sellBonus = config.sellBonus || 0;
+      const sellPrice = Math.floor(entry.price * (1 + sellBonus));
+      const priceLabel = sellBonus > 0
+        ? `<span style="color:#c8922a">${sellPrice}g ea</span> <span style="color:#5a9a5a;font-size:10px;">+${Math.round(sellBonus*100)}%</span>`
+        : `${sellPrice}g ea`;
       const row = document.createElement('div');
       row.className = 'shop-row';
       row.innerHTML = `
@@ -947,14 +1167,14 @@ function renderShopContent() {
           <div class="shop-row-desc">${entry.desc}</div>
         </div>
         <div class="shop-row-qty">×${qty}</div>
-        <div class="shop-row-price">${entry.price}g ea</div>`;
+        <div class="shop-row-price">${priceLabel}</div>`;
       row.onclick = () => {
         const curQty = countInInventory(entry.id);
         if(curQty === 0) { log('None left to sell.','bad'); renderShopContent(); return; }
         removeFromInventory(entry.id, 1);
-        buildInventory(); buildEquipPanel(); p.gold += entry.price;
+        buildInventory(); buildEquipPanel(); p.gold += sellPrice;
         updateHUD(); updateShopGold();
-        log(`Sold ${item.name} for ${entry.price}g.`, 'gold');
+        log(`Sold ${item.name} for ${sellPrice}g.`, 'gold');
         renderShopContent();
       };
       content.appendChild(row);
@@ -994,8 +1214,15 @@ function tickMysteryNpc() {
 
 function spawnMysteryNpc() {
   if(mysteryMet) return; // won't respawn if already spoken to this cycle
+  const isMarket = !!(questFlags && questFlags.mystery_key_given);
   mysteryNpc = {
-    def: { name:'Hooded Figure', letter:'?', bg:'#0a0808', col:'#8a7060', patrolRadius:0, speed:0 },
+    def: {
+      name: isMarket ? 'Hooded Trader' : 'Hooded Figure',
+      letter: isMarket ? 'H' : '?',
+      bg: '#0a0808',
+      col: isMarket ? '#c8922a' : '#8a7060',
+      patrolRadius: 0, speed: 0,
+    },
     typeId: 'mystery',
     x: MYSTERY_SPAWN_X, y: MYSTERY_SPAWN_Y,
     homeX: MYSTERY_SPAWN_X, homeY: MYSTERY_SPAWN_Y,
@@ -1003,13 +1230,22 @@ function spawnMysteryNpc() {
     patrolX: MYSTERY_SPAWN_X, patrolY: MYSTERY_SPAWN_Y,
     patrolTimer: 999, pauseTimer: 0, moveTimer: 999,
     isMystery: true,
+    isMarket,
   };
-  log('A hooded figure stands motionless at the docks...', 'gold');
+  if(isMarket) {
+    log('The hooded trader has set up at the docks. Their wares are... unusual.', 'gold');
+    // Force fog for the night market atmosphere
+    if(typeof Weather !== 'undefined') Weather.forceNightMarket(true);
+  } else {
+    log('A hooded figure stands motionless at the docks...', 'gold');
+  }
 }
 
 function despawnMysteryNpc() {
+  const wasMarket = mysteryNpc && mysteryNpc.isMarket;
   mysteryNpc = null;
   mysteryMet = false; // reset so they can appear again next cycle
+  if(wasMarket && typeof Weather !== 'undefined') Weather.forceNightMarket(false);
 }
 
 function getMysteryNpcAt(tx, ty) {
@@ -1018,8 +1254,52 @@ function getMysteryNpcAt(tx, ty) {
   return null;
 }
 
+function openMarketDialogue() {
+  const panel    = document.getElementById('dialogue-panel');
+  const portrait = document.getElementById('dialogue-portrait');
+  const nameEl   = document.getElementById('dialogue-npc-name');
+  const textEl   = document.getElementById('dialogue-text');
+  const optEl    = document.getElementById('dialogue-options');
+
+  portrait.textContent  = 'H';
+  portrait.style.background   = '#0a0808';
+  portrait.style.color        = '#c8922a';
+  portrait.style.borderColor  = '#c8922a';
+  nameEl.textContent = 'HOODED TRADER';
+
+  const greetings = [
+    '"You again. Good. I have new stock."',
+    '"Fog\'s in. Good cover for business."',
+    '"One night only. You know how this works."',
+    '"Ask no questions and I\'ll charge you fairly. That\'s the deal."',
+  ];
+  textEl.textContent = greetings[Math.floor(Math.random() * greetings.length)];
+  optEl.innerHTML = '';
+
+  const tradeBtn = document.createElement('div');
+  tradeBtn.className = 'dlg-option';
+  tradeBtn.textContent = '▸ Show me what you have.';
+  tradeBtn.onclick = () => {
+    closeDialogue();
+    setTimeout(() => openShopPanel(NIGHT_MARKET_SHOP_CONFIG), 50);
+  };
+  optEl.appendChild(tradeBtn);
+
+  const leaveBtn = document.createElement('div');
+  leaveBtn.className = 'dlg-option';
+  leaveBtn.textContent = '▸ Not tonight.';
+  leaveBtn.onclick = closeDialogue;
+  optEl.appendChild(leaveBtn);
+
+  document.getElementById('dialogue-close').onclick = closeDialogue;
+  dialogueNpc = mysteryNpc;
+  panel.classList.add('show');
+}
+
 function openMysteryDialogue() {
   if(!mysteryNpc) return;
+  // After completing the quest, the figure is now a trader
+  if(mysteryNpc.isMarket) { mysteryMet = true; openMarketDialogue(); return; }
   mysteryMet = true;
 
   // Mark quest progress
@@ -1117,5 +1397,12 @@ let questFlags = {
   grimoire_done:          false,
   // === Magic intro ===
   magic_intro_seen:       false,  // Aldermast taught player about rune crafting
+  // === Old Bones, New Debts ===
+  old_bones_accepted:     false,  // accepted quest from Bertram
+  old_bones_contract_found: false, // found the forged contract in Trading Post
+  old_bones_done:         false,  // delivered proof to guards
+  // === Homestead extension (reward from old_bones) ===
+  homestead_extended:     false,  // unlocks extra crop rows at homestead
+  bertram_discount:       false,  // Bertram sells seeds cheaper
 };
 
