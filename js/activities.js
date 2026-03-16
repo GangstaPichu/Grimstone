@@ -738,9 +738,12 @@ function tickEnemies(now) {
     const dPlayer = dist(e.x, e.y, px, py);
 
     // ---- STATE MACHINE ----
+    // Ignore player if they recently fled (3-minute cooldown)
+    const isIgnoring = e.ignoreUntil && Date.now() < e.ignoreUntil;
+
     if(e.state==='patrol') {
-      // Aggro check
-      if(dPlayer <= e.def.aggroRange) {
+      // Aggro check — skip if currently ignoring this player
+      if(!isIgnoring && dPlayer <= e.def.aggroRange) {
         e.state = 'chase';
         continue;
       }
@@ -762,8 +765,8 @@ function tickEnemies(now) {
       }
 
     } else if(e.state==='chase') {
-      // Lose aggro if too far
-      if(dPlayer > e.def.aggroRange * 1.8) {
+      // Drop chase if ignoring or too far
+      if(isIgnoring || dPlayer > e.def.aggroRange * 1.8) {
         e.state = 'patrol';
         e.patrolTimer = 1;
         continue;
@@ -824,6 +827,13 @@ function startCombatEntity(e) {
   _addCombatLog(`You face the ${e.def.name}. What will you do?`);
   document.getElementById('combat-panel').classList.add('show');
   log(`⚔ You engage the ${e.def.name}!`, 'bad');
+
+  // Show flee % on button based on Attack level vs enemy speed
+  const p = state.players[state.activePlayer];
+  const attackBonus = Math.min(0.4, (p.skills.Attack.lvl - 1) / 98 * 0.4);
+  const speedPenalty = Math.max(0, (e.def.speed - 1.5) * 0.08);
+  const fleePct = Math.round(Math.min(0.9, Math.max(0.15, 0.3 + attackBonus - speedPenalty)) * 100);
+  document.getElementById('btn-combat-flee').textContent = `↩ Flee (${fleePct}%)`;
 
   _setCombatButtons(false);
   setTimeout(() => { _combatPlayerTurn = true; _setCombatButtons(true); }, 500);
@@ -920,14 +930,24 @@ function combatFlee() {
   _combatPlayerTurn = false;
   _setCombatButtons(false);
 
+  const p = state.players[state.activePlayer];
   const e = combatEnemy;
-  const fleeChance = Math.max(0.2, 0.65 - (e.def.speed - 1.5) * 0.08);
+  // Attack level gives up to +40% flee chance (scales from lvl 1 to 99)
+  const attackBonus = Math.min(0.4, (p.skills.Attack.lvl - 1) / 98 * 0.4);
+  const speedPenalty = Math.max(0, (e.def.speed - 1.5) * 0.08);
+  const fleeChance = Math.min(0.9, Math.max(0.15, 0.3 + attackBonus - speedPenalty));
+  const pct = Math.round(fleeChance * 100);
+
   if(Math.random() < fleeChance) {
-    _addCombatLog(`You managed to escape from the ${e.def.name}!`, 'combat-log-dim');
+    _addCombatLog(`You create an opening and escape! (${pct}% chance)`, 'combat-log-dim');
     log(`You fled from the ${e.def.name}.`, 'info');
+    // Enemy ignores player for 3 minutes
+    e.ignoreUntil = Date.now() + 3 * 60 * 1000;
+    e.state = 'patrol';
+    e.patrolTimer = 2;
     setTimeout(_closeCombatPanel, 1000);
   } else {
-    _addCombatLog(`You couldn't escape! The ${e.def.name} blocks your path.`, 'combat-log-bad');
+    _addCombatLog(`You couldn't escape! (${pct}% chance) The ${e.def.name} blocks your path.`, 'combat-log-bad');
     document.getElementById('combat-status').textContent = `${e.def.name} attacks as you try to flee...`;
     setTimeout(_combatEnemyTurn, 900);
   }
