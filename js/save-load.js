@@ -47,16 +47,20 @@ function getSaveKey(slot) { return SAVE_PREFIX + slot; }
 
 function buildSaveData() {
   const p = state.players[0];
+  // If inside an interior, save the exterior position/zone from the bottom of the stack
+  const exteriorFrame = (interiorStack && interiorStack.length > 0) ? interiorStack[0] : null;
+  const savePos       = exteriorFrame ? exteriorFrame.pos  : { x: playerPos.x, y: playerPos.y };
+  const saveZone      = exteriorFrame ? exteriorFrame.zoneIndex : zoneIndex;
   return {
     saveVersion: CURRENT_SAVE_VERSION,
     slot: activeSaveSlot,
     name: p.name,
     gameMode,
-    zoneIndex,
+    zoneIndex: saveZone,
     gameTime,
     gameDay,
     worldSeed,
-    playerPos: { x: playerPos.x, y: playerPos.y },
+    playerPos: { x: savePos.x, y: savePos.y },
     players: state.players.map(pl => ({
       name: pl.name,
       hp: pl.hp,
@@ -102,7 +106,7 @@ function loadGame(slot) {
     activeSaveSlot = slot;
     gameMode = data.gameMode || 'solo';
     zoneIndex = data.zoneIndex || 0;
-    gameTime  = data.gameTime ?? 0.27;
+    gameTime  = data.gameTime ?? 0.22;
     gameDay   = data.gameDay  || 1;
     worldSeed = data.worldSeed || Math.floor(Math.random()*99999);
     if(data.questFlags) Object.assign(questFlags, data.questFlags);
@@ -202,6 +206,19 @@ function stopAutoSave() {
   if(autoSaveTimer) { clearInterval(autoSaveTimer); autoSaveTimer = null; }
   if(playtimeTimer)  { clearInterval(playtimeTimer); playtimeTimer = null; }
 }
+
+// Save on tab close / navigation (solo only — multiplayer has its own handler)
+window.addEventListener('beforeunload', () => {
+  if(activeSaveSlot != null && currentMap && gameMode !== 'coop') {
+    saveGame(activeSaveSlot);
+  }
+});
+// Mobile browsers often skip beforeunload; visibilitychange fires reliably
+window.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'hidden' && activeSaveSlot != null && currentMap && gameMode !== 'coop') {
+    saveGame(activeSaveSlot);
+  }
+});
 
 function formatPlaytime(seconds) {
   const h = Math.floor(seconds / 3600);
