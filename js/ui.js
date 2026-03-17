@@ -824,50 +824,55 @@ function log(msg, type=''){
 // ======= WORLD MAP =======
 const WORLD_ZONES = [
   {
-    id: ['STORMCRAG REACH'],
-    label: 'Stormcrag Reach', sub: 'Mountain Keep', icon: '⛰',
-    x:265, y:25, w:170, h:58, color:'#2e3a47', border:'#607898',
-  },
-  {
+    // Reached via north gate from Ashenveil
     id: ['FORSAKEN CHAPEL','THE FORSAKEN CHAPEL'],
     label: 'Forsaken Chapel', sub: 'Cursed Grounds', icon: '✝',
-    x:265, y:128, w:170, h:58, color:'#271630', border:'#7040a0',
+    x:265, y:20, w:170, h:58, color:'#271630', border:'#7040a0',
   },
   {
+    // Reached via west portal from Ashenveil
     id: ['GREENFIELD','GREENFIELD PASTURES'],
     label: 'Greenfield', sub: 'Pastures & Farm', icon: '⚘',
-    x:55,  y:228, w:158, h:58, color:'#182e14', border:'#3a8c30',
+    x:50,  y:130, w:158, h:58, color:'#182e14', border:'#3a8c30',
   },
   {
     id: ['ASHENVEIL'],
     label: 'Ashenveil', sub: 'Starting Town', icon: '⚔',
-    x:258, y:228, w:184, h:58, color:'#2e1e0e', border:'#c8921a', isMain:true,
+    x:258, y:130, w:184, h:58, color:'#2e1e0e', border:'#c8921a', isMain:true,
   },
   {
-    id: ['WHISPERWOOD','THE WHISPERWOOD'],
-    label: 'The Whisperwood', sub: 'Ancient Forest', icon: '❧',
-    x:487, y:228, w:158, h:58, color:'#0e1e0e', border:'#407830',
-  },
-  {
+    // Reached via east exit from Ashenveil (Ashwood Vale → Iron Peaks → ...)
     id: ['ASHWOOD','IRON PEAKS','IRON DEPTHS','CATACOMBS','CRYPTS','DUNGEON','VALE'],
     label: 'Dungeon Depths', sub: 'Perilous Below', icon: '☠',
-    x:258, y:378, w:184, h:58, color:'#111116', border:'#505060',
+    x:490, y:130, w:170, h:58, color:'#111116', border:'#505060',
   },
   {
+    // Reached via south portal from Ashenveil
+    id: ['WHISPERWOOD','THE WHISPERWOOD'],
+    label: 'The Whisperwood', sub: 'Ancient Forest', icon: '❧',
+    x:258, y:255, w:184, h:58, color:'#0e1e0e', border:'#407830',
+  },
+  {
+    // Reached via south exit from The Whisperwood
+    id: ['STORMCRAG REACH'],
+    label: 'Stormcrag Reach', sub: 'Mountain Keep', icon: '⛰',
+    x:265, y:375, w:170, h:58, color:'#2e3a47', border:'#607898',
+  },
+  {
+    // Reached via home_sigil teleport — no road connection
     id: ['YOUR HOMESTEAD'],
     label: 'Your Homestead', sub: 'Personal Plot', icon: '⌂',
-    x:487, y:378, w:158, h:58, color:'#1a2e10', border:'#6aaa30',
+    x:490, y:375, w:158, h:58, color:'#1a2e10', border:'#6aaa30',
   },
 ];
 
 // Path connections between zone centres [x1,y1, x2,y2]
 const MAP_PATHS = [
-  [350, 83,  350, 128],   // Stormcrag → Chapel
-  [350, 186, 350, 228],   // Chapel → Ashenveil
-  [213, 257, 258, 257],   // Greenfield → Ashenveil
-  [442, 257, 487, 257],   // Ashenveil → Whisperwood
-  [350, 286, 350, 378],   // Ashenveil → Dungeons
-  [442, 407, 487, 407],   // Ashenveil → Homestead (via sigil)
+  [350,  78, 350, 130],   // Chapel (bottom) → Ashenveil (top) — north gate
+  [208, 159, 258, 159],   // Greenfield (right) → Ashenveil (left) — west portal
+  [442, 159, 490, 159],   // Ashenveil (right) → Dungeon Depths (left) — east exit
+  [350, 188, 350, 255],   // Ashenveil (bottom) → Whisperwood (top) — south portal
+  [350, 313, 350, 375],   // Whisperwood (bottom) → Stormcrag (top) — south exit
 ];
 
 let _wmAnimFrame = null;
