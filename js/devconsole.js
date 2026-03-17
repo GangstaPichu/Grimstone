@@ -159,7 +159,7 @@
             playerPos = {x:sp.x, y:sp.y};
             playerReal = {x:sp.x, y:sp.y};
           }
-          const zoneNames = ['Ashenveil','Ashwood Vale','Iron Peaks','Cursed Marshes','Obsidian Depths'];
+          const zoneNames = ['Ashenveil','Ashen Moor','Iron Peaks','Cursed Marshes','Obsidian Depths'];
           if(typeof updateHUD === 'function') updateHUD();
           document.getElementById('zone-name').textContent = (zoneNames[idx]||'').toUpperCase();
           devPrint(`Teleported to zone ${idx}: ${zoneNames[idx] || '?'}`, '#70d0ff');

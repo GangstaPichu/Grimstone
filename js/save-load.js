@@ -280,7 +280,7 @@ function renderSaveSlots() {
       const info = document.createElement('div');
       info.className = 'save-slot-info';
       const cl = getCombatLevel(meta.players[0].skills);
-      const zone = (meta.zoneIndex != null) ? ['Ashenveil','Ashwood Vale','Iron Peaks','Cursed Marshes','Obsidian Depths'][meta.zoneIndex] : 'Ashenveil';
+      const zone = (meta.zoneIndex != null) ? ['Ashenveil','Ashen Moor','Iron Peaks','Cursed Marshes','Obsidian Depths'][meta.zoneIndex] : 'Ashenveil';
       const pt = formatPlaytime(meta.playtime || 0);
       const saved = formatDate(meta.savedAt);
       info.innerHTML = `<div class="save-slot-name">${meta.name}${meta.gameMode === 'coop' ? ' ⚔⚔' : ''}</div>
@@ -332,7 +332,7 @@ function showTitleScreen() {
 renderSaveSlots();
 
 const TILE = 40;
-const ZONES = ['ASHENVEIL','THE ASHWOOD VALE','THE IRON PEAKS','THE CURSED MARSHES','THE OBSIDIAN DEPTHS'];
+const ZONES = ['ASHENVEIL','THE ASHEN MOOR','THE IRON PEAKS','THE CURSED MARSHES','THE OBSIDIAN DEPTHS'];
 let zoneIndex = 0;
 let lastPortalZone = 0; // zone index of last portal stepped through
 

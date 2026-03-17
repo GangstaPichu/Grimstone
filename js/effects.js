@@ -297,7 +297,7 @@ const Fireflies = (() => {
 
   // Zones that have fireflies
   const FIREFLY_ZONES = new Set([
-    'ASHENVEIL', 'THE ASHWOOD VALE', 'THE WHISPERWOOD',
+    'ASHENVEIL', 'THE ASHEN MOOR', 'THE WHISPERWOOD',
     'THE IRON PEAKS', 'THE CURSED MARSHES',
   ]);
 

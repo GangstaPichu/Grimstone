@@ -731,8 +731,8 @@ function carvePath(tiles, W, H, x0,y0, x1,y1, rng, pathTile=T.DIRT) {
 
 // Zone configs — each zone has a biome personality
 const ZONE_CONFIGS = [
-  { // 0: Ashwood Vale — grassy vale
-    name: 'THE ASHWOOD VALE',
+  { // 0: The Ashen Moor — grassy moorland
+    name: 'THE ASHEN MOOR',
     baseTile: T.GRASS,
     altTile: T.DARK_GRASS,
     borderTile: T.STONE_FLOOR,

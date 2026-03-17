@@ -663,7 +663,7 @@ function _showOnlineCharSelect(role) {
     const row = document.createElement('div');
     row.className = 'ocs-save-row';
     const cl = typeof getCombatLevel === 'function' ? getCombatLevel(meta.players[0].skills) : '?';
-    const zoneNames = ['Ashenveil','Ashwood Vale','Iron Peaks','Cursed Marshes','Obsidian Depths'];
+    const zoneNames = ['Ashenveil','Ashen Moor','Iron Peaks','Cursed Marshes','Obsidian Depths'];
     const zone = zoneNames[meta.zoneIndex] || 'Ashenveil';
     const pt = typeof formatPlaytime === 'function' ? formatPlaytime(meta.playtime || 0) : '';
     row.innerHTML = `

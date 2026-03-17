@@ -1663,10 +1663,10 @@ function makeDungeonMap(config) {
           entryX:spawnX, entryY:spawnY};
 }
 
-// ---- Ashwood Vale dungeon ----
-function makeAshwoodDungeon(seed) {
+// ---- Ashen Moor dungeon ----
+function makeAshenDungeon(seed) {
   return makeDungeonMap({
-    W:56, H:38, name:'THE ASHWOOD CRYPTS',
+    W:56, H:38, name:'THE ASHEN CRYPTS',
     minRooms:8, maxRooms:12, seed,
     enemies:['skeleton','zombie'],
   });

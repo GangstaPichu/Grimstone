@@ -2749,7 +2749,7 @@ function checkZoneExit() {
       enterInterior(makeStormcragMap, 'Stormcrag Reach');
       setTimeout(()=>log('🏔 The trees thin. Cold wind bites down from the peaks above.','neutral'),700);
     } else if(currentMap && currentMap.name === 'STORMCRAG REACH') {
-      // South exit of Stormcrag → Ashwood Vale (zone 1)
+      // South exit of Stormcrag → Ashen Moor (zone 1)
       exitInterior();
       setTimeout(()=>doZoneTransition(1), 800);
     } else {
@@ -2838,9 +2838,9 @@ function checkZoneExit() {
   } else if(t === T.DUNGEON_STAIR_DOWN) {
     // Enter zone-specific dungeon
     let dungeonFn;
-    if(zoneIndex===1) dungeonFn = ()=>makeAshwoodDungeon(worldSeed+zoneIndex*31337);
+    if(zoneIndex===1) dungeonFn = ()=>makeAshenDungeon(worldSeed+zoneIndex*31337);
     else if(zoneIndex===2) dungeonFn = ()=>makeIronPeaksDungeon(worldSeed+zoneIndex*31337);
-    else dungeonFn = ()=>makeAshwoodDungeon(worldSeed+zoneIndex*31337);
+    else dungeonFn = ()=>makeAshenDungeon(worldSeed+zoneIndex*31337);
     enterInterior(dungeonFn, 'Dungeon');
     setTimeout(()=>log('⚰ The air is cold and reeks of death. Proceed with caution.','bad'),600);
   } else if(t === T.DUNGEON_STAIR_UP) {
