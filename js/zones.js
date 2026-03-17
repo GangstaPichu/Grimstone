@@ -2309,12 +2309,21 @@ function makeHomeMap() {
   for(let y=4;y<=8;y++) tiles[y][4]=T.DIRT;
   for(let x=4;x<=8;x++) tiles[8][x]=T.DIRT;
 
-  // Farmable area — 10×8 patch of dirt (right side of map)
-  for(let y=3;y<=12;y++) for(let x=8;x<=22;x++) tiles[y][x]=T.DIRT;
-  // Extended farmable rows — unlocked by Homestead Extension Deed
-  if(typeof questFlags !== 'undefined' && questFlags.homestead_extended) {
-    for(let y=13;y<=16;y++) for(let x=8;x<=22;x++) tiles[y][x]=T.DIRT;
-  }
+  // Farmable area — size determined by homePlotTier
+  // Backward compat: homestead_extended flag → at least tier 1
+  const _plotTier = Math.max(
+    (typeof state !== 'undefined' ? state.homePlotTier : 0) || 0,
+    (typeof questFlags !== 'undefined' && questFlags.homestead_extended) ? 1 : 0
+  );
+  const PLOT_BOUNDS = [
+    {maxY:12, maxX:22},  // tier 0 — original size
+    {maxY:13, maxX:23},  // tier 1
+    {maxY:14, maxX:24},  // tier 2
+    {maxY:15, maxX:25},  // tier 3
+    {maxY:16, maxX:26},  // tier 4
+  ];
+  const _pb = PLOT_BOUNDS[Math.min(_plotTier, 4)];
+  for(let y=3;y<=_pb.maxY;y++) for(let x=8;x<=_pb.maxX;x++) tiles[y][x]=T.DIRT;
 
   // Well (left of farm)
   tiles[6][6]=T.TOWN_WELL;
@@ -2367,8 +2376,16 @@ function makeHomeMap() {
 }
 
 // ======= HOME CABIN INTERIOR =======
+const HOUSE_TIER_SIZES = [
+  {W:9,  H:7},   // tier 0 — original
+  {W:11, H:9},   // tier 1
+  {W:13, H:10},  // tier 2
+  {W:15, H:11},  // tier 3
+  {W:17, H:12},  // tier 4
+];
 function makeHomeCabinInterior() {
-  const W=9, H=7;
+  const houseTier = (typeof state !== 'undefined' ? state.homeHouseTier : 0) || 0;
+  const {W, H} = HOUSE_TIER_SIZES[Math.min(houseTier, 4)];
   const tiles = Array.from({length:H}, ()=>Array(W).fill(T.STONE_FLOOR));
   const floor  = Array.from({length:H}, ()=>Array(W).fill(T.STONE_FLOOR));
 
@@ -2379,10 +2396,19 @@ function makeHomeCabinInterior() {
   // Floor snapshot
   for(let y=0;y<H;y++) for(let x=0;x<W;x++) floor[y][x]=tiles[y][x];
 
-  // Bed — use saved position if available, else default (2,2)
-  const bx = state.homeBed?.x ?? 2;
-  const by = state.homeBed?.y ?? 2;
+  // Bed — clamp saved position to current room size
+  const bx = Math.min(state.homeBed?.x ?? 2, W-2);
+  const by = Math.min(state.homeBed?.y ?? 2, H-2);
   placeDecor(tiles, floor, by, bx, T.BED);
+
+  // Restore placed furniture
+  if(state.homeFurniture) {
+    for(const f of state.homeFurniture) {
+      if(f.x > 0 && f.x < W-1 && f.y > 0 && f.y < H-1 && tiles[f.y][f.x] !== T.BED) {
+        placeDecor(tiles, floor, f.y, f.x, f.tile);
+      }
+    }
+  }
 
   // Exit in south wall centre
   placeDecor(tiles, floor, H-1, Math.floor(W/2), T.EXIT_INTERIOR);

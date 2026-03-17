@@ -2345,7 +2345,8 @@ function renderMap(){
   // Dungeons are always pitch dark regardless of time of day
   const isDungeon = currentMap && currentMap.isInterior &&
     (currentMap.name==='THE ASHWOOD CRYPTS'||currentMap.name==='THE IRON DEPTHS'||currentMap.name==='THE CULTIST CATACOMBS');
-  const nightA = isDungeon ? 0.92 : getNightAlpha();
+  let nightA = isDungeon ? 0.92 : getNightAlpha();
+  if(brighterNights && !isDungeon && nightA > 0) nightA = Math.max(0, nightA - 0.15);
   if(nightA > 0) {
     const W = canvas.width, H = canvas.height;
 
@@ -2511,6 +2512,7 @@ function renderMap(){
 
 function drawMinimap() {
   if(!currentMap) return;
+  if(!showMinimap) return;
   const {tiles,W,H} = currentMap;
   const mw=120, mh=Math.floor(120*H/W);
   const mx=8, my=canvas.height-mh-8;

@@ -127,6 +127,13 @@ const state = {
   activePlayer: 0,
   // Homestead farm plots — keyed "x,y": {state:'tilled'|'planted', cropItem, cropTile, plantedAt, growTime}
   farmPlots: {},
+  // Homestead upgrade tiers (0 = default, 1–4 = purchased upgrades)
+  homePlotTier: 0,
+  homeHouseTier: 0,
+  // Blueprints learned (array of item IDs)
+  homeBlueprintsLearned: [],
+  // Furniture placed in the cabin [{tile, x, y}]
+  homeFurniture: [],
 };
 
 // Ground bags — items dropped by the player. Cleared on zone/map change.
@@ -457,6 +464,13 @@ const ITEMS = {
   amulet_of_stars:   {name:'Amulet of Stars',       icon:'⭐', type:'equip', slot:'ammo', attackBonus:5, strBonus:3, defBonus:3, desc:'An amulet Aldermast forged from four Void Shards. Hums faintly.'},
   forged_contract:   {name:'Forged Debt Contract',  icon:'📋', type:'quest', desc:'A falsified ledger page — debt amounts altered in a different hand. Evidence of fraud.'},
   homestead_deed:    {name:'Homestead Extension Deed', icon:'📜', type:'quest', desc:'A land deed granting expanded farmland on your homestead. Additional soil plots await.'},
+
+  // ── Homestead Blueprints ────────────────────────────────────────────
+  blueprint_fireplace: {name:'Blueprint: Fireplace',     icon:'📜', type:'blueprint', buildTile:191, buildCost:{copper_ore:6,coal:3,normal_log:3},  desc:'A detailed schematic for a stone fireplace. Study it to learn the construction, then build inside your cabin.'},
+  blueprint_workbench: {name:'Blueprint: Workbench',     icon:'📜', type:'blueprint', buildTile:130, buildCost:{oak_log:6,iron_bar:3},               desc:'Plans for a sturdy crafting workbench. Study it to learn the construction, then build inside your cabin.'},
+  blueprint_bookshelf: {name:'Blueprint: Bookshelf',     icon:'📜', type:'blueprint', buildTile:121, buildCost:{oak_log:5,iron_bar:2},               desc:"A carpenter's schematic for a wall-mounted bookshelf. Build inside your cabin."},
+  blueprint_chest:     {name:'Blueprint: Storage Chest', icon:'📜', type:'blueprint', buildTile:123, buildCost:{normal_log:4,iron_bar:2},             desc:'Instructions for a sturdy lockable chest. Build inside your cabin.'},
+  blueprint_candle:    {name:'Blueprint: Candle Stand',  icon:'📜', type:'blueprint', buildTile:122, buildCost:{normal_log:2,copper_ore:2},           desc:'A simple wooden candle stand to brighten your cabin. Build inside your cabin.'},
 
   // ── RUNES (consumable magic) ───────────────────────────────────────────
   rune_fire:    {name:'Fire Rune',    icon:'🔴', type:'rune', color:'#e04010', desc:'Cast to hurl a bolt of fire. Deals 8–15 damage. Gives Magic XP.',       magicReqLvl:1,  dmgMin:8,  dmgMax:15, xp:8  },

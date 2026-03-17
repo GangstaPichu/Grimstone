@@ -255,6 +255,17 @@ function getItemActions(id){
     }}];
   }
 
+  // ── Blueprints ───────────────────────────────────────────────────────
+  if(item.type === 'blueprint') {
+    const learned = (state.homeBlueprintsLearned || []).includes(id);
+    if(learned) {
+      return [{icon:'📜', label:`${item.name.replace('Blueprint: ','')} (learned)`, action:()=>
+        log('You already know this blueprint. Enter your cabin and right-click a floor tile to build it.', 'neutral')
+      }];
+    }
+    return [{icon:'📜', label:'Study Blueprint', action:(si)=>learnBlueprint(si, id)}];
+  }
+
   return [];
 }
 
@@ -1774,6 +1785,84 @@ function harvestHomeCrop(x, y, cropItem, msg) {
   giveXP('Farming', 15);
 }
 
+// ======= HOMESTEAD BLUEPRINTS =======
+function learnBlueprint(slotIndex, id) {
+  if(!state.homeBlueprintsLearned) state.homeBlueprintsLearned = [];
+  if(state.homeBlueprintsLearned.includes(id)) {
+    log('You already know this blueprint.', 'bad');
+    return;
+  }
+  state.homeBlueprintsLearned.push(id);
+  const p = state.players[state.activePlayer];
+  p.inventory[slotIndex] = null;
+  buildInventory(); updateHUD();
+  const bp = ITEMS[id];
+  const matStr = Object.entries(bp.buildCost).map(([mid,qty])=>`${qty}× ${ITEMS[mid]?.name||mid}`).join(', ');
+  log(`📜 You study the blueprint and learn: ${bp.name.replace('Blueprint: ','')}. Materials needed: ${matStr}.`, 'gold');
+  log('Enter your cabin and right-click any empty floor tile to place it.', 'neutral');
+}
+
+function openBuildMenu(x, y) {
+  if(!currentMap || currentMap.name !== 'YOUR CABIN') return;
+  const learned = state.homeBlueprintsLearned || [];
+  if(learned.length === 0) {
+    log("You haven't learned any blueprints yet. Find them in dungeon chests.", 'bad');
+    return;
+  }
+  const t = currentMap.tiles[y][x];
+  if(t !== T.STONE_FLOOR) {
+    log("There's already something here.", 'bad');
+    return;
+  }
+
+  const panel     = document.getElementById('dialogue-panel');
+  const portrait  = document.getElementById('dialogue-portrait');
+  const nameEl    = document.getElementById('dialogue-npc-name');
+  const textEl    = document.getElementById('dialogue-text');
+  const optionsEl = document.getElementById('dialogue-options');
+
+  portrait.textContent       = '🔨';
+  portrait.style.background  = '#1a1208';
+  portrait.style.color       = '#c8922a';
+  portrait.style.borderColor = '#c8922a';
+  nameEl.textContent = 'BUILD FURNITURE';
+  textEl.textContent = "Choose something to build here. You'll need the required materials in your inventory.";
+  optionsEl.innerHTML = '';
+
+  function close() { document.getElementById('dialogue-close').click(); }
+  function opt(label, fn) {
+    const b = document.createElement('div');
+    b.className = 'dlg-option';
+    b.textContent = label;
+    b.onclick = fn;
+    optionsEl.appendChild(b);
+  }
+
+  const p = state.players[state.activePlayer];
+  learned.forEach(bpId => {
+    const bp = ITEMS[bpId];
+    if(!bp) return;
+    const canAfford = Object.entries(bp.buildCost).every(([mid,qty]) => countInInventory(mid) >= qty);
+    const matStr = Object.entries(bp.buildCost).map(([mid,qty])=>`${qty}× ${ITEMS[mid]?.name||mid}`).join(', ');
+    opt(`▸ ${bp.name.replace('Blueprint: ','')} — ${matStr}${canAfford ? '' : ' ✗'}`, () => {
+      if(!canAfford) { textEl.textContent = "You don't have all the materials for that."; return; }
+      for(const [mid, qty] of Object.entries(bp.buildCost)) removeFromInventory(mid, qty);
+      placeDecor(currentMap.tiles, currentMap.floor, y, x, bp.buildTile);
+      if(!state.homeFurniture) state.homeFurniture = [];
+      state.homeFurniture = state.homeFurniture.filter(f => !(f.x===x && f.y===y));
+      state.homeFurniture.push({tile: bp.buildTile, x, y});
+      minimapDirty = true;
+      buildInventory(); updateHUD();
+      log(`🔨 You build a ${bp.name.replace('Blueprint: ','')} and place it in your cabin.`, 'gold');
+      close();
+    });
+  });
+  opt('▸ Never mind.', close);
+
+  panel.classList.add('show');
+  document.getElementById('dialogue-close').onclick = closeDialogue;
+}
+
 function searchChest(x, y) {
   // Only the chest near the blacksmith has the mystery quest note
   const isSpecialChest = (zoneIndex === 0 && !currentMap?.isInterior && x >= 28 && x <= 31 && y >= 9 && y <= 11);
@@ -1864,6 +1953,19 @@ function searchChest(x, y) {
         else
           setTimeout(()=>log(`✦ Quest updated: The Fractured Grimoire — ${questFlags.tome_fragments_found}/3 fragments.`,'gold'),600);
         buildInventory();
+      }
+
+      // Blueprints: random chance per chest (one per map visit)
+      if(!currentMap._blueprintGiven && Math.random() < 0.22) {
+        const allBlueprints = ['blueprint_fireplace','blueprint_workbench','blueprint_bookshelf','blueprint_chest','blueprint_candle'];
+        const unlearned = allBlueprints.filter(b => !(state.homeBlueprintsLearned||[]).includes(b));
+        if(unlearned.length > 0) {
+          const pick = unlearned[Math.floor(Math.random()*unlearned.length)];
+          addToInventory(pick);
+          currentMap._blueprintGiven = true;
+          log(`📜 Tucked beneath the loot — a rolled blueprint: ${ITEMS[pick]?.name||pick}`, 'gold');
+          buildInventory();
+        }
       }
 
       for(let i=0;i<numItems;i++){
@@ -2600,6 +2702,8 @@ document.addEventListener('keydown',e=>{
     toggleWorldMap(); return;
   }
   if(e.key==='Escape'){
+    const optOverlay = document.getElementById('options-overlay');
+    if(optOverlay && optOverlay.classList.contains('show')){ optOverlay.classList.remove('show'); return; }
     const mapOverlay = document.getElementById('world-map-overlay');
     if(mapOverlay && mapOverlay.classList.contains('show')){ mapOverlay.classList.remove('show'); return; }
     if(document.getElementById('dialogue-panel').classList.contains('show')){ closeDialogue(); return; }

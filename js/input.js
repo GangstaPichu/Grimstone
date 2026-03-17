@@ -479,6 +479,12 @@ function getTileActions(t, x, y){
       actions.push({icon:'✋',label:'Move Bed', action:(x,y)=>startMovingFurniture(T.BED,x,y)});
     return actions;
   }
+  // Build furniture on empty floor inside your cabin
+  if(t===T.STONE_FLOOR && currentMap && currentMap.name==='YOUR CABIN') {
+    const hasBlueprints = state.homeBlueprintsLearned && state.homeBlueprintsLearned.length > 0;
+    if(hasBlueprints)
+      return [{icon:'🔨',label:'Build here…', action:(x,y)=>walkThenDo(x,y,()=>openBuildMenu(x,y))}];
+  }
   if(t===T.EXIT)          return [{icon:'➤', label:'Next Zone',   action:(x,y)=>walkThenDo(x,y,()=>doZoneTransition(1))}];
   if(t===T.EXIT_RETURN)   return [{icon:'◀', label:'Previous Zone',action:(x,y)=>walkThenDo(x,y,()=>doZoneTransition(-1))}];
   if(t===T.NOTICE_BOARD)  return [{icon:'📜',label:'Read Notice Board', action:(x,y)=>walkThenDo(x,y,()=>readNoticeBoard(x,y))}];

@@ -5,7 +5,10 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ======= CANVAS SETUP & UI SCALING =======
-let uiScale = parseFloat(localStorage.getItem('grimstone_ui_scale') || '1');
+let uiScale       = parseFloat(localStorage.getItem('grimstone_ui_scale') || '1');
+let showMinimap   = localStorage.getItem('grimstone_show_minimap')   !== '0';
+let weatherOn     = localStorage.getItem('grimstone_weather_on')     !== '0';
+let brighterNights= localStorage.getItem('grimstone_brighter_nights')=== '1';
 
 function applyUIScale(scale) {
   uiScale = Math.min(1.3, Math.max(0.6, scale));
@@ -73,41 +76,155 @@ function initPanelToggles() {
 }
 
 function initScaleSlider() {
+  // UI scale slider now lives in the options panel
   const slider = document.getElementById('ui-scale-slider');
   const label  = document.getElementById('ui-scale-label');
-  if(!slider) return;
-  slider.value = Math.round(uiScale * 100);
-  label.textContent = slider.value + '%';
-  applyUIScale(uiScale);
-  slider.addEventListener('input', () => {
-    const s = parseInt(slider.value) / 100;
-    label.textContent = slider.value + '%';
-    applyUIScale(s);
-  });
-
+  if(slider) {
+    slider.value = Math.round(uiScale * 100);
+    if(label) label.textContent = slider.value + '%';
+    applyUIScale(uiScale);
+    slider.addEventListener('input', () => {
+      const s = parseInt(slider.value) / 100;
+      if(label) label.textContent = slider.value + '%';
+      applyUIScale(s);
+    });
+  }
   function stepScale(delta) {
+    if(!slider) return;
     const next = Math.min(130, Math.max(60, parseInt(slider.value) + delta));
     slider.value = next;
-    label.textContent = next + '%';
+    if(label) label.textContent = next + '%';
     applyUIScale(next / 100);
   }
-  const minusBtn = document.getElementById('ui-scale-minus');
-  const plusBtn  = document.getElementById('ui-scale-plus');
+  const minusBtn = document.getElementById('opt-scale-minus');
+  const plusBtn  = document.getElementById('opt-scale-plus');
   if(minusBtn) minusBtn.addEventListener('click', () => stepScale(-5));
   if(plusBtn)  plusBtn.addEventListener('click',  () => stepScale(+5));
+}
 
-  // SFX volume slider
-  const sfxSlider = document.getElementById('sfx-vol-slider');
+// ======= OPTIONS PANEL =======
+function toggleOptionsPanel() {
+  const overlay = document.getElementById('options-overlay');
+  if(!overlay) return;
+  overlay.classList.toggle('show');
+}
+
+function initOptionsPanel() {
+  initScaleSlider();
+
+  // ── SFX Volume ──────────────────────────────────────────
+  const sfxSlider = document.getElementById('opt-sfx-vol');
+  const sfxLabel  = document.getElementById('opt-sfx-vol-label');
   if(sfxSlider) {
     const saved = parseFloat(localStorage.getItem('grimstone_sfx_vol') ?? '0.6');
     sfxSlider.value = Math.round(saved * 100);
+    if(sfxLabel) sfxLabel.textContent = sfxSlider.value + '%';
     SFX.setVol(saved);
     sfxSlider.addEventListener('input', () => {
       const v = parseInt(sfxSlider.value) / 100;
+      if(sfxLabel) sfxLabel.textContent = sfxSlider.value + '%';
       SFX.setVol(v);
       localStorage.setItem('grimstone_sfx_vol', v);
     });
   }
+
+  // ── Music Volume ────────────────────────────────────────
+  const musicVolSlider = document.getElementById('opt-music-vol');
+  const musicVolLabel  = document.getElementById('opt-music-vol-label');
+  if(musicVolSlider) {
+    const savedVol = parseInt(localStorage.getItem('grimstone_music_vol') ?? '35');
+    musicVolSlider.value = savedVol;
+    if(musicVolLabel) musicVolLabel.textContent = savedVol + '%';
+    musicVolSlider.addEventListener('input', () => {
+      const v = parseInt(musicVolSlider.value);
+      if(musicVolLabel) musicVolLabel.textContent = v + '%';
+      setMusicVolume(v);
+      localStorage.setItem('grimstone_music_vol', v);
+    });
+  }
+
+  // ── Music On/Off ────────────────────────────────────────
+  const musicBtn = document.getElementById('opt-music-enabled');
+  if(musicBtn) {
+    const savedEnabled = localStorage.getItem('grimstone_music_enabled') !== '0';
+    _setToggle(musicBtn, savedEnabled);
+    musicBtn.addEventListener('click', () => {
+      toggleMusic();
+      const nowOn = Music.enabled;
+      _setToggle(musicBtn, nowOn);
+      localStorage.setItem('grimstone_music_enabled', nowOn ? '1' : '0');
+    });
+  }
+
+  // ── Minimap ─────────────────────────────────────────────
+  const minimapBtn = document.getElementById('opt-minimap');
+  if(minimapBtn) {
+    _setToggle(minimapBtn, showMinimap);
+    minimapBtn.addEventListener('click', () => {
+      showMinimap = !showMinimap;
+      _setToggle(minimapBtn, showMinimap);
+      localStorage.setItem('grimstone_show_minimap', showMinimap ? '1' : '0');
+    });
+  }
+
+  // ── Weather Effects ─────────────────────────────────────
+  const weatherBtn = document.getElementById('opt-weather');
+  if(weatherBtn) {
+    _setToggle(weatherBtn, weatherOn);
+    weatherBtn.addEventListener('click', () => {
+      weatherOn = !weatherOn;
+      _setToggle(weatherBtn, weatherOn);
+      localStorage.setItem('grimstone_weather_on', weatherOn ? '1' : '0');
+      Weather.setEnabled(weatherOn);
+    });
+  }
+
+  // ── Autosave On/Off ─────────────────────────────────────
+  const autosaveBtn = document.getElementById('opt-autosave');
+  const intervalRow = document.getElementById('opt-autosave-interval-row');
+  if(autosaveBtn) {
+    const savedAutosave = localStorage.getItem('grimstone_autosave_enabled') !== '0';
+    _setToggle(autosaveBtn, savedAutosave);
+    if(intervalRow) intervalRow.style.opacity = savedAutosave ? '1' : '0.4';
+    autosaveBtn.addEventListener('click', () => {
+      const nowOn = localStorage.getItem('grimstone_autosave_enabled') !== '0';
+      const next  = !nowOn;
+      _setToggle(autosaveBtn, next);
+      localStorage.setItem('grimstone_autosave_enabled', next ? '1' : '0');
+      if(intervalRow) intervalRow.style.opacity = next ? '1' : '0.4';
+      startAutoSave();
+    });
+  }
+
+  // ── Autosave Interval ───────────────────────────────────
+  const savedInterval = localStorage.getItem('grimstone_autosave_interval') || '30000';
+  document.querySelectorAll('#opt-autosave-interval-row .options-choice').forEach(btn => {
+    if(btn.dataset.val === savedInterval) btn.classList.add('active');
+    else btn.classList.remove('active');
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#opt-autosave-interval-row .options-choice')
+        .forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      localStorage.setItem('grimstone_autosave_interval', btn.dataset.val);
+      startAutoSave();
+    });
+  });
+
+  // ── Brighter Nights ─────────────────────────────────────
+  const brighterBtn = document.getElementById('opt-brighter-nights');
+  if(brighterBtn) {
+    _setToggle(brighterBtn, brighterNights);
+    brighterBtn.addEventListener('click', () => {
+      brighterNights = !brighterNights;
+      _setToggle(brighterBtn, brighterNights);
+      localStorage.setItem('grimstone_brighter_nights', brighterNights ? '1' : '0');
+    });
+  }
+}
+
+function _setToggle(btn, on) {
+  btn.textContent = on ? 'On' : 'Off';
+  btn.classList.toggle('active', on);
 }
 
 // ======= START GAME =======
@@ -165,7 +282,7 @@ function startGame(mode) {
     if(mode==='coop') {
       document.getElementById('p2-hud').style.display='flex';
     }
-    initScaleSlider(); initPanelToggles();
+    initOptionsPanel(); initPanelToggles();
     const hv = document.getElementById('hud-version');
     if(hv) hv.textContent = `v${GAME_VERSION}`;
     gameLoop();
@@ -205,7 +322,7 @@ function startGameFromSave(savedPos) {
     startHomeGrowthTick();
     const sbw2 = document.getElementById('session-btn-wrap');
     if(sbw2) sbw2.style.display = 'flex';
-    initScaleSlider(); initPanelToggles();
+    initOptionsPanel(); initPanelToggles();
     const hv2 = document.getElementById('hud-version');
     if(hv2) hv2.textContent = `v${GAME_VERSION}`;
     gameLoop();

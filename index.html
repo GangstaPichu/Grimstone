@@ -279,26 +279,7 @@
       </button>
     </div>
     <div class="topbar-sep"></div>
-    <div id="ui-scale-control" style="display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0;">
-      <span style="font-family:'Cinzel',serif;font-size:9px;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase;">Scale</span>
-      <button id="ui-scale-minus" style="font-size:11px;line-height:1;padding:1px 5px;cursor:pointer;background:var(--bg-mid);border:1px solid var(--border);color:var(--text-dim);border-radius:2px;">−</button>
-      <input type="range" id="ui-scale-slider" min="60" max="130" value="100" step="5"
-        style="-webkit-appearance:none;appearance:none;width:70px;height:4px;background:var(--border);border-radius:2px;outline:none;cursor:pointer;">
-      <button id="ui-scale-plus" style="font-size:11px;line-height:1;padding:1px 5px;cursor:pointer;background:var(--bg-mid);border:1px solid var(--border);color:var(--text-dim);border-radius:2px;">+</button>
-      <span id="ui-scale-label" style="font-family:'Cinzel',serif;font-size:9px;color:var(--gold);min-width:28px;">100%</span>
-    </div>
-    <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-      <span style="font-family:'Cinzel',serif;font-size:9px;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase;">SFX</span>
-      <input type="range" id="sfx-vol-slider" min="0" max="100" value="60" step="5"
-        style="-webkit-appearance:none;appearance:none;width:60px;height:4px;background:var(--border);border-radius:2px;outline:none;cursor:pointer;">
-    </div>
-    <div id="music-controls">
-      <button class="action-btn" id="music-toggle-btn" onclick="toggleMusic()" title="Toggle Music" style="font-size:14px;padding:4px 10px;">🎵</button>
-      <div id="music-vol-wrap">
-        <span id="music-vol-label">VOL</span>
-        <input id="music-vol-slider" type="range" min="0" max="100" value="35" oninput="setMusicVolume(this.value)">
-      </div>
-    </div>
+    <button class="action-btn" id="options-btn" onclick="toggleOptionsPanel()" title="Options" style="margin-left:auto;flex-shrink:0;font-size:13px;padding:4px 12px;letter-spacing:1px;">⚙ Options</button>
     <div id="hud-version" style="font-family:'Cinzel',serif;font-size:9px;color:var(--text-dim);letter-spacing:1px;opacity:0.45;padding:0 8px;flex-shrink:0;"></div>
   </div>
 
@@ -505,6 +486,83 @@
     <div class="world-map-title">⚔ &nbsp; WORLD MAP &nbsp; ⚔</div>
     <canvas id="world-map-canvas" width="700" height="480"></canvas>
     <div class="world-map-hint">Press <kbd>M</kbd> or <kbd>Esc</kbd> to close</div>
+  </div>
+</div>
+
+<!-- OPTIONS OVERLAY -->
+<div id="options-overlay">
+  <div class="options-wrap">
+    <div class="options-title">⚙ &nbsp; Options &nbsp; ⚙</div>
+    <div class="options-body">
+
+      <!-- AUDIO -->
+      <div class="options-section">
+        <div class="options-section-title">Audio</div>
+        <div class="options-row">
+          <span class="options-label">SFX Volume</span>
+          <input type="range" id="opt-sfx-vol" class="options-slider" min="0" max="100" value="60" step="5">
+          <span class="options-val" id="opt-sfx-vol-label">60%</span>
+        </div>
+        <div class="options-row">
+          <span class="options-label">Music Volume</span>
+          <input type="range" id="opt-music-vol" class="options-slider" min="0" max="100" value="35" step="5">
+          <span class="options-val" id="opt-music-vol-label">35%</span>
+        </div>
+        <div class="options-row">
+          <span class="options-label">Music</span>
+          <button class="options-toggle active" id="opt-music-enabled">On</button>
+        </div>
+      </div>
+
+      <!-- DISPLAY -->
+      <div class="options-section">
+        <div class="options-section-title">Display</div>
+        <div class="options-row">
+          <span class="options-label">UI Scale</span>
+          <button id="opt-scale-minus" class="options-step-btn">−</button>
+          <input type="range" id="ui-scale-slider" class="options-slider" min="60" max="130" value="100" step="5">
+          <button id="opt-scale-plus" class="options-step-btn">+</button>
+          <span class="options-val" id="ui-scale-label">100%</span>
+        </div>
+        <div class="options-row">
+          <span class="options-label">Minimap</span>
+          <button class="options-toggle active" id="opt-minimap">On</button>
+        </div>
+        <div class="options-row">
+          <span class="options-label">Weather Effects</span>
+          <button class="options-toggle active" id="opt-weather">On</button>
+        </div>
+      </div>
+
+      <!-- GAMEPLAY -->
+      <div class="options-section">
+        <div class="options-section-title">Gameplay</div>
+        <div class="options-row">
+          <span class="options-label">Autosave</span>
+          <button class="options-toggle active" id="opt-autosave">On</button>
+        </div>
+        <div class="options-row" id="opt-autosave-interval-row">
+          <span class="options-label">Interval</span>
+          <div class="options-btn-group">
+            <button class="options-choice active" data-val="30000">30s</button>
+            <button class="options-choice" data-val="60000">1 min</button>
+            <button class="options-choice" data-val="300000">5 min</button>
+            <button class="options-choice" data-val="600000">10 min</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ACCESSIBILITY -->
+      <div class="options-section">
+        <div class="options-section-title">Accessibility</div>
+        <div class="options-row">
+          <span class="options-label">Brighter Nights</span>
+          <button class="options-toggle" id="opt-brighter-nights">Off</button>
+        </div>
+      </div>
+
+    </div>
+    <div class="options-hint">Press <kbd>Esc</kbd> to close</div>
   </div>
 </div>
 

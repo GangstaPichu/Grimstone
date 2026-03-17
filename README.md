@@ -2,7 +2,7 @@
 
 A browser-based dark fantasy RPG set in the cursed world of Ashenveil. Explore dangerous zones, master skills, fight enemies in turn-based combat, tend your homestead, and uncover the mysteries of the Ashen Seal — alone or with up to 4 players.
 
-**Current version: v0.6.4**
+**Current version: v0.7.0**
 
 ---
 
@@ -56,7 +56,7 @@ The world is connected via portals and the world map (`M` key).
 | Stormcrag Reach | Mountain keep, tougher enemies |
 | The Forsaken Chapel | Cultists spawn here at night |
 | Dungeon Depths | Procedurally generated floors, boss loot |
-| Your Homestead | Personal farm plot with a cabin you can enter |
+| Your Homestead | Personal farm plot with an upgradeable cabin |
 
 ### Day/Night Cycle & Weather
 - 10 real minutes = 1 in-game day, 7-day week
@@ -64,7 +64,24 @@ The world is connected via portals and the world map (`M` key).
 - Night brings out stronger enemies (Cultists in the Chapel, Shadow Walkers)
 
 ### Homestead
-Unlock your personal plot through Old Bertram's quest line. Grow crops, tend animals, and furnish your cabin. Move furniture around freely from inside the cabin.
+Unlock your personal plot through Old Bertram's quest line. Grow crops, tend animals, and furnish your cabin.
+
+**Homestead Upgrades** — after receiving the sigil, talk to Bertram to purchase upgrades:
+
+- **Farm Plot Tiers (4)** — each upgrade expands the farmable soil area. Costs scale from 200g + oak logs up to 2,000g + oak logs, iron bars, and coal.
+- **Cabin Tiers (4)** — each upgrade grows the cabin interior (from 9×7 up to 17×12 tiles). Costs scale from 300g + materials up to 3,000g.
+
+**Blueprint Furniture System** — find blueprints in dungeon chests and craft furniture inside your cabin:
+
+| Blueprint | Materials |
+|---|---|
+| Fireplace | 6 copper ore + 3 coal + 3 logs |
+| Workbench | 6 oak logs + 3 iron bars |
+| Bookshelf | 5 oak logs + 2 iron bars |
+| Storage Chest | 4 logs + 2 iron bars |
+| Candle Stand | 2 logs + 2 copper ore |
+
+Right-click a blueprint in your inventory to study it (consumes the item). Then enter your cabin and right-click any empty floor tile to place learned furniture. Furniture persists across sessions.
 
 ### Quests
 Pick up contracts and bounties from the Ashenveil Notice Board. Multiple quest chains are available, including the main arc around **The Ashen Seal** and a mystery NPC storyline.
@@ -112,6 +129,7 @@ flag <key> <value>   Set a quest flag
 
 | Version | Changes |
 |---|---|
+| 0.7.0 | Homestead upgrades: 4 farm plot tiers + 4 cabin tiers from Bertram; blueprint furniture system (find in dungeon chests, study, craft inside cabin) |
 | 0.6.4 | Homestead cabin interior with movable bed; door now enterable |
 | 0.6.3 | Homestead sigil usable without quest flag |
 | 0.6.2 | Ground bag drop/pickup system |
