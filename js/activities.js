@@ -2828,13 +2828,24 @@ function checkZoneExit() {
     if(currentMap && currentMap.name === 'GREENFIELD PASTURES') {
       exitInterior();
       setTimeout(()=>log('You pass back through the shimmering portal onto the Ashenveil road.','info'),500);
+    } else if(currentMap && currentMap.name === 'ASHGROVE HOLLOW') {
+      // East portal of Ashgrove Hollow → back to Greenfield (parent)
+      exitInterior();
+      setTimeout(()=>log('The pale trees thin. You step back into the familiar green of Greenfield Pastures.','info'),500);
     } else {
       enterInterior(makeGreenfieldMap, 'Greenfield Pastures');
       setTimeout(()=>log('🌾 The smell of cut grass and livestock drifts through the portal. The Greenfield Pastures stretch before you.','good'),600);
     }
   } else if(t === T.CARAVAN_PORTAL) {
-    enterInterior(makeCaravanZoneMap, 'THE WESTERN PASS');
-    setTimeout(()=>log('🛤 The air turns cold. Tyre ruts and broken crates line the road ahead. Something went wrong here.','bad'),600);
+    if(currentMap && currentMap.name === 'GREENFIELD PASTURES') {
+      // West portal of Greenfield → Ashgrove Hollow
+      enterInterior(makeAshgroveHollowMap, 'ASHGROVE HOLLOW');
+      setTimeout(()=>log('🌿 White-barked trees loom out of the pale grass. The hollow smells of dry ash and old soil.','neutral'),600);
+    } else {
+      // West portal of Ashgrove Hollow → Western Pass
+      enterInterior(makeCaravanZoneMap, 'THE WESTERN PASS');
+      setTimeout(()=>log('🛤 The air turns cold. Tyre ruts and broken crates line the road ahead. Something went wrong here.','bad'),600);
+    }
   } else if(t === T.DUNGEON_STAIR_DOWN) {
     // Enter zone-specific dungeon
     let dungeonFn;

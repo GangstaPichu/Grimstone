@@ -56,7 +56,7 @@ const QUESTS = [
     title: 'The Missing Caravan',
     giver: 'Oswin — The Tarnished Flagon',
     desc: 'Oswin has been waiting three days for a caravan from the west that never arrived. Something may have happened on the road.',
-    detail: 'Oswin\'s caravan was due three days ago from the western pass. The road through the Ashen Moor has been dangerous lately. Someone should investigate — or at least bring back word of what happened.',
+    detail: 'Oswin\'s caravan was due three days ago from the western pass. The road through Ashgrove Hollow has been dangerous lately — wolves have been prowling the hollow in unusual numbers. Someone should investigate — or at least bring back word of what happened.',
     reward: '25 gold',
     rewardFn: (p) => { bankAddCoins(p, 25); },
     isVisible: (qf) => true,

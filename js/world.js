@@ -597,6 +597,9 @@ const T = {
   CARAVAN_PORTAL: 202,
   // Crafting
   ANVIL: 203,
+  // ---- Ashgrove Hollow ----
+  ASH_GRASS: 204,  // pale dying yellowish-white grass
+  ASH_TREE:  205,  // white-barked ash tree
 };
 
 // Set of tile IDs that are decorations drawn over a floor layer

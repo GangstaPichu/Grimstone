@@ -36,6 +36,7 @@ function screenToTile(sx, sy) {
 const TILE_COLORS = {
   [T.GRASS]:'#1a2a14', [T.DIRT]:'#2a1e12', [T.STONE_FLOOR]:'#252830',
   [T.WATER]:'#0e2030', [T.DARK_GRASS]:'#0e1a0e', [T.WALL]:'#111318',
+  [T.ASH_GRASS]:'#28260e',
   [T.DUNGEON_FLOOR]:'#18151a', [T.COBBLE]:'#2a2824',
   // Building tiles
   [T.ROOF_L]:'#2a1810', [T.ROOF_M]:'#2a1810', [T.ROOF_R]:'#2a1810', [T.ROOF_CHIMNEY]:'#2a1810',
@@ -188,6 +189,14 @@ function drawTile(x,y,t,floorT) {
         const gy=py+TILE*.6+i%2*4;
         ctx2.fillRect(gx,gy,1,4+i%3*2);
       }
+    } else if(floorT===T.ASH_GRASS){
+      // Pale dying grass — dull yellow-white blades
+      ctx2.fillStyle='rgba(140,130,60,0.28)';
+      for(let i=0;i<4;i++){
+        const gx=px+Math.sin(x*7+y*3+i)*10+TILE/2-5+i*5;
+        const gy=py+TILE*.6+i%2*4;
+        ctx2.fillRect(gx,gy,1,4+i%3*2);
+      }
     } else if(floorT===T.COBBLE){
       ctx2.strokeStyle='rgba(255,255,255,0.06)'; ctx2.lineWidth=0.8;
       const row=y%2;
@@ -233,6 +242,18 @@ function drawTile(x,y,t,floorT) {
       const gy=py+TILE*.6+i%2*4;
       ctx2.fillRect(gx,gy,1,4+i%3*2);
     }
+  } else if(t===T.ASH_GRASS){
+    // Pale, dying grass — yellowed blades with an ashen white tinge
+    const gi=(y*128+x)*4;
+    ctx2.fillStyle='rgba(140,130,60,0.28)';
+    for(let i=0;i<4;i++){
+      const gx=px+_grassSin[gi+i]*10+TILE/2-5+i*5;
+      const gy=py+TILE*.6+i%2*4;
+      ctx2.fillRect(gx,gy,1,4+i%3*2);
+    }
+    // Faint ash-white dust overlay
+    ctx2.fillStyle='rgba(210,205,185,0.05)';
+    ctx2.fillRect(px,py,TILE,TILE);
   } else if(t===T.STONE_FLOOR){
     ctx2.strokeStyle='rgba(255,255,255,0.04)';
     ctx2.strokeRect(px+1,py+1,TILE-2,TILE-2);
@@ -272,6 +293,8 @@ function drawTile(x,y,t,floorT) {
     drawOre(px,py,'#151515','#2a2a2a',flash);
   } else if(t===T.NORMAL_TREE||t===T.OAK||t===T.WILLOW){
     drawTree(px,py,t,flash);
+  } else if(t===T.ASH_TREE){
+    drawAshTree(px,py,flash);
   } else if(t===T.FISHING||t===T.FISHING2){
     ctx2.fillStyle='rgba(20,100,160,0.3)';
     ctx2.fillRect(px,py,TILE,TILE);
@@ -2090,6 +2113,28 @@ function drawTree(px,py,t,flash){
   }
 }
 
+function drawAshTree(px,py,flash){
+  // White-barked trunk
+  ctx2.fillStyle='#b8b0a0';
+  ctx2.fillRect(px+TILE/2-4,py+TILE*.5,8,TILE*.5-2);
+  // Pale bark highlight
+  ctx2.fillStyle='rgba(230,225,210,0.4)';
+  ctx2.fillRect(px+TILE/2-2,py+TILE*.5,3,TILE*.5-2);
+  // Sparse, desaturated canopy — ashen grey-green
+  ctx2.fillStyle='#7a8a68';
+  ctx2.beginPath(); ctx2.arc(px+TILE/2,py+TILE*.4,TILE*.3,0,Math.PI*2); ctx2.fill();
+  // Ash-white shimmer on foliage
+  ctx2.fillStyle='rgba(215,210,190,0.18)';
+  ctx2.beginPath(); ctx2.arc(px+TILE/2,py+TILE*.38,TILE*.3,0,Math.PI*2); ctx2.fill();
+  // Shadow
+  ctx2.fillStyle='rgba(0,0,0,0.15)';
+  ctx2.beginPath(); ctx2.arc(px+TILE/2+3,py+TILE*.44,TILE*.18,0,Math.PI*2); ctx2.fill();
+  if(flash>0){
+    ctx2.fillStyle=`rgba(200,180,50,${flash*0.4})`;
+    ctx2.fillRect(px,py,TILE,TILE);
+  }
+}
+
 function drawEnemy(px,py,bg,col,letter,flash){
   ctx2.fillStyle=bg;
   ctx2.beginPath(); ctx2.arc(px+TILE/2,py+TILE/2,TILE/2-4,0,Math.PI*2); ctx2.fill();
@@ -2557,6 +2602,7 @@ function drawMinimap() {
       [T.COPPER]:'#8b5a2b',[T.IRON]:'#5a5a6a',[T.GOLD_ORE]:'#c8922a',
       [T.MITHRIL]:'#4a6a9a',[T.COAL]:'#2a2a2a',
       [T.NORMAL_TREE]:'#1a4010',[T.OAK]:'#2a5018',[T.WILLOW]:'#184a14',
+      [T.ASH_GRASS]:'#2e2c18',[T.ASH_TREE]:'#7a7868',
       [T.GOBLIN]:'#2a4a14',[T.SKELETON]:'#5a4a38',[T.WOLF]:'#3a3840',
       [T.SMELTER]:'#8b3a0a',[T.COOKING_FIRE]:'#c83a0a',[T.SHOP]:'#2a6a9a',[T.WORKBENCH]:'#7a4a20',[T.ANVIL]:'#3c3a50',
       [T.EXIT]:'#e8b84b',[T.EXIT_RETURN]:'#4080ff',

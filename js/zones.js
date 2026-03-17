@@ -2018,6 +2018,75 @@ function makeShopInterior() {
   return {tiles, floor, W, H, isInterior:true, name:"DORIN'S TRADING POST", entryX:6, entryY:5};
 }
 
+// ======= ASHGROVE HOLLOW — Between Greenfield and The Western Pass =======
+function makeAshgroveHollowMap() {
+  const W=62, H=36;
+  const pathY = 17; // centre tile of the 3-wide east-west road
+
+  // Fill everything with pale ash grass
+  const tiles = Array.from({length:H}, ()=>Array(W).fill(T.ASH_GRASS));
+  const floor  = Array.from({length:H}, ()=>Array(W).fill(T.ASH_GRASS));
+
+  function pd(y,x,tile){ placeDecor(tiles,floor,y,x,tile); }
+
+  // ---- Border walls ----
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++)
+    if(y===0||y===H-1||x===0||x===W-1) tiles[y][x]=T.WALL;
+
+  // ---- Dirt path east-west (3 tiles wide) ----
+  for(let x=1;x<W-1;x++){
+    tiles[pathY-1][x]=T.DIRT;
+    tiles[pathY][x]  =T.DIRT;
+    tiles[pathY+1][x]=T.DIRT;
+  }
+
+  // ---- Ash tree groves — deterministic pattern via hash-like sin ----
+  // Northern grove: rows 1–13 | southern grove: rows 22–34
+  // Clear 3-tile buffer around the dirt path (rows 14–21)
+  for(let y=1;y<14;y++){
+    for(let x=1;x<W-1;x++){
+      const n=Math.abs(Math.sin(x*127.1+y*311.7)*43758.5453)%1;
+      if(n<0.28) tiles[y][x]=T.ASH_TREE;
+    }
+  }
+  for(let y=22;y<H-1;y++){
+    for(let x=1;x<W-1;x++){
+      const n=Math.abs(Math.sin(x*127.1+y*311.7)*43758.5453)%1;
+      if(n<0.28) tiles[y][x]=T.ASH_TREE;
+    }
+  }
+
+  // ---- Wolves — random 5-10 per visit, away from the path ----
+  const wolfCount = 5 + Math.floor(Math.random()*6);
+  let placed=0, attempts=0;
+  while(placed<wolfCount && attempts<600){
+    const wx=1+Math.floor(Math.random()*(W-2));
+    const wy=1+Math.floor(Math.random()*(H-2));
+    if(tiles[wy][wx]===T.ASH_GRASS && Math.abs(wy-pathY)>3){
+      tiles[wy][wx]=T.WOLF;
+      placed++;
+    }
+    attempts++;
+  }
+
+  // ---- Floor snapshot (before portals) ----
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++) floor[y][x]=tiles[y][x];
+
+  // ---- East wall portal → Greenfield (FARM_PORTAL exit) ----
+  tiles[pathY-1][W-1]=T.ASH_GRASS;
+  tiles[pathY][W-1]  =T.ASH_GRASS;
+  tiles[pathY+1][W-1]=T.ASH_GRASS;
+  pd(pathY, W-1, T.FARM_PORTAL);
+
+  // ---- West wall portal → Western Pass (CARAVAN_PORTAL) ----
+  tiles[pathY-1][0]=T.ASH_GRASS;
+  tiles[pathY][0]  =T.ASH_GRASS;
+  tiles[pathY+1][0]=T.ASH_GRASS;
+  pd(pathY, 0, T.CARAVAN_PORTAL);
+
+  return {tiles, floor, W, H, name:'ASHGROVE HOLLOW', entryX:W-2, entryY:pathY};
+}
+
 // ======= THE WESTERN PASS — Caravan Quest Zone =======
 function makeCaravanZoneMap() {
   const W=50, H=20;
