@@ -471,6 +471,7 @@ const ITEMS = {
   blueprint_bookshelf: {name:'Blueprint: Bookshelf',     icon:'📜', type:'blueprint', buildTile:121, buildCost:{oak_log:5,iron_bar:2},               desc:"A carpenter's schematic for a wall-mounted bookshelf. Build inside your cabin."},
   blueprint_chest:     {name:'Blueprint: Storage Chest', icon:'📜', type:'blueprint', buildTile:123, buildCost:{normal_log:4,iron_bar:2},             desc:'Instructions for a sturdy lockable chest. Build inside your cabin.'},
   blueprint_candle:    {name:'Blueprint: Candle Stand',  icon:'📜', type:'blueprint', buildTile:122, buildCost:{normal_log:2,copper_ore:2},           desc:'A simple wooden candle stand to brighten your cabin. Build inside your cabin.'},
+  blueprint_anvil:     {name:'Blueprint: Anvil',          icon:'📜', type:'blueprint', buildTile:203, buildCost:{iron_bar:8,steel_bar:4,normal_log:2},   desc:'Schematics for a heavy iron smithing anvil. Build inside your cabin to smith weapons and armour at home.'},
 
   // ── RUNES (consumable magic) ───────────────────────────────────────────
   rune_fire:    {name:'Fire Rune',    icon:'🔴', type:'rune', color:'#e04010', desc:'Cast to hurl a bolt of fire. Deals 8–15 damage. Gives Magic XP.',       magicReqLvl:1,  dmgMin:8,  dmgMax:15, xp:8  },
@@ -594,6 +595,8 @@ const T = {
   BUTTER_CHURN: 201,
   // Caravan zone portal (farm west wall)
   CARAVAN_PORTAL: 202,
+  // Crafting
+  ANVIL: 203,
 };
 
 // Set of tile IDs that are decorations drawn over a floor layer
@@ -621,6 +624,8 @@ const DECOR_TILES = new Set([
   T.BUTTER_CHURN,
   // Caravan portal — walkable (step-on trigger)
   T.CARAVAN_PORTAL,
+  // Crafting stations
+  T.ANVIL,
 ]);
 
 // Place a decoration tile and record the floor underneath in the floor layer

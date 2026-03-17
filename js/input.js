@@ -3,7 +3,7 @@ let homeMovingFurniture = null; // {tile, fromX, fromY} when dragging a piece
 
 function startMovingFurniture(tile, fromX, fromY) {
   homeMovingFurniture = {tile, fromX, fromY};
-  log('Click an empty floor tile to place the bed.', 'info');
+  log('Click an empty floor tile to place it.', 'info');
 }
 
 function placeFurniture(toX, toY) {
@@ -241,6 +241,7 @@ function getTileLabel(t, tx, ty){
     [T.TOWN_WELL]:'💧 Town Well',
     [T.LAMPPOST]:'🕯 Lamppost',
     [T.WORKBENCH]:'🪵 Woodworking Bench',
+    [T.ANVIL]:'⚒ Smithing Anvil',
     [T.GRAVE]:'🪦 Gravestone',
     [T.FENCE]:'🪵 Wooden Fence',
     [T.HOUSE_A]:'🏠 Residence',
@@ -309,7 +310,7 @@ const SOLID_TILES = new Set([
   T.WALL, T.WATER,
   T.COPPER, T.IRON, T.GOLD_ORE, T.MITHRIL, T.COAL,
   T.NORMAL_TREE, T.OAK, T.WILLOW,
-  T.SMELTER, T.COOKING_FIRE, T.SHOP, T.WORKBENCH,
+  T.SMELTER, T.COOKING_FIRE, T.SHOP, T.WORKBENCH, T.ANVIL,
   T.INN, T.BLACKSMITH, T.TOWN_WELL, T.LAMPPOST,
   T.TABLE, T.BARREL,
   T.BED, T.BOOKSHELF, T.CANDLE, T.CHEST, T.NOTICE_BOARD,
@@ -466,11 +467,12 @@ function getTileActions(t, x, y){
   if(t===T.SMELTER)       return [{icon:'🔥',label:'Smelt Bars',        action:(x,y)=>walkThenDo(x,y,()=>openSmelter())}];
   if(t===T.COOKING_FIRE)  return [{icon:'🍖',label:'Cook Food',          action:(x,y)=>walkThenDo(x,y,()=>openCooker())}];
   // T.SHOP removed — trading is done by talking to Dorin inside his shop
-  if(t===T.WORKBENCH) {
-    const wActions = [{icon:'🪵',label:'Craft Woodwork', action:(x,y)=>walkThenDo(x,y,()=>openWorkbench())}];
-    if(currentMap && currentMap.name === 'THE ASHEN FORGE')
-      wActions.push({icon:'⚒',label:'Smith Equipment', action:(x,y)=>walkThenDo(x,y,()=>openAnvil())});
-    return wActions;
+  if(t===T.WORKBENCH)  return [{icon:'🪵',label:'Craft Woodwork',   action:(x,y)=>walkThenDo(x,y,()=>openWorkbench())}];
+  if(t===T.ANVIL) {
+    const anvActions = [{icon:'⚒',label:'Smith Equipment', action:(x,y)=>walkThenDo(x,y,()=>openAnvil())}];
+    if(currentMap && currentMap.name==='YOUR CABIN')
+      anvActions.push({icon:'✋',label:'Move Anvil', action:(x,y)=>startMovingFurniture(T.ANVIL,x,y)});
+    return anvActions;
   }
   if(t===T.CAULDRON)      return [{icon:'⚗️',label:'Brew Potion',        action:(x,y)=>walkThenDo(x,y,()=>openBrewingCauldron())}];
   if(t===T.BED) {

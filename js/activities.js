@@ -852,7 +852,7 @@ const ENEMY_SOLID = new Set([
   T.WALL, T.WATER,
   T.COPPER, T.IRON, T.GOLD_ORE, T.MITHRIL, T.COAL,
   T.NORMAL_TREE, T.OAK, T.WILLOW,
-  T.SMELTER, T.COOKING_FIRE, T.SHOP,
+  T.SMELTER, T.COOKING_FIRE, T.SHOP, T.ANVIL,
   T.INN_DOOR, T.EXIT_INTERIOR, T.EXIT, T.EXIT_RETURN, T.CHAPEL_PORTAL,
 ]);
 function enemyCanMove(tx, ty) {
@@ -2281,7 +2281,7 @@ function searchChest(x, y) {
 
       // Blueprints: random chance per chest (one per map visit)
       if(!currentMap._blueprintGiven && Math.random() < 0.22) {
-        const allBlueprints = ['blueprint_fireplace','blueprint_workbench','blueprint_bookshelf','blueprint_chest','blueprint_candle'];
+        const allBlueprints = ['blueprint_fireplace','blueprint_workbench','blueprint_bookshelf','blueprint_chest','blueprint_candle','blueprint_anvil'];
         const unlearned = allBlueprints.filter(b => !(state.homeBlueprintsLearned||[]).includes(b));
         if(unlearned.length > 0) {
           const pick = unlearned[Math.floor(Math.random()*unlearned.length)];
