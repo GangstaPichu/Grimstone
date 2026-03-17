@@ -822,57 +822,84 @@ function log(msg, type=''){
 }
 
 // ======= WORLD MAP =======
+// Layout (canvas 700×480):
+//
+//                    [✝ Forsaken Chapel]
+//                           |
+//  [Western Pass]-[⚘ Greenfield]-[⚔ Ashenveil]-[🌿 Ashen Moor]-[⛰ Iron Peaks]
+//                           |
+//                    [❧ Whisperwood]
+//                           |
+//                    [⛰ Stormcrag]                  [⌂ Homestead]
+//
+// Ashenveil center-x = 330. Chapel, Whisperwood, Stormcrag all align at x=330.
+// Western Pass and Greenfield extend left; Ashen Moor and Iron Peaks extend right.
+
 const WORLD_ZONES = [
   {
-    // Reached via north gate from Ashenveil
-    id: ['FORSAKEN CHAPEL','THE FORSAKEN CHAPEL'],
+    // Reached via north gate from Ashenveil — includes the Cultist Catacombs dungeon below it
+    id: ['FORSAKEN CHAPEL','THE FORSAKEN CHAPEL','CULTIST CATACOMBS'],
     label: 'Forsaken Chapel', sub: 'Cursed Grounds', icon: '✝',
-    x:265, y:20, w:170, h:58, color:'#271630', border:'#7040a0',
+    x:246, y:12, w:168, h:52, color:'#271630', border:'#7040a0',
+  },
+  {
+    // Reached via caravan portal west of Greenfield
+    id: ['WESTERN PASS','THE WESTERN PASS'],
+    label: 'Western Pass', sub: 'Caravan Road', icon: '🪨',
+    x:5, y:120, w:112, h:52, color:'#1a1a10', border:'#706040',
   },
   {
     // Reached via west portal from Ashenveil
     id: ['GREENFIELD','GREENFIELD PASTURES'],
     label: 'Greenfield', sub: 'Pastures & Farm', icon: '⚘',
-    x:50,  y:130, w:158, h:58, color:'#182e14', border:'#3a8c30',
+    x:125, y:120, w:120, h:52, color:'#182e14', border:'#3a8c30',
   },
   {
     id: ['ASHENVEIL'],
     label: 'Ashenveil', sub: 'Starting Town', icon: '⚔',
-    x:258, y:130, w:184, h:58, color:'#2e1e0e', border:'#c8921a', isMain:true,
+    x:253, y:120, w:154, h:52, color:'#2e1e0e', border:'#c8921a', isMain:true,
   },
   {
-    // Reached via east exit from Ashenveil (Ashwood Vale → Iron Peaks → ...)
-    id: ['ASHWOOD','IRON PEAKS','IRON DEPTHS','CATACOMBS','CRYPTS','DUNGEON','VALE'],
-    label: 'Dungeon Depths', sub: 'Perilous Below', icon: '☠',
-    x:490, y:130, w:170, h:58, color:'#111116', border:'#505060',
+    // Reached via east exit from Ashenveil — includes Ashen Crypts dungeon
+    id: ['ASHEN MOOR','THE ASHEN MOOR','ASHEN CRYPTS'],
+    label: 'Ashen Moor', sub: 'Grassy Moorland', icon: '🌿',
+    x:415, y:120, w:126, h:52, color:'#1a2010', border:'#607840',
+  },
+  {
+    // Reached east from Ashen Moor — includes the Iron Depths dungeon
+    id: ['IRON PEAKS','THE IRON PEAKS','IRON DEPTHS'],
+    label: 'Iron Peaks', sub: 'Rocky Heights', icon: '⛏',
+    x:549, y:120, w:146, h:52, color:'#1e1e26', border:'#607070',
   },
   {
     // Reached via south portal from Ashenveil
     id: ['WHISPERWOOD','THE WHISPERWOOD'],
     label: 'The Whisperwood', sub: 'Ancient Forest', icon: '❧',
-    x:258, y:255, w:184, h:58, color:'#0e1e0e', border:'#407830',
+    x:253, y:238, w:154, h:52, color:'#0e1e0e', border:'#407830',
   },
   {
     // Reached via south exit from The Whisperwood
     id: ['STORMCRAG REACH'],
     label: 'Stormcrag Reach', sub: 'Mountain Keep', icon: '⛰',
-    x:265, y:375, w:170, h:58, color:'#2e3a47', border:'#607898',
+    x:260, y:352, w:140, h:52, color:'#2e3a47', border:'#607898',
   },
   {
     // Reached via home_sigil teleport — no road connection
     id: ['YOUR HOMESTEAD'],
     label: 'Your Homestead', sub: 'Personal Plot', icon: '⌂',
-    x:490, y:375, w:158, h:58, color:'#1a2e10', border:'#6aaa30',
+    x:480, y:352, w:158, h:52, color:'#1a2e10', border:'#6aaa30',
   },
 ];
 
-// Path connections between zone centres [x1,y1, x2,y2]
+// Path connections [x1,y1, x2,y2] — only real in-game travel routes
 const MAP_PATHS = [
-  [350,  78, 350, 130],   // Chapel (bottom) → Ashenveil (top) — north gate
-  [208, 159, 258, 159],   // Greenfield (right) → Ashenveil (left) — west portal
-  [442, 159, 490, 159],   // Ashenveil (right) → Dungeon Depths (left) — east exit
-  [350, 188, 350, 255],   // Ashenveil (bottom) → Whisperwood (top) — south portal
-  [350, 313, 350, 375],   // Whisperwood (bottom) → Stormcrag (top) — south exit
+  [330,  64, 330, 120],   // Chapel (bottom) → Ashenveil (top) — north gate
+  [117, 146, 125, 146],   // Western Pass (right) → Greenfield (left) — caravan portal
+  [245, 146, 253, 146],   // Greenfield (right) → Ashenveil (left) — west portal
+  [407, 146, 415, 146],   // Ashenveil (right) → Ashen Moor (left) — east exit
+  [541, 146, 549, 146],   // Ashen Moor (right) → Iron Peaks (left) — east exit
+  [330, 172, 330, 238],   // Ashenveil (bottom) → Whisperwood (top) — south portal
+  [330, 290, 330, 352],   // Whisperwood (bottom) → Stormcrag (top) — south exit
 ];
 
 let _wmAnimFrame = null;
