@@ -73,8 +73,12 @@ function buildSaveData() {
     })),
     playtime: (getSaveMeta(activeSaveSlot)?.playtime || 0) + sessionPlaytime,
     savedAt: Date.now(),
-    questFlags: JSON.parse(JSON.stringify(questFlags)),
-    farmPlots:  JSON.parse(JSON.stringify(state.farmPlots || {})),
+    questFlags:             JSON.parse(JSON.stringify(questFlags)),
+    farmPlots:              JSON.parse(JSON.stringify(state.farmPlots || {})),
+    homePlotTier:           state.homePlotTier  || 0,
+    homeHouseTier:          state.homeHouseTier || 0,
+    homeBlueprintsLearned:  JSON.parse(JSON.stringify(state.homeBlueprintsLearned || [])),
+    homeFurniture:          JSON.parse(JSON.stringify(state.homeFurniture || [])),
   };
 }
 
@@ -111,6 +115,10 @@ function loadGame(slot) {
     worldSeed = data.worldSeed || Math.floor(Math.random()*99999);
     if(data.questFlags) Object.assign(questFlags, data.questFlags);
     if(data.farmPlots)  state.farmPlots = JSON.parse(JSON.stringify(data.farmPlots));
+    state.homePlotTier          = data.homePlotTier  || 0;
+    state.homeHouseTier         = data.homeHouseTier || 0;
+    state.homeBlueprintsLearned = JSON.parse(JSON.stringify(data.homeBlueprintsLearned || []));
+    state.homeFurniture         = JSON.parse(JSON.stringify(data.homeFurniture || []));
 
     // Restore players
     const DEFAULT_SKILLS = GAME_DEFAULT_SKILLS;
@@ -179,6 +187,10 @@ function loadSaveForOnline(slot) {
     state.activePlayer = 0;
     if(data.questFlags) Object.assign(questFlags, data.questFlags);
     if(data.farmPlots)  state.farmPlots = JSON.parse(JSON.stringify(data.farmPlots));
+    state.homePlotTier          = data.homePlotTier  || 0;
+    state.homeHouseTier         = data.homeHouseTier || 0;
+    state.homeBlueprintsLearned = JSON.parse(JSON.stringify(data.homeBlueprintsLearned || []));
+    state.homeFurniture         = JSON.parse(JSON.stringify(data.homeFurniture || []));
     return true;
   } catch(e) {
     console.warn('loadSaveForOnline failed:', e);

@@ -582,14 +582,81 @@ function openBertramDialogue(npc) {
         opt('▸ Nothing today.', close);
       });
     }
+    opt("▸ About improving the homestead...", showUpgradeShop);
     opt("▸ Glad it worked out.", close);
     panel.classList.add('show');
     document.getElementById('dialogue-close').onclick = closeDialogue;
     return;
   }
 
+  // ── Upgrade shop (available once homestead is rewarded) ────────────────
+  function showUpgradeShop() {
+    const p = state.players[state.activePlayer];
+    const PLOT_UPGRADES = [
+      {tier:1, gold:200,  mats:[{id:'oak_log',qty:10}]},
+      {tier:2, gold:500,  mats:[{id:'oak_log',qty:20},{id:'iron_bar',qty:8}]},
+      {tier:3, gold:1000, mats:[{id:'oak_log',qty:30},{id:'iron_bar',qty:15}]},
+      {tier:4, gold:2000, mats:[{id:'oak_log',qty:40},{id:'iron_bar',qty:25},{id:'coal',qty:10}]},
+    ];
+    const HOUSE_UPGRADES = [
+      {tier:1, gold:300,  mats:[{id:'oak_log',qty:12},{id:'iron_bar',qty:5}]},
+      {tier:2, gold:700,  mats:[{id:'oak_log',qty:20},{id:'iron_bar',qty:12}]},
+      {tier:3, gold:1500, mats:[{id:'oak_log',qty:30},{id:'iron_bar',qty:20},{id:'coal',qty:5}]},
+      {tier:4, gold:3000, mats:[{id:'oak_log',qty:50},{id:'iron_bar',qty:35},{id:'coal',qty:15}]},
+    ];
+    optionsEl.innerHTML = '';
+    say("I know some ways to improve the homestead — more soil, a bigger cabin. Takes materials and coin, but land repays what you put into it.");
+
+    const curPlot = state.homePlotTier || 0;
+    if(curPlot < 4) {
+      const u = PLOT_UPGRADES[curPlot];
+      const matStr = u.mats.map(m=>`${m.qty}× ${ITEMS[m.id]?.name||m.id}`).join(', ');
+      opt(`▸ Expand the farm (${curPlot+1}/4) — ${u.gold}g + ${matStr}`, () => {
+        if(p.gold < u.gold) { say("You're short on gold for that."); return; }
+        for(const m of u.mats) {
+          if(countInInventory(m.id) < m.qty) { say(`You need ${m.qty}× ${ITEMS[m.id]?.name||m.id} for this.`); return; }
+        }
+        p.gold -= u.gold;
+        for(const m of u.mats) removeFromInventory(m.id, m.qty);
+        state.homePlotTier = u.tier;
+        updateHUD(); buildInventory();
+        log(`✦ Farm expanded to tier ${u.tier}/4 — new plots are ready to till.`, 'gold');
+        say("When you next visit the homestead, you'll find the new soil ready for tilling.");
+        optionsEl.innerHTML = '';
+        opt('▸ Worth every coin.', close);
+      });
+    } else {
+      opt('▸ Farm: already at maximum size.', () => say("The land can hold no more. You've made the most of it."));
+    }
+
+    const curHouse = state.homeHouseTier || 0;
+    if(curHouse < 4) {
+      const u = HOUSE_UPGRADES[curHouse];
+      const matStr = u.mats.map(m=>`${m.qty}× ${ITEMS[m.id]?.name||m.id}`).join(', ');
+      opt(`▸ Expand the cabin (${curHouse+1}/4) — ${u.gold}g + ${matStr}`, () => {
+        if(p.gold < u.gold) { say("You're short on gold for that."); return; }
+        for(const m of u.mats) {
+          if(countInInventory(m.id) < m.qty) { say(`You need ${m.qty}× ${ITEMS[m.id]?.name||m.id} for this.`); return; }
+        }
+        p.gold -= u.gold;
+        for(const m of u.mats) removeFromInventory(m.id, m.qty);
+        state.homeHouseTier = u.tier;
+        updateHUD(); buildInventory();
+        log(`✦ Cabin expanded to tier ${u.tier}/4 — more room inside.`, 'gold');
+        say("Good. The cabin's been expanded. You'll notice the difference next time you step inside.");
+        optionsEl.innerHTML = '';
+        opt('▸ Feels like home already.', close);
+      });
+    } else {
+      opt('▸ Cabin: already at maximum size.', () => say("That cabin's as big as a farmhouse now. You've done well."));
+    }
+
+    opt('▸ Nothing right now.', () => openBertramDialogue(npc));
+  }
+
   if(qf.homestead_rewarded) {
     say("How goes the homestead? I hope the soil is treating you well. Till with the hoe, plant your seeds, water with patience. The land gives back what you put into it.");
+    opt("▸ About improving the homestead...", showUpgradeShop);
     opt("▸ It's coming along.", close);
     opt("▸ Goodbye, Bertram.", close);
     panel.classList.add('show');
