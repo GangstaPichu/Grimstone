@@ -1375,6 +1375,33 @@ function drawTile(x,y,t,floorT) {
     ctx2.fillStyle='#c8922a'; ctx2.font='bold 7px Cinzel,serif';
     ctx2.textAlign='center'; ctx2.textBaseline='middle';
     ctx2.fillText('BENCH',cx,py+22);
+  } else if(t===T.ANVIL){
+    // Heavy base block
+    ctx2.fillStyle='#252330'; ctx2.fillRect(px+4,py+27,TILE-8,9);
+    ctx2.strokeStyle='#3e3c50'; ctx2.lineWidth=1; ctx2.strokeRect(px+4,py+27,TILE-8,9);
+    // Waist (narrower middle section)
+    ctx2.fillStyle='#1e1c28'; ctx2.fillRect(px+10,py+22,TILE-20,6);
+    // Body
+    ctx2.fillStyle='#2e2c3c'; ctx2.fillRect(px+4,py+13,TILE-8,10);
+    ctx2.strokeStyle='#484060'; ctx2.lineWidth=1; ctx2.strokeRect(px+4,py+13,TILE-8,10);
+    // Horn (triangle pointing left)
+    ctx2.fillStyle='#2e2c3c';
+    ctx2.beginPath();
+    ctx2.moveTo(px+4,py+13); ctx2.lineTo(px+4,py+19); ctx2.lineTo(px-1,py+16);
+    ctx2.closePath(); ctx2.fill();
+    ctx2.strokeStyle='#404058'; ctx2.lineWidth=0.8;
+    ctx2.beginPath();
+    ctx2.moveTo(px+4,py+13); ctx2.lineTo(px-1,py+16); ctx2.lineTo(px+4,py+19);
+    ctx2.stroke();
+    // Top face (polished iron surface)
+    ctx2.fillStyle='#3c3a50'; ctx2.fillRect(px+4,py+9,TILE-8,5);
+    ctx2.strokeStyle='#585474'; ctx2.lineWidth=0.5; ctx2.strokeRect(px+4,py+9,TILE-8,5);
+    // Subtle shine on top face
+    ctx2.fillStyle='rgba(200,190,255,0.10)'; ctx2.fillRect(px+5,py+10,TILE-10,2);
+    // Label
+    ctx2.fillStyle='#9080c0'; ctx2.font='bold 6px Cinzel,serif';
+    ctx2.textAlign='center'; ctx2.textBaseline='middle';
+    ctx2.fillText('ANVIL',cx,py+19);
   } else if(t===T.EXIT){
     drawExitPortal(px,py);
   } else if(t===T.EXIT_RETURN){
@@ -2531,7 +2558,7 @@ function drawMinimap() {
       [T.MITHRIL]:'#4a6a9a',[T.COAL]:'#2a2a2a',
       [T.NORMAL_TREE]:'#1a4010',[T.OAK]:'#2a5018',[T.WILLOW]:'#184a14',
       [T.GOBLIN]:'#2a4a14',[T.SKELETON]:'#5a4a38',[T.WOLF]:'#3a3840',
-      [T.SMELTER]:'#8b3a0a',[T.COOKING_FIRE]:'#c83a0a',[T.SHOP]:'#2a6a9a',[T.WORKBENCH]:'#7a4a20',
+      [T.SMELTER]:'#8b3a0a',[T.COOKING_FIRE]:'#c83a0a',[T.SHOP]:'#2a6a9a',[T.WORKBENCH]:'#7a4a20',[T.ANVIL]:'#3c3a50',
       [T.EXIT]:'#e8b84b',[T.EXIT_RETURN]:'#4080ff',
       [T.COBBLE]:'#2a2824',[T.INN]:'#5a3a1a',[T.BLACKSMITH]:'#3a3a4a',
       [T.ROOF_L]:'#2a1208',[T.ROOF_M]:'#2a1208',[T.ROOF_R]:'#2a1208',[T.ROOF_CHIMNEY]:'#2a1208',

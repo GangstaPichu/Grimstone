@@ -852,7 +852,7 @@ const ENEMY_SOLID = new Set([
   T.WALL, T.WATER,
   T.COPPER, T.IRON, T.GOLD_ORE, T.MITHRIL, T.COAL,
   T.NORMAL_TREE, T.OAK, T.WILLOW,
-  T.SMELTER, T.COOKING_FIRE, T.SHOP,
+  T.SMELTER, T.COOKING_FIRE, T.SHOP, T.ANVIL,
   T.INN_DOOR, T.EXIT_INTERIOR, T.EXIT, T.EXIT_RETURN, T.CHAPEL_PORTAL,
 ]);
 function enemyCanMove(tx, ty) {
@@ -1009,6 +1009,102 @@ function triggerEnemyAttack(e) {
 // ======= TURN-BASED COMBAT =======
 let _autoAttack = false;
 let _combatTurnDefBoost = 0; // single-turn defence boost (from Riposte / Mana Shield)
+// ── Spell combat state ────────────────────────────────────────────────────────
+let _burnDmg = 0, _burnTurns = 0;              // fire DOT
+let _enemyStunTurns = 0;                        // ice freeze (skip turns)
+let _enemyWeakenDmg = 0, _enemyWeakenTurns = 0;// earth/void weaken
+let _reflectChance = 0;                         // arcane Counter Sigil
+let _barrierDef = 0, _barrierTurns = 0;         // arcane multi-turn barrier
+
+// ── Spell Book ────────────────────────────────────────────────────────────────
+// 4 spells per rune element. reqLvl gates access (Magic skill).
+// With matching rune in inventory: 35% dmg bonus + enhanced effect (rune consumed).
+const SPELL_BOOK = {
+  fire: [
+    { name:'Fire Bolt',      icon:'🔥', reqLvl:1,  runeId:'rune_fire',   dmgMin:8,  dmgMax:15, xp:8,
+      desc:'A bolt of raw fire.',
+      ampDesc:'Rune-amplified bolt — +35% dmg.' },
+    { name:'Char',           icon:'🔥', reqLvl:15, runeId:'rune_fire',   dmgMin:12, dmgMax:20, xp:14, burn:3, burnTurns:2,
+      desc:'Scorches the enemy. Burns 3 dmg × 2 turns.',
+      ampDesc:'Empowered char — +35% dmg. Burns 5 dmg × 2 turns.' },
+    { name:'Flame Lance',    icon:'🔥', reqLvl:30, runeId:'rune_fire',   dmgMin:18, dmgMax:30, xp:22,
+      desc:'A piercing lance of flame.',
+      ampDesc:'Rune-charged lance — +35% dmg.' },
+    { name:'Inferno Strike', icon:'🔥', reqLvl:50, runeId:'rune_fire',   dmgMin:26, dmgMax:42, xp:36, burn:5, burnTurns:3,
+      desc:'Devastating fire. Burns 5 dmg × 3 turns.',
+      ampDesc:'Rune-empowered inferno — +35% dmg. Burns 7 dmg × 3 turns.' },
+  ],
+  ice: [
+    { name:'Frost Bolt',     icon:'❄️', reqLvl:10, runeId:'rune_ice',    dmgMin:10, dmgMax:18, xp:12, slow:true,
+      desc:'An icy bolt. Reduces enemy damage next hit.',
+      ampDesc:'Rune-charged frost — +35% dmg + stuns 1 turn.' },
+    { name:'Ice Shard',      icon:'❄️', reqLvl:20, runeId:'rune_ice',    dmgMin:14, dmgMax:24, xp:18, slow:true,
+      desc:'A shard of ice. Slows the enemy.',
+      ampDesc:'Rune-amplified shard — +35% dmg + stuns 1 turn.' },
+    { name:'Glacial Spike',  icon:'❄️', reqLvl:35, runeId:'rune_ice',    dmgMin:20, dmgMax:33, xp:26, stun:1,
+      desc:'Impales with a spike of ice. Stuns 1 turn.',
+      ampDesc:'Rune-charged spike — +35% dmg + freezes 2 turns.' },
+    { name:'Frozen Grave',   icon:'❄️', reqLvl:55, runeId:'rune_ice',    dmgMin:28, dmgMax:45, xp:40, stun:1,
+      desc:'Entombs the enemy in ice. Stuns 1 turn.',
+      ampDesc:'Rune-empowered freeze — +35% dmg + freezes 3 turns.' },
+  ],
+  earth: [
+    { name:'Stone Bolt',     icon:'🪨', reqLvl:20, runeId:'rune_earth',  dmgMin:14, dmgMax:24, xp:18,
+      desc:'A chunk of stone hurled at the enemy.',
+      ampDesc:'Rune-charged boulder — +35% dmg.' },
+    { name:'Quake',          icon:'🪨', reqLvl:30, runeId:'rune_earth',  dmgMin:17, dmgMax:27, xp:24, weaken:3, weakenTurns:2,
+      desc:'A tremor. Weakens enemy — enemy -3 atk for 2 turns.',
+      ampDesc:'Rune-amplified quake — +35% dmg. Enemy -5 atk × 2 turns.' },
+    { name:'Boulder Slam',   icon:'🪨', reqLvl:45, runeId:'rune_earth',  dmgMin:22, dmgMax:36, xp:32, weaken:5, weakenTurns:2,
+      desc:'Crush with a massive boulder. Enemy -5 atk × 2 turns.',
+      ampDesc:'Rune-charged slam — +35% dmg. Enemy -7 atk × 2 turns.' },
+    { name:'Earthshatter',   icon:'🪨', reqLvl:60, runeId:'rune_earth',  dmgMin:28, dmgMax:46, xp:44, stun:1, weaken:4, weakenTurns:2,
+      desc:'Devastating earth explosion. Stuns + weakens.',
+      ampDesc:'Rune-empowered shatter — +35% dmg. Stun + weaken -6 × 2 turns.' },
+  ],
+  heal: [
+    { name:'Minor Heal',     icon:'💚', reqLvl:1,  runeId:'rune_heal',   healMin:20, healMax:35, xp:10,
+      desc:'Restore some HP.',
+      ampDesc:'Rune-amplified heal — +35% healing.' },
+    { name:'Mending',        icon:'💚', reqLvl:15, runeId:'rune_heal',   healMin:35, healMax:55, xp:18,
+      desc:'Restore a moderate amount of HP.',
+      ampDesc:'Rune-charged mending — +35% healing.' },
+    { name:'Restoration',    icon:'💚', reqLvl:25, runeId:'rune_heal',   healMin:55, healMax:80, xp:28,
+      desc:'Restore a significant amount of HP.',
+      ampDesc:'Rune-empowered restoration — +35% healing.' },
+    { name:'Grand Heal',     icon:'💚', reqLvl:40, runeId:'rune_heal',   healMin:80, healMax:120, xp:40,
+      desc:'Massively restore your HP.',
+      ampDesc:'Rune-charged grand heal — +35% healing.' },
+  ],
+  shield: [
+    { name:'Mana Ward',      icon:'🔷', reqLvl:1,  runeId:'rune_shield', defBuff:10, xp:8,
+      desc:'Raise a barrier (+10 Defence this turn).',
+      ampDesc:'Rune-charged ward — +16 Defence this turn.' },
+    { name:'Arcane Barrier', icon:'🔷', reqLvl:25, runeId:'rune_shield', defBuff:8,  barrierTurns:2, xp:18,
+      desc:'Shield yourself (+8 Defence × 2 turns).',
+      ampDesc:'Rune-amplified barrier — +12 Defence × 2 turns.' },
+    { name:'Counter Sigil',  icon:'🔷', reqLvl:35, runeId:'rune_shield', defBuff:10, reflect:true, xp:26,
+      desc:'Deflect attacks (+10 Def, 40% reflect next hit).',
+      ampDesc:'Rune-charged sigil — +15 Def, 60% reflect next hit.' },
+    { name:'Iron Aegis',     icon:'🔷', reqLvl:50, runeId:'rune_shield', defBuff:12, barrierTurns:3, healMin:15, healMax:25, xp:36,
+      desc:'Powerful ward (+12 Def × 3 turns + minor heal).',
+      ampDesc:'Rune-empowered aegis — +18 Def × 3 turns + heal.' },
+  ],
+  void: [
+    { name:'Void Bolt',      icon:'💜', reqLvl:35, runeId:'rune_void',   dmgMin:20, dmgMax:33, xp:30,
+      desc:'A bolt of void energy.',
+      ampDesc:'Rune-charged void — +35% dmg.' },
+    { name:'Soul Drain',     icon:'💜', reqLvl:45, runeId:'rune_void',   dmgMin:14, dmgMax:22, xp:28, drain:true,
+      desc:'Drain the enemy\'s life force + steal HP.',
+      ampDesc:'Rune-amplified drain — +35% dmg + greater lifesteal.' },
+    { name:'Corruption',     icon:'💜', reqLvl:55, runeId:'rune_void',   dmgMin:18, dmgMax:28, xp:36, weaken:5, weakenTurns:2,
+      desc:'Corrupt the foe. Enemy -5 atk × 2 turns.',
+      ampDesc:'Rune-charged corruption — +35% dmg. Enemy -7 atk × 2 turns.' },
+    { name:'Void Collapse',  icon:'💜', reqLvl:70, runeId:'rune_void',   dmgMin:30, dmgMax:50, xp:50,
+      desc:'Tear the void open on the enemy.',
+      ampDesc:'Rune-empowered collapse — +35% dmg.' },
+  ],
+};
 
 function startCombatEntity(e) {
   if(currentActivity) return;
@@ -1017,6 +1113,11 @@ function startCombatEntity(e) {
   combatEnemy = e;
   _combatPlayerTurn = false;
   _combatTurnDefBoost = 0;
+  _burnDmg = 0; _burnTurns = 0;
+  _enemyStunTurns = 0;
+  _enemyWeakenDmg = 0; _enemyWeakenTurns = 0;
+  _reflectChance = 0;
+  _barrierDef = 0; _barrierTurns = 0;
 
   const portrait = document.getElementById('combat-enemy-portrait');
   portrait.textContent = e.def.letter;
@@ -1058,6 +1159,9 @@ function _updateCombatPanel() {
   pBar.style.width = (pPct * 100) + '%';
   pBar.style.background = pPct > 0.5 ? '#2d9448' : pPct > 0.25 ? '#c8922a' : '#c43030';
   document.getElementById('combat-player-hp-text').textContent = `${Math.max(0,p.hp)} / ${p.maxHp}`;
+  // Show Spells button only when a magic weapon is equipped
+  const sb = document.getElementById('btn-combat-spells');
+  if(sb) sb.style.display = getEquipBonuses(p).magicBonus > 0 ? '' : 'none';
 }
 
 function _addCombatLog(msg, cls='') {
@@ -1073,6 +1177,8 @@ function _setCombatButtons(enabled) {
   document.getElementById('btn-combat-attack').disabled = !enabled;
   document.getElementById('btn-combat-item').disabled   = !enabled;
   document.getElementById('btn-combat-flee').disabled   = !enabled;
+  const sb = document.getElementById('btn-combat-spells');
+  if(sb && sb.style.display !== 'none') sb.disabled = !enabled;
   if(!enabled) _hideCombatMoveMenu();
 }
 
@@ -1273,6 +1379,177 @@ function executeCombatMove(move) {
   setTimeout(_combatEnemyTurn, 800 + Math.random() * 300);
 }
 
+// ── Spell menu ────────────────────────────────────────────────────────────────
+const _SPELL_ELEMENT_NAMES  = { fire:'Fire', ice:'Ice', earth:'Earth', heal:'Healing', shield:'Arcane', void:'Void' };
+const _SPELL_ELEMENT_COLORS = { fire:'#e06020', ice:'#4090e0', earth:'#8a6020', heal:'#40c040', shield:'#5070c0', void:'#8020c0' };
+
+function openSpellMenu() {
+  if(!_combatPlayerTurn || !combatEnemy) return;
+  const menu = document.getElementById('combat-move-menu');
+  if(menu.classList.contains('open') && menu.dataset.mode === 'spells') { _hideCombatMoveMenu(); return; }
+
+  const p  = state.players[state.activePlayer];
+  const ml = (p.skills.Magic && p.skills.Magic.lvl) || 1;
+
+  menu.innerHTML = '';
+  menu.dataset.mode = 'spells';
+
+  Object.entries(SPELL_BOOK).forEach(([element, spells]) => {
+    const hdr = document.createElement('div');
+    hdr.className = 'spell-menu-header';
+    hdr.style.color = _SPELL_ELEMENT_COLORS[element];
+    hdr.textContent = `── ${_SPELL_ELEMENT_NAMES[element]} ──`;
+    menu.appendChild(hdr);
+
+    spells.forEach(spell => {
+      const hasRune  = countInInventory(spell.runeId) > 0;
+      const meetsLvl = ml >= spell.reqLvl;
+
+      const row = document.createElement('div');
+      row.className = 'combat-move-row' + (meetsLvl ? '' : ' disabled');
+
+      const runeTag  = `<span class="spell-rune-tag${hasRune ? ' amplified' : ''}">${hasRune ? 'RUNE ✦' : 'RUNE'}</span>`;
+      const lockTag  = meetsLvl ? '' : `<span class="spell-lock">[Lv ${spell.reqLvl}]</span>`;
+      const descText = hasRune ? spell.ampDesc : spell.desc;
+
+      row.innerHTML = `
+        <span class="combat-move-icon">${spell.icon}</span>
+        <div class="combat-move-info">
+          <div class="combat-move-name">${spell.name}${lockTag}</div>
+          <div class="combat-move-desc">${descText}</div>
+        </div>
+        ${runeTag}`;
+
+      if(meetsLvl) row.onclick = () => { _hideCombatMoveMenu(); executeSpell(spell, hasRune); };
+      menu.appendChild(row);
+    });
+  });
+
+  menu.classList.add('open');
+}
+
+function executeSpell(spell, amplified) {
+  if(!_combatPlayerTurn || !combatEnemy) return;
+  _combatPlayerTurn = false;
+  _setCombatButtons(false);
+
+  const p       = state.players[state.activePlayer];
+  const e       = combatEnemy;
+  const ml      = (p.skills.Magic && p.skills.Magic.lvl) || 1;
+  const bonuses = getEquipBonuses(p);
+  const staffAmp = bonuses.magicBonus >= 5 ? 1.25 : 1.0;
+  const runeAmp  = amplified ? 1.35 : 1.0;
+
+  // Consume one rune if amplified
+  if(amplified) {
+    const ri = p.inventory.findIndex(s => s && s.id === spell.runeId);
+    if(ri >= 0) {
+      p.inventory[ri].qty = (p.inventory[ri].qty || 1) - 1;
+      if(p.inventory[ri].qty <= 0) p.inventory[ri] = null;
+      renderInventory();
+    }
+  }
+
+  // Magic XP (bonus XP when amplified)
+  gainXp(state.activePlayer, 'Magic', Math.floor(spell.xp * (amplified ? 1.5 : 1.0)));
+
+  // ── Healing spells ────────────────────────────────────────────────────────
+  if(spell.healMin && !spell.dmgMin) {
+    let healAmt = spell.healMin + Math.floor(Math.random() * (spell.healMax - spell.healMin + 1));
+    healAmt += Math.floor(ml * 0.2);
+    healAmt  = Math.floor(healAmt * runeAmp * staffAmp);
+
+    if(spell.barrierTurns) {
+      const bd = amplified ? Math.floor(spell.defBuff * 1.5) : spell.defBuff;
+      _barrierDef = bd; _barrierTurns = spell.barrierTurns;
+      p.hp = Math.min(p.maxHp, p.hp + healAmt);
+      _addCombatLog(`You cast ${spell.name}. Healed ${healAmt} HP. +${bd} Defence × ${spell.barrierTurns} turns.`, 'combat-log-gold');
+    } else if(spell.defBuff) {
+      const d = amplified ? Math.floor(spell.defBuff * 1.6) : spell.defBuff;
+      _combatTurnDefBoost += d;
+      p.hp = Math.min(p.maxHp, p.hp + healAmt);
+      _addCombatLog(`You cast ${spell.name}. Healed ${healAmt} HP. +${d} Defence this turn.`, 'combat-log-gold');
+    } else {
+      p.hp = Math.min(p.maxHp, p.hp + healAmt);
+      _addCombatLog(`You cast ${spell.name} and restore ${healAmt} HP.`, 'combat-log-gold');
+    }
+    updateHUD();
+    _updateCombatPanel();
+    document.getElementById('combat-status').textContent = `${e.def.name} prepares to strike...`;
+    setTimeout(_combatEnemyTurn, 800 + Math.random() * 300);
+    return;
+  }
+
+  // ── Shield / barrier spells (no damage) ───────────────────────────────────
+  if(spell.defBuff && !spell.dmgMin) {
+    const d = amplified ? Math.floor(spell.defBuff * 1.6) : spell.defBuff;
+    if(spell.barrierTurns) {
+      _barrierDef = d; _barrierTurns = spell.barrierTurns;
+      _addCombatLog(`You cast ${spell.name}. +${d} Defence for ${spell.barrierTurns} turns.`, 'combat-log-dim');
+    } else {
+      _combatTurnDefBoost += d;
+      _addCombatLog(`You cast ${spell.name}. +${d} Defence this turn.`, 'combat-log-dim');
+    }
+    if(spell.reflect) _reflectChance = amplified ? 0.6 : 0.4;
+    document.getElementById('combat-status').textContent = `${e.def.name} prepares to strike...`;
+    setTimeout(_combatEnemyTurn, 800 + Math.random() * 300);
+    return;
+  }
+
+  // ── Damage spells ─────────────────────────────────────────────────────────
+  let base = spell.dmgMin + Math.floor(Math.random() * (spell.dmgMax - spell.dmgMin + 1));
+  base    += Math.floor(ml * 0.3) + Math.floor(bonuses.magicBonus * 1.5);
+  const totalDmg = Math.max(1, Math.floor(base * runeAmp * staffAmp));
+
+  e.hp -= totalDmg;
+  e.flashTimer = 0.6;
+  SFX.hit && SFX.hit();
+
+  let logMsg = `You cast ${spell.name} on the ${e.def.name} for ${totalDmg} damage.`;
+  if(amplified) logMsg += ' ✦ Rune-amplified!';
+  _addCombatLog(logMsg, 'combat-log-hit');
+  log(`You hit the ${e.def.name} for ${totalDmg}.`, '');
+
+  // Apply effects ────────────────────────────────────────────────────────────
+  if(spell.burn) {
+    _burnDmg   = amplified ? spell.burn + 2 : spell.burn;
+    _burnTurns = spell.burnTurns || 2;
+    _addCombatLog(`The ${e.def.name} is burning! (${_burnDmg} dmg × ${_burnTurns} turns)`, 'combat-log-hit');
+  }
+  if(spell.stun) {
+    const stunTurns = amplified ? spell.stun + 1 : spell.stun;
+    _enemyStunTurns = Math.max(_enemyStunTurns, stunTurns);
+    _addCombatLog(`The ${e.def.name} is frozen! (${stunTurns} turn${stunTurns > 1 ? 's' : ''})`, 'combat-log-hit');
+  } else if(spell.slow) {
+    if(amplified) {
+      _enemyStunTurns = Math.max(_enemyStunTurns, 1);
+      _addCombatLog(`The ${e.def.name} is stunned by the cold!`, 'combat-log-hit');
+    } else {
+      e._debufDmgReduce = (e._debufDmgReduce || 0) + 3;
+      _addCombatLog(`The ${e.def.name} is slowed! (-3 dmg next hit)`, 'combat-log-hit');
+    }
+  }
+  if(spell.weaken) {
+    const wkn = amplified ? spell.weaken + 2 : spell.weaken;
+    _enemyWeakenDmg   = Math.max(_enemyWeakenDmg, wkn);
+    _enemyWeakenTurns = spell.weakenTurns || 2;
+    _addCombatLog(`The ${e.def.name} is weakened! (-${wkn} atk × ${_enemyWeakenTurns} turns)`, 'combat-log-hit');
+  }
+  if(spell.drain) {
+    const drainBase = amplified ? 15 : 10;
+    const drainAmt  = Math.floor(drainBase + Math.random() * (amplified ? 10 : 7) + ml * 0.12);
+    p.hp = Math.min(p.maxHp, p.hp + drainAmt);
+    _addCombatLog(`Soul Drain restores ${drainAmt} HP!`, 'combat-log-gold');
+    updateHUD();
+  }
+
+  _updateCombatPanel();
+  if(e.hp <= 0) { _combatVictory(); return; }
+
+  document.getElementById('combat-status').textContent = `${e.def.name} prepares to strike...`;
+  setTimeout(_combatEnemyTurn, 800 + Math.random() * 300);
+}
+
 // ── Item menu in combat ───────────────────────────────────────────────────────
 function openCombatItemMenu() {
   if(!_combatPlayerTurn || !combatEnemy) return;
@@ -1372,16 +1649,63 @@ function _combatEnemyTurn() {
     });
   }
 
+  // ── Burn DOT (fire spells) ────────────────────────────────────────────────
+  if(_burnTurns > 0 && e.hp > 0) {
+    e.hp -= _burnDmg;
+    _burnTurns--;
+    _addCombatLog(`The ${e.def.name} takes ${_burnDmg} burn damage!${_burnTurns > 0 ? ` (${_burnTurns} turns left)` : ''}`, 'combat-log-hit');
+    _updateCombatPanel();
+    if(e.hp <= 0) { _combatVictory(); return; }
+  }
+
+  // ── Stun / freeze (ice spells) ────────────────────────────────────────────
+  if(_enemyStunTurns > 0) {
+    _enemyStunTurns--;
+    _addCombatLog(`The ${e.def.name} is frozen and cannot act!${_enemyStunTurns > 0 ? ` (${_enemyStunTurns} turns left)` : ''}`, 'combat-log-dim');
+    _updateCombatPanel();
+    _combatPlayerTurn = true;
+    _setCombatButtons(true);
+    if(_autoAttack) _triggerAutoAttack();
+    return;
+  }
+
   const tempDef = (p.tempBonuses && p.tempBonuses.defence) || 0;
-  const defBonus = Math.max(0, p.skills.Defence.lvl - 3) + getEquipBonuses(p).defBonus + tempDef + _combatTurnDefBoost;
-  _combatTurnDefBoost = 0; // single-turn boost consumed
+  let defBonus = Math.max(0, p.skills.Defence.lvl - 3) + getEquipBonuses(p).defBonus + tempDef + _combatTurnDefBoost;
+  _combatTurnDefBoost = 0;
+
+  // ── Multi-turn barrier (arcane spells) ────────────────────────────────────
+  if(_barrierTurns > 0) {
+    defBonus += _barrierDef;
+    _barrierTurns--;
+    if(_barrierTurns <= 0) _barrierDef = 0;
+  }
 
   let rawDmg = Math.floor(Math.random() * (e.def.maxDmg - e.def.minDmg + 1)) + e.def.minDmg;
+
   // Apply enemy debuff (Cripple move)
   if(e._debufDmgReduce) {
     rawDmg = Math.max(0, rawDmg - e._debufDmgReduce);
     e._debufDmgReduce = 0;
   }
+
+  // ── Weaken (earth / void spells) ──────────────────────────────────────────
+  if(_enemyWeakenTurns > 0) {
+    rawDmg = Math.max(0, rawDmg - _enemyWeakenDmg);
+    _enemyWeakenTurns--;
+    if(_enemyWeakenTurns <= 0) _enemyWeakenDmg = 0;
+  }
+
+  // ── Reflect (Counter Sigil) ───────────────────────────────────────────────
+  if(_reflectChance > 0 && Math.random() < _reflectChance) {
+    _reflectChance = 0;
+    const reflectDmg = Math.max(1, Math.floor(rawDmg * 0.5));
+    e.hp -= reflectDmg;
+    _addCombatLog(`Your sigil reflects the attack! The ${e.def.name} takes ${reflectDmg} reflected damage!`, 'combat-log-gold');
+    _updateCombatPanel();
+    if(e.hp <= 0) { _combatVictory(); return; }
+    rawDmg = Math.floor(rawDmg * 0.3); // player still takes reduced hit
+  }
+
   const actualDmg = Math.max(0, rawDmg - defBonus);
 
   if(actualDmg > 0) {
@@ -1957,7 +2281,7 @@ function searchChest(x, y) {
 
       // Blueprints: random chance per chest (one per map visit)
       if(!currentMap._blueprintGiven && Math.random() < 0.22) {
-        const allBlueprints = ['blueprint_fireplace','blueprint_workbench','blueprint_bookshelf','blueprint_chest','blueprint_candle'];
+        const allBlueprints = ['blueprint_fireplace','blueprint_workbench','blueprint_bookshelf','blueprint_chest','blueprint_candle','blueprint_anvil'];
         const unlearned = allBlueprints.filter(b => !(state.homeBlueprintsLearned||[]).includes(b));
         if(unlearned.length > 0) {
           const pick = unlearned[Math.floor(Math.random()*unlearned.length)];

@@ -1428,8 +1428,8 @@ function makeBlacksmithInterior() {
   pd(9,5,T.BARREL);
 
   // ---- Workshop side (right, x=9..14) ----
-  pd(2,10,T.WORKBENCH);
-  pd(2,12,T.WORKBENCH);
+  pd(2,10,T.ANVIL);
+  pd(2,12,T.ANVIL);
   pd(4,10,T.BOOKSHELF);  // smithing reference texts
   pd(4,13,T.CANDLE);
   pd(7,10,T.CHEST);      // finished goods chest
