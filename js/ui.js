@@ -20,6 +20,9 @@ function applyUIScale(scale) {
   container.style.width  = (100 / uiScale) + 'vw';
   container.style.height = (100 / uiScale) + 'vh';
   container.style.transformOrigin = 'top left';
+  // Also scale the options overlay content (it lives outside #game-container)
+  const optWrap = document.querySelector('#options-overlay .options-wrap');
+  if(optWrap) { optWrap.style.transform = `scale(${uiScale})`; optWrap.style.transformOrigin = 'center center'; }
   resizeCanvas();
   localStorage.setItem('grimstone_ui_scale', uiScale);
 }
@@ -822,96 +825,106 @@ function log(msg, type=''){
 }
 
 // ======= WORLD MAP =======
-// Layout (canvas 700×480):
+// World map uses a virtual coordinate space (WM_VW × WM_VH) larger than the
+// visible canvas (700 × 500).  The player can drag horizontally to pan.
+//
+// Virtual layout (WM_VW=1400, WM_VH=500):
 //
 //                              [✝ Forsaken Chapel]
-//                                      |
-//  [🪨 West.Pass]-[🌿 Ashgrove]-[⚘ Greenfield]-[⚔ Ashenveil]-[🌫 Ashen Moor]-[⛏ Iron Peaks]
-//                                      |
-//                               [❧ Whisperwood]
-//                                      |
-//                               [⛰ Stormcrag]              [⌂ Homestead]
+//                                       |
+//  [🪨 WestPass]-[🌫 Ashgrove]-[⚘ Greenfield]-[⚔ Ashenveil]-[🌿 Ashen Moor]-[⛏ Iron Peaks]
+//                                       |
+//                                [❧ Whisperwood]
+//                                       |
+//                                [⛰ Stormcrag]                  [⌂ Homestead]
 //
-// 6-zone horizontal chain; Ashenveil center-x = 381.
-// Chapel/Whisperwood/Stormcrag all align at center-x = 381.
+// Zone cards: 160×70 with 24px gaps.  Ashenveil is slightly wider (168px).
+// All vertical chains share center-x = 796 (= Ashenveil's centre).
 
+const WM_VW = 1400;           // virtual canvas width
+const WM_VH = 500;            // virtual canvas height (equals CSS canvas height → no Y pan)
+const WM_PAN_MAX = 660;       // maximum horizontal pan in virtual pixels
+
+// Row 1 (main horizontal chain): y=145, zone height=70
+// x positions: WP=160, Ashgrove=344, Greenfield=528, Ashenveil=712,
+//              AshenMoor=904, IronPeaks=1088
+// Ashenveil w=168 → right edge 880;  gap 24 → AshenMoor starts at 904
 const WORLD_ZONES = [
   {
-    // Reached via north gate from Ashenveil — includes the Cultist Catacombs dungeon below it
     id: ['FORSAKEN CHAPEL','THE FORSAKEN CHAPEL','CULTIST CATACOMBS'],
     label: 'Forsaken Chapel', sub: 'Cursed Grounds', icon: '✝',
-    x:305, y:12, w:152, h:52, color:'#271630', border:'#7040a0',
+    x:706, y:18, w:180, h:65, color:'#271630', border:'#7040a0',
   },
   {
-    // Westernmost zone — accessed from Ashgrove Hollow's west portal
     id: ['WESTERN PASS','THE WESTERN PASS'],
     label: 'Western Pass', sub: 'Caravan Road', icon: '🪨',
-    x:5, y:120, w:84, h:52, color:'#1a1a10', border:'#706040',
+    x:160, y:145, w:160, h:70, color:'#1a1a10', border:'#706040',
   },
   {
-    // Between Western Pass and Greenfield — ash tree grove
     id: ['ASHGROVE HOLLOW'],
     label: 'Ashgrove Hollow', sub: 'Ash Tree Grove', icon: '🌫',
-    x:97, y:120, w:100, h:52, color:'#1c1c10', border:'#686850',
+    x:344, y:145, w:160, h:70, color:'#1c1c10', border:'#686850',
   },
   {
-    // Reached via west portal from Ashenveil
     id: ['GREENFIELD','GREENFIELD PASTURES'],
     label: 'Greenfield', sub: 'Pastures & Farm', icon: '⚘',
-    x:205, y:120, w:100, h:52, color:'#182e14', border:'#3a8c30',
+    x:528, y:145, w:160, h:70, color:'#182e14', border:'#3a8c30',
   },
   {
     id: ['ASHENVEIL'],
     label: 'Ashenveil', sub: 'Starting Town', icon: '⚔',
-    x:313, y:120, w:136, h:52, color:'#2e1e0e', border:'#c8921a', isMain:true,
+    x:712, y:145, w:168, h:70, color:'#2e1e0e', border:'#c8921a', isMain:true,
   },
   {
-    // Reached via east exit from Ashenveil — includes Ashen Crypts dungeon
     id: ['ASHEN MOOR','THE ASHEN MOOR','ASHEN CRYPTS'],
     label: 'Ashen Moor', sub: 'Grassy Moorland', icon: '🌿',
-    x:457, y:120, w:112, h:52, color:'#1a2010', border:'#607840',
+    x:904, y:145, w:160, h:70, color:'#1a2010', border:'#607840',
   },
   {
-    // Reached east from Ashen Moor — includes the Iron Depths dungeon
     id: ['IRON PEAKS','THE IRON PEAKS','IRON DEPTHS'],
     label: 'Iron Peaks', sub: 'Rocky Heights', icon: '⛏',
-    x:577, y:120, w:118, h:52, color:'#1e1e26', border:'#607070',
+    x:1088, y:145, w:160, h:70, color:'#1e1e26', border:'#607070',
   },
   {
-    // Reached via south portal from Ashenveil
     id: ['WHISPERWOOD','THE WHISPERWOOD'],
     label: 'The Whisperwood', sub: 'Ancient Forest', icon: '❧',
-    x:313, y:238, w:136, h:52, color:'#0e1e0e', border:'#407830',
+    x:716, y:265, w:160, h:70, color:'#0e1e0e', border:'#407830',
   },
   {
-    // Reached via south exit from The Whisperwood
     id: ['STORMCRAG REACH'],
     label: 'Stormcrag Reach', sub: 'Mountain Keep', icon: '⛰',
-    x:311, y:352, w:140, h:52, color:'#2e3a47', border:'#607898',
+    x:716, y:385, w:160, h:70, color:'#2e3a47', border:'#607898',
   },
   {
-    // Reached via home_sigil teleport — no road connection
     id: ['YOUR HOMESTEAD'],
     label: 'Your Homestead', sub: 'Personal Plot', icon: '⌂',
-    x:480, y:352, w:155, h:52, color:'#1a2e10', border:'#6aaa30',
+    x:912, y:385, w:162, h:70, color:'#1a2e10', border:'#6aaa30',
   },
 ];
 
-// Path connections [x1,y1, x2,y2] — only real in-game travel routes
-// Row y=146 is vertical center of the main zone row (y:120, h:52)
+// Paths [x1,y1, x2,y2] in virtual coordinates.
+// Row-1 vertical centre: y = 145+35 = 180.
 const MAP_PATHS = [
-  [381,  64, 381, 120],   // Chapel (bottom) → Ashenveil (top) — north gate
-  [ 89, 146,  97, 146],   // Western Pass (right) → Ashgrove Hollow (left)
-  [197, 146, 205, 146],   // Ashgrove Hollow (right) → Greenfield (left)
-  [305, 146, 313, 146],   // Greenfield (right) → Ashenveil (left) — west portal
-  [449, 146, 457, 146],   // Ashenveil (right) → Ashen Moor (left) — east exit
-  [569, 146, 577, 146],   // Ashen Moor (right) → Iron Peaks (left) — east exit
-  [381, 172, 381, 238],   // Ashenveil (bottom) → Whisperwood (top) — south portal
-  [381, 290, 381, 352],   // Whisperwood (bottom) → Stormcrag (top) — south exit
+  [796,  83, 796, 145],   // Chapel bottom → Ashenveil top
+  [320, 180, 344, 180],   // Western Pass → Ashgrove Hollow
+  [504, 180, 528, 180],   // Ashgrove Hollow → Greenfield
+  [688, 180, 712, 180],   // Greenfield → Ashenveil
+  [880, 180, 904, 180],   // Ashenveil → Ashen Moor
+  [1064,180,1088, 180],   // Ashen Moor → Iron Peaks
+  [796, 215, 796, 265],   // Ashenveil bottom → Whisperwood top
+  [796, 335, 796, 385],   // Whisperwood bottom → Stormcrag top
 ];
 
-let _wmAnimFrame = null;
-let _wmStartTime = null;
+let _wmAnimFrame  = null;
+let _wmStartTime  = null;
+let _wmPanX       = 0;       // current horizontal pan offset into virtual space
+let _wmDrag       = null;    // {startX, startPan} while dragging
+let _wmHandlers   = null;    // active canvas event handlers
+
+// Compute the ideal panX to centre a given virtual x coordinate in the 700px canvas.
+function _wmCenterPan(vx) {
+  return Math.max(0, Math.min(WM_PAN_MAX, vx - 350));
+}
 
 function drawWorldMap(timestamp) {
   const canvas = document.getElementById('world-map-canvas');
@@ -926,18 +939,23 @@ function drawWorldMap(timestamp) {
   ctx.fillStyle = '#060810';
   ctx.fillRect(0, 0, W, H);
 
+  // ---- Draw everything in virtual space (translate by pan) ----
+  ctx.save();
+  ctx.translate(-_wmPanX, 0);
+
   // Faint grid texture
   ctx.strokeStyle = 'rgba(90,70,30,0.12)';
   ctx.lineWidth = 1;
-  for(let x = 0; x < W; x += 22) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
-  for(let y = 0; y < H; y += 22) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+  const gx0 = _wmPanX % 28;
+  for(let x = -gx0; x < W + 28; x += 28) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for(let y = 0; y < H; y += 28) { ctx.beginPath(); ctx.moveTo(_wmPanX,y); ctx.lineTo(_wmPanX+W,y); ctx.stroke(); }
 
   const curName = (currentMap && currentMap.name) ? currentMap.name.toUpperCase() : '';
 
   // Paths
   ctx.strokeStyle = 'rgba(180,140,50,0.45)';
   ctx.lineWidth = 2;
-  ctx.setLineDash([5, 5]);
+  ctx.setLineDash([6, 6]);
   MAP_PATHS.forEach(([x1,y1,x2,y2]) => {
     ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
   });
@@ -952,19 +970,16 @@ function drawWorldMap(timestamp) {
     // Animated expanding pulse rings behind active zone
     if(active) {
       for(let i = 0; i < 3; i++) {
-        const phase = ((t * 1.4 + i * 0.7) % 2.1) / 2.1; // 0..1
+        const phase = ((t * 1.4 + i * 0.7) % 2.1) / 2.1;
         const alpha = (1 - phase) * 0.55;
-        const rw = zone.w / 2 + phase * 30;
-        const rh = zone.h / 2 + phase * 20;
+        const rw = zone.w / 2 + phase * 36;
+        const rh = zone.h / 2 + phase * 26;
         ctx.save();
         ctx.globalAlpha = alpha;
         ctx.strokeStyle = '#ffd700';
         ctx.lineWidth = 2.5 - phase * 1.5;
-        ctx.shadowColor = '#ffd700';
-        ctx.shadowBlur = 12;
-        ctx.beginPath();
-        ctx.ellipse(cx, cy, rw, rh, 0, 0, Math.PI * 2);
-        ctx.stroke();
+        ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 12;
+        ctx.beginPath(); ctx.ellipse(cx, cy, rw, rh, 0, 0, Math.PI*2); ctx.stroke();
         ctx.restore();
       }
     }
@@ -980,45 +995,74 @@ function drawWorldMap(timestamp) {
     ctx.lineWidth = active ? 2.5 : 1.5;
     ctx.strokeRect(zone.x, zone.y, zone.w, zone.h);
 
-    // Zone icon (top-left corner)
+    // Zone icon (top-left)
     if(zone.icon) {
       ctx.textAlign = 'left';
-      ctx.font = '15px serif';
+      ctx.font = '16px serif';
       ctx.globalAlpha = active ? 0.95 : 0.6;
       ctx.fillStyle = active ? '#ffd700' : zone.border;
       if(active) { ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 8; }
-      ctx.fillText(zone.icon, zone.x + 6, zone.y + 19);
-      ctx.shadowBlur = 0;
-      ctx.globalAlpha = 1;
+      ctx.fillText(zone.icon, zone.x + 7, zone.y + 21);
+      ctx.shadowBlur = 0; ctx.globalAlpha = 1;
     }
 
     // Zone name
     ctx.textAlign = 'center';
     ctx.fillStyle = active ? '#ffd700' : '#c8a870';
     ctx.font = `${active ? 'bold ' : ''}13px Cinzel, serif`;
-    ctx.fillText(zone.label, cx, cy + 1);
+    ctx.fillText(zone.label, cx, cy + 4);
 
     // Sub-label
     ctx.fillStyle = active ? 'rgba(255,215,0,0.7)' : 'rgba(160,130,80,0.6)';
     ctx.font = '10px Cinzel, serif';
-    ctx.fillText(zone.sub, cx, cy + 17);
+    ctx.fillText(zone.sub, cx, cy + 20);
 
-    // Player marker — pulses in opacity
+    // Player marker
     if(active) {
       const pulse = 0.65 + 0.35 * Math.sin(t * 3.2);
       ctx.globalAlpha = pulse;
       ctx.fillStyle = '#ffd700';
       ctx.font = 'bold 11px Cinzel, serif';
-      ctx.fillText('▲ YOU ARE HERE', cx, cy - 13);
+      ctx.fillText('▲ YOU ARE HERE', cx, cy - 16);
       ctx.globalAlpha = 1;
     }
   });
 
-  // Interior zones note at bottom
+  ctx.restore(); // end virtual-space drawing
+
+  // ---- Screen-space overlays (not panned) ----
+
+  // Left / right edge fade — hint that more content exists
+  if(_wmPanX > 8) {
+    const gL = ctx.createLinearGradient(0,0,52,0);
+    gL.addColorStop(0,'rgba(6,8,16,0.75)'); gL.addColorStop(1,'rgba(6,8,16,0)');
+    ctx.fillStyle = gL; ctx.fillRect(0,0,52,H);
+    ctx.fillStyle = 'rgba(180,140,50,0.55)';
+    ctx.font = '16px serif'; ctx.textAlign = 'center';
+    ctx.fillText('‹', 20, H/2);
+  }
+  if(_wmPanX < WM_PAN_MAX - 8) {
+    const gR = ctx.createLinearGradient(W,0,W-52,0);
+    gR.addColorStop(0,'rgba(6,8,16,0.75)'); gR.addColorStop(1,'rgba(6,8,16,0)');
+    ctx.fillStyle = gR; ctx.fillRect(W-52,0,52,H);
+    ctx.fillStyle = 'rgba(180,140,50,0.55)';
+    ctx.font = '16px serif'; ctx.textAlign = 'center';
+    ctx.fillText('›', W-20, H/2);
+  }
+
+  // Horizontal scroll-position bar at very bottom
+  const prog = WM_PAN_MAX > 0 ? _wmPanX / WM_PAN_MAX : 0;
+  const barX = 50, barW = W - 100, barH = 3;
+  ctx.fillStyle = 'rgba(180,140,50,0.12)';
+  ctx.fillRect(barX, H - 8, barW, barH);
+  ctx.fillStyle = 'rgba(180,140,50,0.55)';
+  ctx.fillRect(barX + prog * (barW - 40), H - 8, 40, barH);
+
+  // Footer text
   ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(160,130,80,0.5)';
+  ctx.fillStyle = 'rgba(160,130,80,0.45)';
   ctx.font = '10px Cinzel, serif';
-  ctx.fillText('Interiors: The Tarnished Flagon · Grimward\'s Smithy · Wizard Tower · Dungeon Floors', W / 2, H - 12);
+  ctx.fillText('Interiors: The Tarnished Flagon · Grimward\'s Smithy · Wizard Tower · Dungeon Floors', W/2, H-18);
 }
 
 function _wmLoop(ts) {
@@ -1026,18 +1070,61 @@ function _wmLoop(ts) {
   _wmAnimFrame = requestAnimationFrame(_wmLoop);
 }
 
+function _wmAttachDrag(canvas) {
+  function onDown(e) {
+    _wmDrag = { startX: e.offsetX, startPan: _wmPanX };
+    canvas.style.cursor = 'grabbing';
+  }
+  function onMove(e) {
+    if(!_wmDrag) return;
+    const dx = _wmDrag.startX - e.offsetX;
+    _wmPanX = Math.max(0, Math.min(WM_PAN_MAX, _wmDrag.startPan + dx));
+  }
+  function onUp() { _wmDrag = null; canvas.style.cursor = 'grab'; }
+  function onWheel(e) {
+    e.preventDefault();
+    _wmPanX = Math.max(0, Math.min(WM_PAN_MAX, _wmPanX + (e.deltaX || e.deltaY) * 0.4));
+  }
+  canvas.addEventListener('mousedown', onDown);
+  canvas.addEventListener('mousemove', onMove);
+  canvas.addEventListener('mouseup',   onUp);
+  canvas.addEventListener('mouseleave',onUp);
+  canvas.addEventListener('wheel',     onWheel, {passive:false});
+  canvas.style.cursor = 'grab';
+  _wmHandlers = {onDown, onMove, onUp, onWheel};
+}
+function _wmDetachDrag(canvas) {
+  if(!_wmHandlers) return;
+  const {onDown, onMove, onUp, onWheel} = _wmHandlers;
+  canvas.removeEventListener('mousedown', onDown);
+  canvas.removeEventListener('mousemove', onMove);
+  canvas.removeEventListener('mouseup',   onUp);
+  canvas.removeEventListener('mouseleave',onUp);
+  canvas.removeEventListener('wheel',     onWheel);
+  canvas.style.cursor = '';
+  _wmHandlers = null;
+}
+
 function toggleWorldMap() {
   const overlay = document.getElementById('world-map-overlay');
   if(!overlay) return;
-  const isOpen = overlay.classList.contains('show');
+  const canvas  = document.getElementById('world-map-canvas');
+  const isOpen  = overlay.classList.contains('show');
   if(isOpen) {
     overlay.classList.remove('show');
     if(_wmAnimFrame) { cancelAnimationFrame(_wmAnimFrame); _wmAnimFrame = null; }
     _wmStartTime = null;
+    if(canvas) _wmDetachDrag(canvas);
   } else {
+    // Auto-pan to current zone (or Ashenveil as fallback)
+    const curName = (currentMap && currentMap.name) ? currentMap.name.toUpperCase() : '';
+    let target = WORLD_ZONES.find(z => z.id.some(id => curName.includes(id) || id.includes(curName)));
+    if(!target) target = WORLD_ZONES.find(z => z.id.includes('ASHENVEIL'));
+    if(target) _wmPanX = _wmCenterPan(target.x + target.w / 2);
     overlay.classList.add('show');
     _wmStartTime = null;
     _wmAnimFrame = requestAnimationFrame(_wmLoop);
+    if(canvas) _wmAttachDrag(canvas);
   }
 }
 
