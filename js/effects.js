@@ -462,6 +462,7 @@ const Weather = (() => {
   // Rain particle pool
   const RAIN_COUNT = 180;
   const SNOW_COUNT = 120;
+  let weatherEnabled = true;
   const particles = [];
 
   function seededRand(seed) {
@@ -550,6 +551,7 @@ const Weather = (() => {
 
   function draw() {
     if(!canvas || !ctx2) return;
+    if(!weatherEnabled) return;
     const W = canvas.width, H = canvas.height;
     const intensity = getIntensity();
     if(intensity <= 0.01) return;
@@ -723,14 +725,17 @@ const Weather = (() => {
   }
 
   return { tick, draw, initParticles, getName, forceChange, forceNightMarket, getIntensity,
+           setEnabled(v) { weatherEnabled = v; },
            get current() { return currentWeather; },
            CLEAR, RAIN, HEAVY_RAIN, FOG, SNOW, SNOWSTORM };
 })();
 
 
 const Music = (() => {
-  let isReady=false, isStarted=false, enabled=true;
-  let userVolume=0.35, currentTheme='town_day', targetTheme='town_day';
+  let isReady=false, isStarted=false;
+  let enabled     = localStorage.getItem('grimstone_music_enabled') !== '0';
+  let userVolume  = parseInt(localStorage.getItem('grimstone_music_vol') ?? '35') / 100;
+  let currentTheme='town_day', targetTheme='town_day';
   let dest=null;
   const synths={};   // named synth instances
   const parts=[];    // all Tone.Parts, stored flat
@@ -1162,8 +1167,6 @@ const Music = (() => {
   async function init() {
     if(isStarted) return;
     isStarted = true;
-    const btn = document.getElementById('music-toggle-btn');
-    if(btn) btn.textContent = '⏳';
     try {
       await Tone.start();
 
@@ -1274,11 +1277,10 @@ const Music = (() => {
       Tone.Transport.start();
 
       isReady = true;
-      if(btn) btn.textContent = enabled ? '🎵' : '🔇';
+      // Apply persisted enabled state — silence immediately if Off
+      if(!enabled) dest.volume.value = -Infinity;
     } catch(err) {
       console.warn('Grimstone audio failed:', err);
-      const b = document.getElementById('music-toggle-btn');
-      if(b) b.textContent = '🔇';
     }
   }
 
@@ -1311,16 +1313,17 @@ const Music = (() => {
     if(!isStarted) { init(); return; }
     enabled = !enabled;
     if(dest) dest.volume.rampTo(enabled ? Tone.gainToDb(userVolume) : -Infinity, 1.0);
-    const btn = document.getElementById('music-toggle-btn');
-    if(btn) btn.textContent = enabled ? (isReady?'🎵':'⏳') : '🔇';
+    localStorage.setItem('grimstone_music_enabled', enabled ? '1' : '0');
   }
 
   function setVolume(v) {
     userVolume = v/100;
     if(dest && enabled) dest.volume.rampTo(Tone.gainToDb(userVolume), 0.1);
+    localStorage.setItem('grimstone_music_vol', v);
   }
 
-  return { init, tick, toggle, setVolume, onZoneChange };
+  return { init, tick, toggle, setVolume, onZoneChange,
+           get enabled() { return enabled; } };
 })();
 
 function toggleMusic()      { Music.toggle(); }

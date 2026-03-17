@@ -758,6 +758,83 @@
 }
 
 
+/* ===== OPTIONS OVERLAY ===== */
+#options-overlay {
+  display:none; position:fixed; inset:0; z-index:900;
+  background:rgba(3,4,6,0.92); backdrop-filter:blur(4px);
+  align-items:center; justify-content:center;
+}
+#options-overlay.show { display:flex; }
+.options-wrap {
+  display:flex; flex-direction:column; gap:12px;
+  background:var(--bg-panel); border:1px solid var(--border-bright);
+  box-shadow:0 0 40px rgba(0,0,0,0.8), inset 0 0 60px rgba(200,146,42,0.03);
+  padding:24px 28px; min-width:460px;
+}
+.options-title {
+  font-family:'Cinzel Decorative',serif; font-size:17px; color:var(--gold);
+  letter-spacing:4px; text-shadow:0 0 18px rgba(200,146,42,0.5);
+  text-align:center; padding-bottom:4px;
+  border-bottom:1px solid var(--border);
+}
+.options-body { display:flex; flex-direction:column; gap:8px; }
+.options-section {
+  border:1px solid var(--border); padding:10px 12px;
+  display:flex; flex-direction:column; gap:8px;
+}
+.options-section-title {
+  font-family:'Cinzel',serif; font-size:9px; letter-spacing:2px; text-transform:uppercase;
+  color:var(--gold-dim); margin-bottom:2px;
+}
+.options-row { display:flex; align-items:center; gap:8px; }
+.options-label {
+  font-family:'Cinzel',serif; font-size:11px; color:var(--text-dim);
+  letter-spacing:0.5px; min-width:120px;
+}
+.options-slider {
+  -webkit-appearance:none; appearance:none;
+  width:120px; height:4px; background:var(--border); border-radius:2px;
+  outline:none; cursor:pointer;
+}
+.options-slider::-webkit-slider-thumb {
+  -webkit-appearance:none; width:11px; height:11px;
+  border-radius:50%; background:var(--gold); cursor:pointer;
+}
+.options-val {
+  font-family:'Cinzel',serif; font-size:10px; color:var(--gold); min-width:34px;
+}
+.options-toggle {
+  font-family:'Cinzel',serif; font-size:10px; letter-spacing:1px; padding:3px 12px;
+  background:var(--bg-mid); border:1px solid var(--border-bright); color:var(--text-dim);
+  cursor:pointer; text-transform:uppercase; transition:all 0.15s;
+}
+.options-toggle.active {
+  background:rgba(200,146,42,0.14); border-color:var(--gold); color:var(--gold);
+}
+.options-step-btn {
+  font-size:12px; line-height:1; padding:2px 6px; cursor:pointer;
+  background:var(--bg-mid); border:1px solid var(--border); color:var(--text-dim);
+  transition:all 0.15s;
+}
+.options-step-btn:hover { border-color:var(--gold-dim); color:var(--gold); }
+.options-btn-group { display:flex; gap:4px; }
+.options-choice {
+  font-family:'Cinzel',serif; font-size:10px; letter-spacing:0.5px; padding:3px 9px;
+  background:var(--bg-mid); border:1px solid var(--border-bright); color:var(--text-dim);
+  cursor:pointer; transition:all 0.15s;
+}
+.options-choice.active {
+  background:rgba(200,146,42,0.14); border-color:var(--gold); color:var(--gold);
+}
+.options-hint {
+  font-family:'Cinzel',serif; font-size:11px; color:var(--text-dim);
+  letter-spacing:2px; text-align:center;
+}
+.options-hint kbd {
+  background:rgba(200,146,42,0.15); border:1px solid var(--gold-dim);
+  padding:1px 5px; border-radius:3px; color:var(--gold); font-family:inherit;
+}
+
 /* ===== TURN-BASED COMBAT PANEL ===== */
 #combat-panel {
   display:none; position:fixed; inset:0; z-index:400;

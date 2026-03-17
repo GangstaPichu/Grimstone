@@ -2702,6 +2702,8 @@ document.addEventListener('keydown',e=>{
     toggleWorldMap(); return;
   }
   if(e.key==='Escape'){
+    const optOverlay = document.getElementById('options-overlay');
+    if(optOverlay && optOverlay.classList.contains('show')){ optOverlay.classList.remove('show'); return; }
     const mapOverlay = document.getElementById('world-map-overlay');
     if(mapOverlay && mapOverlay.classList.contains('show')){ mapOverlay.classList.remove('show'); return; }
     if(document.getElementById('dialogue-panel').classList.contains('show')){ closeDialogue(); return; }

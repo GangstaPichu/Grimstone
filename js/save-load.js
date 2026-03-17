@@ -209,9 +209,13 @@ function startAutoSave() {
   if(playtimeTimer)  clearInterval(playtimeTimer);
   sessionPlaytime = 0;
   playtimeTimer = setInterval(() => { sessionPlaytime += 5; }, 5000);
-  autoSaveTimer = setInterval(() => {
-    if(activeSaveSlot != null && currentMap) saveGame(activeSaveSlot);
-  }, 30000); // every 30 seconds
+  const autosaveOn = localStorage.getItem('grimstone_autosave_enabled') !== '0';
+  if(autosaveOn) {
+    const interval = parseInt(localStorage.getItem('grimstone_autosave_interval') || '30000');
+    autoSaveTimer = setInterval(() => {
+      if(activeSaveSlot != null && currentMap) saveGame(activeSaveSlot);
+    }, interval);
+  }
 }
 
 function stopAutoSave() {
