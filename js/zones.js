@@ -1998,9 +1998,9 @@ function makeChapelLibrary() {
 
   // North wall of bookshelves — books face south (into the room). T.BOOKSHELF = south-facing.
   for(let x = 1; x <= W-2; x++) tiles[1][x] = T.BOOKSHELF;
-  // One secret bookshelf at the centre of the north wall — glowing tome, moss covered.
+  // One secret bookshelf 2 tiles west of centre — glowing tome, moss covered.
   // Activating it reveals a hidden passage to the vault.
-  tiles[1][17] = T.SECRET_BOOKSHELF;
+  tiles[1][15] = T.SECRET_BOOKSHELF;
 
   // Side bookshelf walls:
   //   West wall (x=1):    books face east  → T.BOOKSHELF_E
