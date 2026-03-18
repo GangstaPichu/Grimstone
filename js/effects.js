@@ -453,12 +453,12 @@ const Fireflies = (() => {
 // Modelled after the Firefly system but with erratic movement and no glow.
 const Spiders = (() => {
   const MAX = 22;
-  const ZONE_NAME = 'THE FORSAKEN LIBRARY';
+  const ZONE_NAMES = new Set(['THE FORSAKEN LIBRARY', 'THE HIDDEN VAULT']);
   const spiders = [];
   let initialized = false;
 
   function shouldShow() {
-    return currentMap && currentMap.name === ZONE_NAME;
+    return currentMap && ZONE_NAMES.has(currentMap.name);
   }
 
   function init() {

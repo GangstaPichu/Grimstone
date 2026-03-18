@@ -610,6 +610,13 @@ const T = {
   BOOKSHELF_N: 210, // north-facing: large top-surface visible, book tops at top of tile (against south wall)
   BOOKSHELF_E: 211, // east-facing:  depth strip on left,  books face east  (against west wall)
   BOOKSHELF_W: 212, // west-facing:  depth strip on right, books face west  (against east wall)
+  // ---- The Hidden Vault (secret room behind the interactive bookshelf) ----
+  SECRET_BOOKSHELF: 213, // mossy interactive shelf with a glowing tome — solid, reveals passage when activated
+  MOSSY_FLOOR:      214, // damp moss-covered stone floor
+  SPIDER_WEB:       215, // decorative cobweb stretched across a corner/object (decor)
+  BOOK_PILE:        216, // heap of fallen books on the floor (decor)
+  VASE:             217, // cracked stone vase / funerary urn (decor)
+  SECRET_EXIT:      218, // crawlspace hole in the north wall — step on to return to the library
 };
 
 // Set of tile IDs that are decorations drawn over a floor layer
@@ -643,6 +650,8 @@ const DECOR_TILES = new Set([
   T.BLOOD_TRAIL, T.DEAD_SKELETON_DECOR,
   // Directional bookshelves — all are decor drawn over a floor tile
   T.BOOKSHELF_N, T.BOOKSHELF_E, T.BOOKSHELF_W,
+  // The Hidden Vault tiles — decor drawn over MOSSY_FLOOR
+  T.SECRET_BOOKSHELF, T.SPIDER_WEB, T.BOOK_PILE, T.VASE,
 ]);
 
 // Place a decoration tile and record the floor underneath in the floor layer

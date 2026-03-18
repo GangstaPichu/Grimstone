@@ -333,7 +333,7 @@ const SOLID_TILES = new Set([
   T.SMELTER, T.COOKING_FIRE, T.SHOP, T.WORKBENCH, T.ANVIL,
   T.INN, T.BLACKSMITH, T.TOWN_WELL, T.LAMPPOST,
   T.TABLE, T.BARREL,
-  T.BED, T.BOOKSHELF, T.BOOKSHELF_N, T.BOOKSHELF_E, T.BOOKSHELF_W, T.CANDLE, T.CHEST, T.NOTICE_BOARD,
+  T.BED, T.BOOKSHELF, T.BOOKSHELF_N, T.BOOKSHELF_E, T.BOOKSHELF_W, T.SECRET_BOOKSHELF, T.CANDLE, T.CHEST, T.NOTICE_BOARD,
   T.GRAVE, T.FENCE, T.HOUSE_A, T.HOUSE_B, T.HOUSE_C, T.SIGN, T.BUSH,
   T.ALTAR, T.PILLAR,
   // Building tiles — all solid (player can't walk through walls/roofs)
@@ -577,6 +577,8 @@ function getTileActions(t, x, y){
   if(t===T.CRYPT_STAIR)           return [{icon:'⬇',label:'Descend into catacombs',      action:(x,y)=>movePlayerToward(x,y)}];
   if(t===T.LIBRARY_STAIR_DOWN)    return [{icon:'📚',label:'Descend to the library',     action:(x,y)=>movePlayerToward(x,y)}];
   if(t===T.LIBRARY_STAIR_UP)      return [{icon:'⬆',label:'Climb back up to the chapel', action:(x,y)=>movePlayerToward(x,y)}];
+  if(t===T.SECRET_BOOKSHELF)      return [{icon:'📖',label:'Pull the strange glowing tome...', action:(x,y)=>walkThenDo(x,y,()=>activateSecretBookshelf(x,y))}];
+  if(t===T.SECRET_EXIT)           return [{icon:'🕳', label:'Crawl back through the passage', action:(x,y)=>movePlayerToward(x,y)}];
   if(t===T.GRAVE) {
     const inChapel = currentMap && currentMap.name==='THE FORSAKEN CHAPEL';
     if(inChapel && !questFlags.crypt_stair_revealed)

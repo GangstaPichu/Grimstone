@@ -1998,6 +1998,9 @@ function makeChapelLibrary() {
 
   // North wall of bookshelves — books face south (into the room). T.BOOKSHELF = south-facing.
   for(let x = 1; x <= W-2; x++) tiles[1][x] = T.BOOKSHELF;
+  // One secret bookshelf at the centre of the north wall — glowing tome, moss covered.
+  // Activating it reveals a hidden passage to the vault.
+  tiles[1][17] = T.SECRET_BOOKSHELF;
 
   // Side bookshelf walls:
   //   West wall (x=1):    books face east  → T.BOOKSHELF_E
@@ -2055,6 +2058,63 @@ function makeChapelLibrary() {
     isInterior: true,
     name: 'THE FORSAKEN LIBRARY',
     entryX: 17, entryY: 20,  // spawn one tile north of the stair
+  };
+}
+
+// ======= THE HIDDEN VAULT =======
+// A cramped, forgotten chamber accessed by pulling the glowing tome
+// on the secret bookshelf in the library's north wall.
+// Layout (W=22, H=16): mossy floor, no runes, chests, webs, bones, vases.
+function makeSecretLibrary() {
+  const W = 22, H = 16;
+  const tiles = Array.from({length:H}, () => Array(W).fill(T.MOSSY_FLOOR));
+  const floor  = Array.from({length:H}, () => Array(W).fill(T.MOSSY_FLOOR));
+
+  // Outer walls — rough, mossy stone
+  for(let y = 0; y < H; y++) for(let x = 0; x < W; x++)
+    if(y===0||y===H-1||x===0||x===W-1) tiles[y][x] = T.WALL;
+
+  // Snapshot floor before placing any decor so floor[] = MOSSY_FLOOR everywhere inside
+  for(let y = 0; y < H; y++) for(let x = 0; x < W; x++) floor[y][x] = tiles[y][x];
+
+  const pd = (y,x,t) => { if(tiles[y][x]===T.MOSSY_FLOOR) placeDecor(tiles,floor,y,x,t); };
+
+  // ---- Spider webs — corners and alcoves ----
+  pd(1,  1,  T.SPIDER_WEB); pd(1,  20, T.SPIDER_WEB);
+  pd(14, 1,  T.SPIDER_WEB); pd(14, 20, T.SPIDER_WEB);
+  pd(1,  10, T.SPIDER_WEB); // centre-north alcove
+  pd(7,  1,  T.SPIDER_WEB); pd(7,  20, T.SPIDER_WEB); // mid-wall webs
+
+  // ---- Dead skeletons — three bodies ----
+  pd(3,  5,  T.DEAD_SKELETON_DECOR);
+  pd(8,  16, T.DEAD_SKELETON_DECOR);
+  pd(12, 9,  T.DEAD_SKELETON_DECOR);
+
+  // ---- Chests — partially buried under dust, precious ----
+  pd(2,  3,  T.CHEST);
+  pd(2,  18, T.CHEST);
+
+  // ---- Book piles — scattered across the floor ----
+  pd(5,  8,  T.BOOK_PILE);
+  pd(9,  14, T.BOOK_PILE);
+  pd(12, 5,  T.BOOK_PILE);
+  pd(6,  19, T.BOOK_PILE);
+
+  // ---- Vases / urns — along walls ----
+  pd(4,  2,  T.VASE);
+  pd(10, 20, T.VASE);
+  pd(13, 13, T.VASE);
+  pd(3,  11, T.VASE);
+
+  // ---- Crawlspace exit — centre of the north inner wall, looks like a ragged hole ----
+  tiles[2][11] = T.SECRET_EXIT;
+  floor[2][11] = T.MOSSY_FLOOR;
+
+  return {
+    tiles, floor, W, H,
+    isInterior: true,
+    name: 'THE HIDDEN VAULT',
+    entryX: 11, entryY: 4, // spawn just south of the crawlspace exit
   };
 }
 
