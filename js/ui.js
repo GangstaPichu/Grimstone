@@ -21,8 +21,10 @@ function applyUIScale(scale) {
   container.style.height = (100 / uiScale) + 'vh';
   container.style.transformOrigin = 'top left';
   // Also scale the options overlay content (it lives outside #game-container)
+  // zoom (unlike transform:scale) changes the element's layout size so the
+  // flex-centred overlay actually reflects the new size.
   const optWrap = document.querySelector('#options-overlay .options-wrap');
-  if(optWrap) { optWrap.style.transform = `scale(${uiScale})`; optWrap.style.transformOrigin = 'center center'; }
+  if(optWrap) optWrap.style.zoom = uiScale;
   resizeCanvas();
   localStorage.setItem('grimstone_ui_scale', uiScale);
 }
@@ -825,105 +827,101 @@ function log(msg, type=''){
 }
 
 // ======= WORLD MAP =======
-// World map uses a virtual coordinate space (WM_VW × WM_VH) larger than the
-// visible canvas (700 × 500).  The player can drag horizontally to pan.
+// Virtual coordinate space: WM_VW × WM_VH.  Canvas is 700 × 560.
+// Only horizontal panning (no Y pan — content fits in 560px height).
 //
-// Virtual layout (WM_VW=1400, WM_VH=500):
+// Zone cards: 200×85px, 40px gaps.
+// Main row center-x of Ashenveil = 980.  Chapel/Whisperwood/Stormcrag
+// all share that center-x.
 //
 //                              [✝ Forsaken Chapel]
 //                                       |
-//  [🪨 WestPass]-[🌫 Ashgrove]-[⚘ Greenfield]-[⚔ Ashenveil]-[🌿 Ashen Moor]-[⛏ Iron Peaks]
+//  [🪨 WestPass]-[🌫 Ashgrove]-[⚘ Greenfield]-[⚔ Ashenveil]-[🌿 Ashen Moor]-[⛏ IronPeaks]
 //                                       |
 //                                [❧ Whisperwood]
 //                                       |
-//                                [⛰ Stormcrag]                  [⌂ Homestead]
-//
-// Zone cards: 160×70 with 24px gaps.  Ashenveil is slightly wider (168px).
-// All vertical chains share center-x = 796 (= Ashenveil's centre).
+//                         [⛰ Stormcrag]   [⌂ Homestead]
 
-const WM_VW = 1400;           // virtual canvas width
-const WM_VH = 500;            // virtual canvas height (equals CSS canvas height → no Y pan)
-const WM_PAN_MAX = 660;       // maximum horizontal pan in virtual pixels
+const WM_VW     = 1800;   // virtual canvas width
+const WM_VH     = 560;    // virtual canvas height (== canvas pixel height)
+const WM_PAN_MAX = 900;   // max horizontal pan (virtual px)
+const WM_CW     = 700;    // visible canvas width
 
-// Row 1 (main horizontal chain): y=145, zone height=70
-// x positions: WP=160, Ashgrove=344, Greenfield=528, Ashenveil=712,
-//              AshenMoor=904, IronPeaks=1088
-// Ashenveil w=168 → right edge 880;  gap 24 → AshenMoor starts at 904
+// Row 1 at y=155, h=85.  x: WP=160, Ashgrove=400, Greenfield=640,
+// Ashenveil=880 (center_x=980), AshenMoor=1120, IronPeaks=1360.
 const WORLD_ZONES = [
   {
     id: ['FORSAKEN CHAPEL','THE FORSAKEN CHAPEL','CULTIST CATACOMBS'],
     label: 'Forsaken Chapel', sub: 'Cursed Grounds', icon: '✝',
-    x:706, y:18, w:180, h:65, color:'#271630', border:'#7040a0',
+    x:875, y:28, w:210, h:82, color:'#271630', border:'#7040a0',
   },
   {
     id: ['WESTERN PASS','THE WESTERN PASS'],
     label: 'Western Pass', sub: 'Caravan Road', icon: '🪨',
-    x:160, y:145, w:160, h:70, color:'#1a1a10', border:'#706040',
+    x:160, y:155, w:200, h:85, color:'#1a1a10', border:'#706040',
   },
   {
     id: ['ASHGROVE HOLLOW'],
     label: 'Ashgrove Hollow', sub: 'Ash Tree Grove', icon: '🌫',
-    x:344, y:145, w:160, h:70, color:'#1c1c10', border:'#686850',
+    x:400, y:155, w:200, h:85, color:'#1c1c10', border:'#686850',
   },
   {
     id: ['GREENFIELD','GREENFIELD PASTURES'],
     label: 'Greenfield', sub: 'Pastures & Farm', icon: '⚘',
-    x:528, y:145, w:160, h:70, color:'#182e14', border:'#3a8c30',
+    x:640, y:155, w:200, h:85, color:'#182e14', border:'#3a8c30',
   },
   {
     id: ['ASHENVEIL'],
     label: 'Ashenveil', sub: 'Starting Town', icon: '⚔',
-    x:712, y:145, w:168, h:70, color:'#2e1e0e', border:'#c8921a', isMain:true,
+    x:880, y:155, w:200, h:85, color:'#2e1e0e', border:'#c8921a', isMain:true,
   },
   {
     id: ['ASHEN MOOR','THE ASHEN MOOR','ASHEN CRYPTS'],
     label: 'Ashen Moor', sub: 'Grassy Moorland', icon: '🌿',
-    x:904, y:145, w:160, h:70, color:'#1a2010', border:'#607840',
+    x:1120, y:155, w:200, h:85, color:'#1a2010', border:'#607840',
   },
   {
     id: ['IRON PEAKS','THE IRON PEAKS','IRON DEPTHS'],
     label: 'Iron Peaks', sub: 'Rocky Heights', icon: '⛏',
-    x:1088, y:145, w:160, h:70, color:'#1e1e26', border:'#607070',
+    x:1360, y:155, w:200, h:85, color:'#1e1e26', border:'#607070',
   },
   {
     id: ['WHISPERWOOD','THE WHISPERWOOD'],
     label: 'The Whisperwood', sub: 'Ancient Forest', icon: '❧',
-    x:716, y:265, w:160, h:70, color:'#0e1e0e', border:'#407830',
+    x:880, y:310, w:200, h:85, color:'#0e1e0e', border:'#407830',
   },
   {
     id: ['STORMCRAG REACH'],
     label: 'Stormcrag Reach', sub: 'Mountain Keep', icon: '⛰',
-    x:716, y:385, w:160, h:70, color:'#2e3a47', border:'#607898',
+    x:880, y:455, w:200, h:85, color:'#2e3a47', border:'#607898',
   },
   {
     id: ['YOUR HOMESTEAD'],
     label: 'Your Homestead', sub: 'Personal Plot', icon: '⌂',
-    x:912, y:385, w:162, h:70, color:'#1a2e10', border:'#6aaa30',
+    x:1120, y:455, w:200, h:85, color:'#1a2e10', border:'#6aaa30',
   },
 ];
 
-// Paths [x1,y1, x2,y2] in virtual coordinates.
-// Row-1 vertical centre: y = 145+35 = 180.
+// [x1,y1, x2,y2] in virtual coords.  Row-1 vertical centre y = 155+42 = 197.
 const MAP_PATHS = [
-  [796,  83, 796, 145],   // Chapel bottom → Ashenveil top
-  [320, 180, 344, 180],   // Western Pass → Ashgrove Hollow
-  [504, 180, 528, 180],   // Ashgrove Hollow → Greenfield
-  [688, 180, 712, 180],   // Greenfield → Ashenveil
-  [880, 180, 904, 180],   // Ashenveil → Ashen Moor
-  [1064,180,1088, 180],   // Ashen Moor → Iron Peaks
-  [796, 215, 796, 265],   // Ashenveil bottom → Whisperwood top
-  [796, 335, 796, 385],   // Whisperwood bottom → Stormcrag top
+  [ 980, 110,  980, 155],   // Chapel bottom → Ashenveil top
+  [ 360, 197,  400, 197],   // Western Pass → Ashgrove Hollow
+  [ 600, 197,  640, 197],   // Ashgrove Hollow → Greenfield
+  [ 840, 197,  880, 197],   // Greenfield → Ashenveil
+  [1080, 197, 1120, 197],   // Ashenveil → Ashen Moor
+  [1320, 197, 1360, 197],   // Ashen Moor → Iron Peaks
+  [ 980, 240,  980, 310],   // Ashenveil bottom → Whisperwood top
+  [ 980, 395,  980, 455],   // Whisperwood bottom → Stormcrag top
 ];
 
-let _wmAnimFrame  = null;
-let _wmStartTime  = null;
-let _wmPanX       = 0;       // current horizontal pan offset into virtual space
-let _wmDrag       = null;    // {startX, startPan} while dragging
-let _wmHandlers   = null;    // active canvas event handlers
+let _wmAnimFrame = null;
+let _wmStartTime = null;
+let _wmPanX      = 0;     // horizontal pan offset (virtual px)
+let _wmDrag      = null;  // {startClientX, startPan} during a drag
+let _wmHandlers  = null;  // stored listeners for cleanup
 
-// Compute the ideal panX to centre a given virtual x coordinate in the 700px canvas.
 function _wmCenterPan(vx) {
-  return Math.max(0, Math.min(WM_PAN_MAX, vx - 350));
+  return Math.max(0, Math.min(WM_PAN_MAX, vx - WM_CW / 2));
 }
 
 function drawWorldMap(timestamp) {
@@ -939,130 +937,126 @@ function drawWorldMap(timestamp) {
   ctx.fillStyle = '#060810';
   ctx.fillRect(0, 0, W, H);
 
-  // ---- Draw everything in virtual space (translate by pan) ----
-  ctx.save();
-  ctx.translate(-_wmPanX, 0);
-
-  // Faint grid texture
-  ctx.strokeStyle = 'rgba(90,70,30,0.12)';
+  // Faint tiling grid drawn in screen-space so it scrolls with pan
+  ctx.strokeStyle = 'rgba(90,70,30,0.10)';
   ctx.lineWidth = 1;
-  const gx0 = _wmPanX % 28;
-  for(let x = -gx0; x < W + 28; x += 28) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
-  for(let y = 0; y < H; y += 28) { ctx.beginPath(); ctx.moveTo(_wmPanX,y); ctx.lineTo(_wmPanX+W,y); ctx.stroke(); }
+  const gOff = _wmPanX % 32;
+  for(let x = -gOff; x < W + 32; x += 32) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for(let y = 0; y < H; y += 32) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
 
   const curName = (currentMap && currentMap.name) ? currentMap.name.toUpperCase() : '';
 
-  // Paths
-  ctx.strokeStyle = 'rgba(180,140,50,0.45)';
+  // ---- Everything below is drawn in virtual (panned) space ----
+  ctx.save();
+  ctx.translate(-_wmPanX, 0);
+
+  // Connecting paths
+  ctx.strokeStyle = 'rgba(180,140,50,0.5)';
   ctx.lineWidth = 2;
-  ctx.setLineDash([6, 6]);
+  ctx.setLineDash([7, 7]);
   MAP_PATHS.forEach(([x1,y1,x2,y2]) => {
     ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
   });
   ctx.setLineDash([]);
 
-  // Zones
+  // Zone cards
   WORLD_ZONES.forEach(zone => {
     const active = zone.id.some(id => curName.includes(id) || id.includes(curName));
     const cx = zone.x + zone.w / 2;
     const cy = zone.y + zone.h / 2;
 
-    // Animated expanding pulse rings behind active zone
+    // Pulse rings on active zone
     if(active) {
       for(let i = 0; i < 3; i++) {
         const phase = ((t * 1.4 + i * 0.7) % 2.1) / 2.1;
-        const alpha = (1 - phase) * 0.55;
-        const rw = zone.w / 2 + phase * 36;
-        const rh = zone.h / 2 + phase * 26;
         ctx.save();
-        ctx.globalAlpha = alpha;
+        ctx.globalAlpha = (1 - phase) * 0.5;
         ctx.strokeStyle = '#ffd700';
         ctx.lineWidth = 2.5 - phase * 1.5;
-        ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 12;
-        ctx.beginPath(); ctx.ellipse(cx, cy, rw, rh, 0, 0, Math.PI*2); ctx.stroke();
+        ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 14;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, zone.w/2 + phase*44, zone.h/2 + phase*30, 0, 0, Math.PI*2);
+        ctx.stroke();
         ctx.restore();
       }
     }
 
     // Fill
     ctx.fillStyle = zone.color;
-    if(active) { ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 18; }
+    if(active) { ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 22; }
     ctx.fillRect(zone.x, zone.y, zone.w, zone.h);
     ctx.shadowBlur = 0;
 
     // Border
     ctx.strokeStyle = active ? '#ffd700' : zone.border;
-    ctx.lineWidth = active ? 2.5 : 1.5;
+    ctx.lineWidth   = active ? 2.5 : 1.5;
     ctx.strokeRect(zone.x, zone.y, zone.w, zone.h);
 
-    // Zone icon (top-left)
-    if(zone.icon) {
-      ctx.textAlign = 'left';
-      ctx.font = '16px serif';
-      ctx.globalAlpha = active ? 0.95 : 0.6;
-      ctx.fillStyle = active ? '#ffd700' : zone.border;
-      if(active) { ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 8; }
-      ctx.fillText(zone.icon, zone.x + 7, zone.y + 21);
-      ctx.shadowBlur = 0; ctx.globalAlpha = 1;
-    }
+    // Icon (top-left)
+    ctx.textAlign = 'left';
+    ctx.font = '17px serif';
+    ctx.globalAlpha = active ? 1 : 0.65;
+    ctx.fillStyle   = active ? '#ffd700' : zone.border;
+    if(active) { ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 8; }
+    ctx.fillText(zone.icon, zone.x + 8, zone.y + 24);
+    ctx.shadowBlur = 0; ctx.globalAlpha = 1;
 
     // Zone name
     ctx.textAlign = 'center';
     ctx.fillStyle = active ? '#ffd700' : '#c8a870';
-    ctx.font = `${active ? 'bold ' : ''}13px Cinzel, serif`;
-    ctx.fillText(zone.label, cx, cy + 4);
+    ctx.font      = `${active ? 'bold ' : ''}14px Cinzel, serif`;
+    ctx.fillText(zone.label, cx, cy + 5);
 
     // Sub-label
-    ctx.fillStyle = active ? 'rgba(255,215,0,0.7)' : 'rgba(160,130,80,0.6)';
-    ctx.font = '10px Cinzel, serif';
-    ctx.fillText(zone.sub, cx, cy + 20);
+    ctx.fillStyle = active ? 'rgba(255,215,0,0.72)' : 'rgba(160,130,80,0.62)';
+    ctx.font      = '11px Cinzel, serif';
+    ctx.fillText(zone.sub, cx, cy + 22);
 
-    // Player marker
+    // "YOU ARE HERE" pulse
     if(active) {
-      const pulse = 0.65 + 0.35 * Math.sin(t * 3.2);
-      ctx.globalAlpha = pulse;
-      ctx.fillStyle = '#ffd700';
-      ctx.font = 'bold 11px Cinzel, serif';
-      ctx.fillText('▲ YOU ARE HERE', cx, cy - 16);
+      ctx.globalAlpha = 0.65 + 0.35 * Math.sin(t * 3.2);
+      ctx.fillStyle   = '#ffd700';
+      ctx.font        = 'bold 11px Cinzel, serif';
+      ctx.fillText('▲ YOU ARE HERE', cx, cy - 18);
       ctx.globalAlpha = 1;
     }
   });
 
-  ctx.restore(); // end virtual-space drawing
+  ctx.restore(); // end panned drawing
 
-  // ---- Screen-space overlays (not panned) ----
+  // ---- Screen-space chrome ----
 
-  // Left / right edge fade — hint that more content exists
-  if(_wmPanX > 8) {
-    const gL = ctx.createLinearGradient(0,0,52,0);
-    gL.addColorStop(0,'rgba(6,8,16,0.75)'); gL.addColorStop(1,'rgba(6,8,16,0)');
-    ctx.fillStyle = gL; ctx.fillRect(0,0,52,H);
-    ctx.fillStyle = 'rgba(180,140,50,0.55)';
-    ctx.font = '16px serif'; ctx.textAlign = 'center';
-    ctx.fillText('‹', 20, H/2);
+  // Edge fade + arrow when more content is off-screen
+  if(_wmPanX > 10) {
+    const gL = ctx.createLinearGradient(0,0,60,0);
+    gL.addColorStop(0,'rgba(6,8,16,0.8)'); gL.addColorStop(1,'rgba(6,8,16,0)');
+    ctx.fillStyle = gL; ctx.fillRect(0,0,60,H);
+    ctx.fillStyle = 'rgba(200,160,60,0.7)';
+    ctx.font = '22px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('‹', 22, H/2 + 8);
   }
-  if(_wmPanX < WM_PAN_MAX - 8) {
-    const gR = ctx.createLinearGradient(W,0,W-52,0);
-    gR.addColorStop(0,'rgba(6,8,16,0.75)'); gR.addColorStop(1,'rgba(6,8,16,0)');
-    ctx.fillStyle = gR; ctx.fillRect(W-52,0,52,H);
-    ctx.fillStyle = 'rgba(180,140,50,0.55)';
-    ctx.font = '16px serif'; ctx.textAlign = 'center';
-    ctx.fillText('›', W-20, H/2);
+  if(_wmPanX < WM_PAN_MAX - 10) {
+    const gR = ctx.createLinearGradient(W,0,W-60,0);
+    gR.addColorStop(0,'rgba(6,8,16,0.8)'); gR.addColorStop(1,'rgba(6,8,16,0)');
+    ctx.fillStyle = gR; ctx.fillRect(W-60,0,60,H);
+    ctx.fillStyle = 'rgba(200,160,60,0.7)';
+    ctx.font = '22px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('›', W-22, H/2 + 8);
   }
 
-  // Horizontal scroll-position bar at very bottom
-  const prog = WM_PAN_MAX > 0 ? _wmPanX / WM_PAN_MAX : 0;
-  const barX = 50, barW = W - 100, barH = 3;
-  ctx.fillStyle = 'rgba(180,140,50,0.12)';
-  ctx.fillRect(barX, H - 8, barW, barH);
-  ctx.fillStyle = 'rgba(180,140,50,0.55)';
-  ctx.fillRect(barX + prog * (barW - 40), H - 8, 40, barH);
+  // Scroll-position bar
+  const prog  = WM_PAN_MAX > 0 ? _wmPanX / WM_PAN_MAX : 0;
+  const bx = 60, bw = W - 120, bh = 3;
+  ctx.fillStyle = 'rgba(180,140,50,0.15)';
+  ctx.fillRect(bx, H - 10, bw, bh);
+  ctx.fillStyle = 'rgba(200,160,60,0.6)';
+  ctx.fillRect(bx + prog * (bw - 44), H - 10, 44, bh);
 
-  // Footer text
+  // Footer
   ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(160,130,80,0.45)';
+  ctx.fillStyle = 'rgba(160,130,80,0.4)';
   ctx.font = '10px Cinzel, serif';
-  ctx.fillText('Interiors: The Tarnished Flagon · Grimward\'s Smithy · Wizard Tower · Dungeon Floors', W/2, H-18);
+  ctx.fillText('Interiors: The Tarnished Flagon · Grimward\'s Smithy · Wizard Tower · Dungeon Floors', W/2, H - 20);
 }
 
 function _wmLoop(ts) {
@@ -1070,37 +1064,45 @@ function _wmLoop(ts) {
   _wmAnimFrame = requestAnimationFrame(_wmLoop);
 }
 
+// Drag uses clientX on document so dragging off the canvas still works.
 function _wmAttachDrag(canvas) {
+  let docMove, docUp;
+
   function onDown(e) {
-    _wmDrag = { startX: e.offsetX, startPan: _wmPanX };
+    _wmDrag = { startClientX: e.clientX, startPan: _wmPanX };
     canvas.style.cursor = 'grabbing';
+    document.addEventListener('mousemove', docMove);
+    document.addEventListener('mouseup',   docUp);
   }
-  function onMove(e) {
+  docMove = function(e) {
     if(!_wmDrag) return;
-    const dx = _wmDrag.startX - e.offsetX;
+    const dx = _wmDrag.startClientX - e.clientX;
     _wmPanX = Math.max(0, Math.min(WM_PAN_MAX, _wmDrag.startPan + dx));
-  }
-  function onUp() { _wmDrag = null; canvas.style.cursor = 'grab'; }
+  };
+  docUp = function() {
+    _wmDrag = null;
+    canvas.style.cursor = 'grab';
+    document.removeEventListener('mousemove', docMove);
+    document.removeEventListener('mouseup',   docUp);
+  };
   function onWheel(e) {
     e.preventDefault();
-    _wmPanX = Math.max(0, Math.min(WM_PAN_MAX, _wmPanX + (e.deltaX || e.deltaY) * 0.4));
+    _wmPanX = Math.max(0, Math.min(WM_PAN_MAX, _wmPanX + (e.deltaX || e.deltaY) * 0.5));
   }
+
   canvas.addEventListener('mousedown', onDown);
-  canvas.addEventListener('mousemove', onMove);
-  canvas.addEventListener('mouseup',   onUp);
-  canvas.addEventListener('mouseleave',onUp);
-  canvas.addEventListener('wheel',     onWheel, {passive:false});
+  canvas.addEventListener('wheel', onWheel, {passive:false});
   canvas.style.cursor = 'grab';
-  _wmHandlers = {onDown, onMove, onUp, onWheel};
+  _wmHandlers = {onDown, docMove, docUp, onWheel};
 }
+
 function _wmDetachDrag(canvas) {
   if(!_wmHandlers) return;
-  const {onDown, onMove, onUp, onWheel} = _wmHandlers;
+  const {onDown, docMove, docUp, onWheel} = _wmHandlers;
   canvas.removeEventListener('mousedown', onDown);
-  canvas.removeEventListener('mousemove', onMove);
-  canvas.removeEventListener('mouseup',   onUp);
-  canvas.removeEventListener('mouseleave',onUp);
   canvas.removeEventListener('wheel',     onWheel);
+  document.removeEventListener('mousemove', docMove);
+  document.removeEventListener('mouseup',   docUp);
   canvas.style.cursor = '';
   _wmHandlers = null;
 }
@@ -1108,15 +1110,15 @@ function _wmDetachDrag(canvas) {
 function toggleWorldMap() {
   const overlay = document.getElementById('world-map-overlay');
   if(!overlay) return;
-  const canvas  = document.getElementById('world-map-canvas');
-  const isOpen  = overlay.classList.contains('show');
+  const canvas = document.getElementById('world-map-canvas');
+  const isOpen = overlay.classList.contains('show');
   if(isOpen) {
     overlay.classList.remove('show');
     if(_wmAnimFrame) { cancelAnimationFrame(_wmAnimFrame); _wmAnimFrame = null; }
     _wmStartTime = null;
     if(canvas) _wmDetachDrag(canvas);
   } else {
-    // Auto-pan to current zone (or Ashenveil as fallback)
+    // Pan to centre the player's current zone (fallback: Ashenveil)
     const curName = (currentMap && currentMap.name) ? currentMap.name.toUpperCase() : '';
     let target = WORLD_ZONES.find(z => z.id.some(id => curName.includes(id) || id.includes(curName)));
     if(!target) target = WORLD_ZONES.find(z => z.id.includes('ASHENVEIL'));
