@@ -2869,10 +2869,12 @@ function checkZoneExit() {
   } else if(t === T.LIBRARY_STAIR_UP) {
     exitInterior();
   } else if(t === T.SECRET_EXIT) {
-    // Only exit when actually inside the vault — the same tile is placed in the
-    // library wall as a visual hole after the bookshelf is pulled, and we don't
-    // want stepping near it there to fire exitInterior.
-    if(currentMap && currentMap.name === 'THE HIDDEN VAULT') exitInterior();
+    if(currentMap && currentMap.name === 'THE HIDDEN VAULT') {
+      exitInterior(); // crawl back to the library
+    } else if(currentMap && currentMap.name === 'THE FORSAKEN LIBRARY') {
+      enterInterior(makeSecretLibrary, 'THE HIDDEN VAULT'); // re-enter the vault
+      setTimeout(()=>log('You squeeze back through the passage into the vault...','bad'),600);
+    }
   } else if(t === T.EXIT_INTERIOR) {
     exitInterior();
   }
