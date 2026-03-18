@@ -997,30 +997,21 @@ function drawTile(x,y,t,floorT) {
     ctx2.fillStyle='#3a2010';
     ctx2.fillRect(px+3,py+4,TILE-6,4);
   } else if(t===T.BOOKSHELF){
-    // Shelf frame
-    ctx2.fillStyle='#2a1808';
-    ctx2.fillRect(px+3,py+3,TILE-6,TILE-6);
-    ctx2.strokeStyle='#5a3010'; ctx2.lineWidth=1.5;
-    ctx2.strokeRect(px+3,py+3,TILE-6,TILE-6);
-    // Shelf planks
-    ctx2.strokeStyle='#4a2808'; ctx2.lineWidth=1;
-    ctx2.beginPath(); ctx2.moveTo(px+3,py+14); ctx2.lineTo(px+TILE-3,py+14); ctx2.stroke();
-    ctx2.beginPath(); ctx2.moveTo(px+3,py+24); ctx2.lineTo(px+TILE-3,py+24); ctx2.stroke();
-    // Books — row 1
-    const bookColors=_BOOK_COLORS;
-    for(let i=0;i<5;i++){
-      ctx2.fillStyle=bookColors[i];
-      ctx2.fillRect(px+5+i*6,py+5,5,8);
-    }
-    // Books — row 2
-    for(let i=0;i<4;i++){
-      ctx2.fillStyle=bookColors[(i+2)%5];
-      ctx2.fillRect(px+6+i*7,py+16,5,7);
-    }
-    // Books — row 3 (a couple)
-    ctx2.fillStyle=bookColors[0]; ctx2.fillRect(px+5,py+26,5,7);
-    ctx2.fillStyle=bookColors[3]; ctx2.fillRect(px+11,py+26,5,7);
-    ctx2.fillStyle=bookColors[2]; ctx2.fillRect(px+17,py+26,5,7);
+    // Static tile — baked once to an offscreen canvas, then blitted each frame.
+    // Avoids ~16 path/fill ops per tile; the library has 150+ bookshelves visible at once.
+    _drawCachedTile(ctx2, T.BOOKSHELF, px, py, (c,bx,by) => {
+      const bc = _BOOK_COLORS;
+      c.fillStyle='#2a1808'; c.fillRect(bx+3,by+3,TILE-6,TILE-6);
+      c.strokeStyle='#5a3010'; c.lineWidth=1.5; c.strokeRect(bx+3,by+3,TILE-6,TILE-6);
+      c.strokeStyle='#4a2808'; c.lineWidth=1;
+      c.beginPath(); c.moveTo(bx+3,by+14); c.lineTo(bx+TILE-3,by+14); c.stroke();
+      c.beginPath(); c.moveTo(bx+3,by+24); c.lineTo(bx+TILE-3,by+24); c.stroke();
+      for(let i=0;i<5;i++){ c.fillStyle=bc[i];         c.fillRect(bx+5+i*6,by+5, 5,8); }
+      for(let i=0;i<4;i++){ c.fillStyle=bc[(i+2)%5];   c.fillRect(bx+6+i*7,by+16,5,7); }
+      c.fillStyle=bc[0]; c.fillRect(bx+5, by+26,5,7);
+      c.fillStyle=bc[3]; c.fillRect(bx+11,by+26,5,7);
+      c.fillStyle=bc[2]; c.fillRect(bx+17,by+26,5,7);
+    });
   } else if(t===T.CANDLE){
     // Candle holder base
     ctx2.fillStyle='#4a3a10';

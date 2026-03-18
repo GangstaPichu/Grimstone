@@ -1895,8 +1895,10 @@ function makeChapelMap() {
 
   // ---- LIBRARY STAIRCASE (east apse — hidden behind the altar) ----
   // A stone trapdoor set into the sanctuary floor, discoverable by exploring the apse.
-  tiles[6][25] = T.LIBRARY_STAIR_DOWN;
-  floor[6][25] = T.STONE_FLOOR;
+  // At y=5 so exitInterior (spawns saved.pos.y+1 = y=6) lands on stone floor,
+  // not the arch wall at y=7.
+  tiles[5][25] = T.LIBRARY_STAIR_DOWN;
+  floor[5][25] = T.STONE_FLOOR;
 
   return {tiles, floor, W, H, isInterior:true, name:'THE FORSAKEN CHAPEL'};
 }

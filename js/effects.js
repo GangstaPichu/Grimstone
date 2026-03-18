@@ -569,21 +569,17 @@ const Spiders = (() => {
       const alpha = Math.min(1, s.opacity) * 0.88;
       ctx2.globalAlpha = alpha;
 
-      // --- 8 legs (drawn behind body) ---
+      // --- 8 legs — all batched in a single path/stroke for efficiency ---
       ctx2.strokeStyle = 'rgba(30,15,15,0.72)';
       ctx2.lineWidth   = 0.7;
+      ctx2.beginPath();
+      const legLen = s.size * 2.9;
       for(let i = 0; i < 8; i++) {
-        const baseA = s.legRot + (i / 8) * Math.PI * 2;
-        // Slight knee-bend via quadratic bezier
-        const kinkA = baseA + (i % 2 === 0 ? 0.18 : -0.18);
-        const len   = s.size * 2.9;
-        const kx = sx + Math.cos(kinkA) * len * 0.5;
-        const ky = sy + Math.sin(kinkA) * len * 0.5;
-        ctx2.beginPath();
+        const a = s.legRot + (i / 8) * Math.PI * 2;
         ctx2.moveTo(sx, sy);
-        ctx2.quadraticCurveTo(kx, ky, sx + Math.cos(baseA) * len, sy + Math.sin(baseA) * len);
-        ctx2.stroke();
+        ctx2.lineTo(sx + Math.cos(a) * legLen, sy + Math.sin(a) * legLen);
       }
+      ctx2.stroke();
 
       // --- Body: two-segment (abdomen larger, cephalothorax front) ---
       ctx2.fillStyle = '#130d0d';
