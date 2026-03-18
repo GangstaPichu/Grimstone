@@ -59,6 +59,7 @@ function tileColor(t) {
 // expensive path/gradient work every frame for unchanging tiles.
 const TILE_CACHE = new Map();
 const _lightCache = {}; // keyed by (radius*100+alphaInt), reused each frame
+const _BOOK_COLORS = ['#8a2020','#1a4a2a','#2a2a6a','#6a5010','#5a1a5a']; // bookshelf tile colours
 const _staticTileCache = {}; // keyed by T.xxx tile constant
 
 // Render a static (non-animated) tile via a cached offscreen TILE×TILE sprite.
@@ -945,7 +946,7 @@ function drawTile(x,y,t,floorT) {
     ctx2.beginPath(); ctx2.moveTo(px+3,py+14); ctx2.lineTo(px+TILE-3,py+14); ctx2.stroke();
     ctx2.beginPath(); ctx2.moveTo(px+3,py+24); ctx2.lineTo(px+TILE-3,py+24); ctx2.stroke();
     // Books — row 1
-    const bookColors=['#8a2020','#1a4a2a','#2a2a6a','#6a5010','#5a1a5a'];
+    const bookColors=_BOOK_COLORS;
     for(let i=0;i<5;i++){
       ctx2.fillStyle=bookColors[i];
       ctx2.fillRect(px+5+i*6,py+5,5,8);

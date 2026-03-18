@@ -1,6 +1,26 @@
 // ======= MOVABLE CABIN FURNITURE =======
 let homeMovingFurniture = null; // {tile, fromX, fromY} when dragging a piece
 
+// Cache frequently-queried DOM elements so they're not re-queried on every
+// mousemove or mouseleave event.
+const _tooltip = document.getElementById('action-tooltip');
+
+// Cache the canvas bounding rect.  getBoundingClientRect() triggers a layout
+// flush if any pending style changes exist; calling it on every mousemove
+// (potentially 60+ times/sec) is wasteful.  We invalidate the cache on
+// resize and after a 500ms TTL so it stays accurate through zoom/layout changes.
+let _canvasRect = null;
+let _canvasRectTs = 0;
+function _getCanvasRect() {
+  const now = Date.now();
+  if (!_canvasRect || now - _canvasRectTs > 500) {
+    _canvasRect = canvas.getBoundingClientRect();
+    _canvasRectTs = now;
+  }
+  return _canvasRect;
+}
+window.addEventListener('resize', () => { _canvasRect = null; });
+
 function startMovingFurniture(tile, fromX, fromY) {
   homeMovingFurniture = {tile, fromX, fromY};
   log('Click an empty floor tile to place it.', 'info');
@@ -26,16 +46,16 @@ function placeFurniture(toX, toY) {
 
 // ======= CANVAS EVENTS =======
 canvas.addEventListener('mousemove',e=>{
-  const r=canvas.getBoundingClientRect();
+  const r=_getCanvasRect();
   // Divide by uiScale: getBoundingClientRect returns CSS/viewport pixels, but
   // the canvas internal resolution is r.width/uiScale (set in resizeCanvas).
   const sx=(e.clientX-r.left)/uiScale, sy=(e.clientY-r.top)/uiScale;
   const {x:tx,y:ty}=screenToTile(sx,sy);
   const map=currentMap;
   if(!map||tx<0||tx>=map.W||ty<0||ty>=map.H){hoverTile={x:-1,y:-1};
-    document.getElementById('action-tooltip').classList.remove('show'); return;}
+    _tooltip.classList.remove('show'); return;}
   hoverTile={x:tx,y:ty};
-  const tip=document.getElementById('action-tooltip');
+  const tip=_tooltip;
   // Furniture placement mode tooltip
   if(homeMovingFurniture) {
     const targetTile = map.tiles[ty][tx];
@@ -76,7 +96,7 @@ canvas.addEventListener('mousemove',e=>{
 });
 canvas.addEventListener('mouseleave',()=>{
   hoverTile={x:-1,y:-1};
-  document.getElementById('action-tooltip').classList.remove('show');
+  _tooltip.classList.remove('show');
 });
 canvas.addEventListener('click',e=>{
   hideCtxMenu();
