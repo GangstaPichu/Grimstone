@@ -1057,66 +1057,60 @@ function drawTile(x,y,t,floorT) {
       c.fillStyle='#0c0604'; c.fillRect(bx,by+TS-1,TS,1);
     });
   } else if(t===T.BOOKSHELF_E){
-    // EAST-facing: shelf runs north-south, books face east (right).
-    // Viewed top-down the player sees vertical book spines — tall strips L→R.
-    // Back wall on LEFT, books as tall vertical columns across the tile.
+    // EAST-facing: shelf against west wall, books face east (→).
+    // BOOKSHELF_N rotated 90° CW: top/bottom pillars, books on RIGHT edge,
+    // large top-surface wood on LEFT, vertical grain lines.
     _drawCachedTile(ctx2, T.BOOKSHELF_E, px, py, (c,bx,by) => {
       const TS=TILE, bc=_BOOK_COLORS;
-      c.fillStyle='#1a0e06'; c.fillRect(bx,by,TS,TS);
-      // Top surface strip (visible top edge of shelf)
-      c.fillStyle='#5c3a1c'; c.fillRect(bx,by,TS,4);
-      c.fillStyle='rgba(220,170,100,0.10)'; c.fillRect(bx,by,TS,1);
-      // Left back wall strip — darkest, shelf back sits against west wall
-      c.fillStyle='#160c04'; c.fillRect(bx,by+4,5,TS-4);
-      // Trim line where back meets the book face
-      c.fillStyle='#4a2e12'; c.fillRect(bx+5,by+4,1,TS-4);
-      // Right edge trim (open side of shelf)
-      c.fillStyle='#2e1a0a'; c.fillRect(bx+TS-2,by+4,2,TS-4);
-      // 5 tall vertical book strips running the full height of the shelf body.
-      // Each strip represents one book spine seen end-on as the shelf faces east.
-      // Heights vary slightly for visual interest (books of different sizes).
-      const bookH = [TS-5, TS-7, TS-5, TS-8, TS-6]; // per-column height
+      // Top and bottom rail pillars (instead of N's left/right pillars)
+      c.fillStyle='#2e1a0a'; c.fillRect(bx,by,TS,3); c.fillRect(bx,by+TS-3,TS,3);
+      // Book fronts on the RIGHT edge — 9px wide, books face east into the aisle
+      c.fillStyle='#1a0e06'; c.fillRect(bx+TS-9,by+3,9,TS-6);
+      // 5 books stacked top-to-bottom (horizontal strips, each 4px tall, 1px gap)
       for(let i=0;i<5;i++){
-        const bkx=bx+6+i*5, h=bookH[i];
-        c.fillStyle=bc[(i+1)%5]; c.fillRect(bkx, by+4, 4, h);
-        // Left shadow on each spine (simulates light from the east)
-        c.fillStyle='rgba(0,0,0,0.35)'; c.fillRect(bkx, by+4, 1, h);
-        // Faint top highlight (top edge of each book)
-        c.fillStyle='rgba(255,255,255,0.10)'; c.fillRect(bkx+1, by+4, 3, 1);
+        c.fillStyle=bc[(i+1)%5]; c.fillRect(bx+TS-8, by+4+i*5, 7, 4);
+        c.fillStyle='rgba(0,0,0,0.28)'; c.fillRect(bx+TS-8, by+4+i*5+3, 7, 1); // bottom shadow per book
       }
-      // Horizontal shelf plank visible at mid-height (one divider shelf)
-      c.fillStyle='#3a2010'; c.fillRect(bx+6,by+18,TS-8,2);
-      c.fillStyle='rgba(0,0,0,0.20)'; c.fillRect(bx+6,by+20,TS-8,1);
-      c.fillStyle='#0c0604'; c.fillRect(bx,by+TS-1,TS,1);
+      // Plank dividing book strip from the top surface
+      c.fillStyle='#4a2e12'; c.fillRect(bx,by+3,TS-9,2);  // top rail under top pillar
+      c.fillStyle='#4a2e12'; c.fillRect(bx+TS-11,by+3,2,TS-6);
+      // Top surface — large left area (shelf top viewed from above)
+      c.fillStyle='#5c3a1c'; c.fillRect(bx+3,by+3,TS-14,TS-6);
+      // Vertical wood grain lines (rotated 90° from N's horizontal grain)
+      c.strokeStyle='rgba(0,0,0,0.10)'; c.lineWidth=0.8;
+      [8,13,18].forEach(gx=>{
+        c.beginPath(); c.moveTo(bx+gx,by+4); c.lineTo(bx+gx,by+TS-4); c.stroke();
+      });
+      // Faint wood knot
+      c.strokeStyle='rgba(0,0,0,0.08)'; c.lineWidth=1;
+      c.beginPath(); c.ellipse(bx+10, by+TS/2, 2, 4, 0, 0, Math.PI*2); c.stroke();
     });
   } else if(t===T.BOOKSHELF_W){
-    // WEST-facing: shelf runs north-south, books face west (left).
-    // Mirror of BOOKSHELF_E — back wall on RIGHT, vertical book columns L→R.
+    // WEST-facing: shelf against east wall, books face west (←).
+    // Mirror of BOOKSHELF_E: books on LEFT edge, large top-surface on RIGHT.
     _drawCachedTile(ctx2, T.BOOKSHELF_W, px, py, (c,bx,by) => {
       const TS=TILE, bc=_BOOK_COLORS;
-      c.fillStyle='#1a0e06'; c.fillRect(bx,by,TS,TS);
-      // Top surface strip
-      c.fillStyle='#5c3a1c'; c.fillRect(bx,by,TS,4);
-      c.fillStyle='rgba(220,170,100,0.10)'; c.fillRect(bx,by,TS,1);
-      // Right back wall strip — darkest, shelf back against east wall
-      c.fillStyle='#160c04'; c.fillRect(bx+TS-5,by+4,5,TS-4);
-      // Trim line
-      c.fillStyle='#4a2e12'; c.fillRect(bx+TS-6,by+4,1,TS-4);
-      // Left edge trim (open side)
-      c.fillStyle='#2e1a0a'; c.fillRect(bx,by+4,2,TS-4);
-      // 5 tall vertical book strips. Heights vary opposite to BOOKSHELF_E for variety.
-      const bookH = [TS-6, TS-8, TS-5, TS-7, TS-5];
+      // Top and bottom rail pillars
+      c.fillStyle='#2e1a0a'; c.fillRect(bx,by,TS,3); c.fillRect(bx,by+TS-3,TS,3);
+      // Book fronts on the LEFT edge — 9px wide, books face west into the aisle
+      c.fillStyle='#1a0e06'; c.fillRect(bx,by+3,9,TS-6);
+      // 5 books stacked top-to-bottom
       for(let i=0;i<5;i++){
-        const bkx=bx+2+i*5, h=bookH[i];
-        c.fillStyle=bc[(i+2)%5]; c.fillRect(bkx, by+4, 4, h);
-        // Right shadow on each spine (simulates light from the west)
-        c.fillStyle='rgba(0,0,0,0.35)'; c.fillRect(bkx+3, by+4, 1, h);
-        c.fillStyle='rgba(255,255,255,0.10)'; c.fillRect(bkx, by+4, 3, 1);
+        c.fillStyle=bc[(i+3)%5]; c.fillRect(bx+1, by+4+i*5, 7, 4);
+        c.fillStyle='rgba(0,0,0,0.28)'; c.fillRect(bx+1, by+4+i*5+3, 7, 1);
       }
-      // Horizontal shelf plank divider
-      c.fillStyle='#3a2010'; c.fillRect(bx+2,by+18,TS-8,2);
-      c.fillStyle='rgba(0,0,0,0.20)'; c.fillRect(bx+2,by+20,TS-8,1);
-      c.fillStyle='#0c0604'; c.fillRect(bx,by+TS-1,TS,1);
+      // Plank dividing book strip from the top surface
+      c.fillStyle='#4a2e12'; c.fillRect(bx+9,by+3,2,TS-6);
+      // Top surface — large right area
+      c.fillStyle='#5c3a1c'; c.fillRect(bx+11,by+3,TS-14,TS-6);
+      // Vertical wood grain lines
+      c.strokeStyle='rgba(0,0,0,0.10)'; c.lineWidth=0.8;
+      [16,21,26].forEach(gx=>{
+        c.beginPath(); c.moveTo(bx+gx,by+4); c.lineTo(bx+gx,by+TS-4); c.stroke();
+      });
+      // Faint wood knot
+      c.strokeStyle='rgba(0,0,0,0.08)'; c.lineWidth=1;
+      c.beginPath(); c.ellipse(bx+TS-10, by+TS/2, 2, 4, 0, 0, Math.PI*2); c.stroke();
     });
   } else if(t===T.CANDLE){
     // Candle holder base
