@@ -448,6 +448,167 @@ const Fireflies = (() => {
 })();
 
 
+// ======= SPIDER SYSTEM =======
+// Tiny spiders that scurry across the library floor and fade into bookshelves.
+// Modelled after the Firefly system but with erratic movement and no glow.
+const Spiders = (() => {
+  const MAX = 22;
+  const ZONE_NAME = 'THE FORSAKEN LIBRARY';
+  const spiders = [];
+  let initialized = false;
+
+  function shouldShow() {
+    return currentMap && currentMap.name === ZONE_NAME;
+  }
+
+  function init() {
+    spiders.length = 0;
+    initialized = shouldShow();
+    if(!initialized) return;
+    const W = currentMap.W, H = currentMap.H;
+    for(let i = 0; i < MAX; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 0.28 + Math.random() * 0.44; // tiles/sec — faster than fireflies
+      spiders.push({
+        tx: 2.5 + Math.random() * (W - 5),
+        ty: 2.5 + Math.random() * (H - 5),
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        changeTimer: Math.random() * 1.4,  // time until next direction change
+        opacity: Math.random(),             // stagger so they don't all appear at once
+        fading: false,
+        size: 1.4 + Math.random() * 0.7,   // body radius in px
+        legRot: Math.random() * Math.PI * 2, // leg spread rotation for variety
+      });
+    }
+  }
+
+  function update(dt) {
+    if(!initialized || !shouldShow()) return;
+    const map = currentMap;
+    if(!map) return;
+    const W = map.W, H = map.H;
+
+    for(const s of spiders) {
+      // --- Fading out (disappearing into a bookshelf) ---
+      if(s.fading) {
+        s.opacity -= dt * 2.8;
+        if(s.opacity <= 0) {
+          // Respawn at a random open floor tile in the lower half of the room
+          s.tx = 3 + Math.random() * (W - 6);
+          s.ty = 3 + Math.random() * (H * 0.6);
+          const nx = Math.floor(s.tx), ny = Math.floor(s.ty);
+          // If the chosen respawn is inside a wall/shelf, nudge to centre
+          if(map.tiles[ny] &&
+            (map.tiles[ny][nx] === T.BOOKSHELF || map.tiles[ny][nx] === T.WALL)) {
+            s.tx = W / 2 + (Math.random() - 0.5) * 6;
+            s.ty = H * 0.65;
+          }
+          const spawnAngle = Math.random() * Math.PI * 2;
+          const spawnSpeed = 0.28 + Math.random() * 0.44;
+          s.vx = Math.cos(spawnAngle) * spawnSpeed;
+          s.vy = Math.sin(spawnAngle) * spawnSpeed;
+          s.opacity = 0;
+          s.fading  = false;
+          s.changeTimer = 0.3 + Math.random() * 1.2;
+        }
+        continue;
+      }
+
+      // --- Fade in ---
+      if(s.opacity < 1) s.opacity = Math.min(1, s.opacity + dt * 1.8);
+
+      // --- Random direction changes (scurry pattern) ---
+      s.changeTimer -= dt;
+      if(s.changeTimer <= 0) {
+        const a = Math.random() * Math.PI * 2;
+        const spd = 0.25 + Math.random() * 0.5;
+        s.vx = Math.cos(a) * spd;
+        s.vy = Math.sin(a) * spd;
+        s.changeTimer = 0.25 + Math.random() * 1.1;
+      }
+
+      // --- Move ---
+      s.tx += s.vx * dt;
+      s.ty += s.vy * dt;
+
+      // Keep inside map bounds
+      s.tx = Math.max(1.6, Math.min(W - 1.6, s.tx));
+      s.ty = Math.max(1.6, Math.min(H - 1.6, s.ty));
+
+      // --- Tile collision ---
+      const nx = Math.floor(s.tx), ny = Math.floor(s.ty);
+      if(map.tiles[ny]) {
+        const tt = map.tiles[ny][nx];
+        if(tt === T.BOOKSHELF) {
+          // Fade into the shelf — the spider disappears into the stacks
+          s.fading = true;
+        } else if(tt === T.WALL) {
+          // Bounce off solid walls
+          s.vx *= -1; s.vy *= -1;
+          s.tx += s.vx * dt * 3;
+          s.ty += s.vy * dt * 3;
+          s.changeTimer = 0.15;
+        }
+      }
+    }
+  }
+
+  function draw() {
+    if(!initialized || !shouldShow()) return;
+    const ox = Math.round(camera.x);
+    const oy = Math.round(camera.y);
+    const CW = canvas.width, CH = canvas.height;
+
+    for(const s of spiders) {
+      if(s.opacity <= 0.02) continue;
+      const wx = s.tx * TILE, wy = s.ty * TILE;
+      const sx = wx - ox, sy = wy - oy;
+      if(sx < -20 || sx > CW + 20 || sy < -20 || sy > CH + 20) continue;
+
+      const alpha = Math.min(1, s.opacity) * 0.88;
+      ctx2.globalAlpha = alpha;
+
+      // --- 8 legs (drawn behind body) ---
+      ctx2.strokeStyle = 'rgba(30,15,15,0.72)';
+      ctx2.lineWidth   = 0.7;
+      for(let i = 0; i < 8; i++) {
+        const baseA = s.legRot + (i / 8) * Math.PI * 2;
+        // Slight knee-bend via quadratic bezier
+        const kinkA = baseA + (i % 2 === 0 ? 0.18 : -0.18);
+        const len   = s.size * 2.9;
+        const kx = sx + Math.cos(kinkA) * len * 0.5;
+        const ky = sy + Math.sin(kinkA) * len * 0.5;
+        ctx2.beginPath();
+        ctx2.moveTo(sx, sy);
+        ctx2.quadraticCurveTo(kx, ky, sx + Math.cos(baseA) * len, sy + Math.sin(baseA) * len);
+        ctx2.stroke();
+      }
+
+      // --- Body: two-segment (abdomen larger, cephalothorax front) ---
+      ctx2.fillStyle = '#130d0d';
+      // Abdomen (rear)
+      ctx2.beginPath();
+      ctx2.ellipse(sx + s.size * 0.45, sy, s.size * 0.95, s.size * 0.78, 0, 0, Math.PI * 2);
+      ctx2.fill();
+      // Cephalothorax (front)
+      ctx2.beginPath();
+      ctx2.ellipse(sx - s.size * 0.5, sy, s.size * 0.65, s.size * 0.55, 0, 0, Math.PI * 2);
+      ctx2.fill();
+
+      // --- Two tiny red eyes ---
+      ctx2.fillStyle = 'rgba(175,25,25,0.88)';
+      ctx2.beginPath(); ctx2.arc(sx - s.size * 0.72, sy - s.size * 0.22, 0.72, 0, Math.PI * 2); ctx2.fill();
+      ctx2.beginPath(); ctx2.arc(sx - s.size * 0.38, sy - s.size * 0.22, 0.72, 0, Math.PI * 2); ctx2.fill();
+
+      ctx2.globalAlpha = 1;
+    }
+  }
+
+  return { init, update, draw };
+})();
+
+
 // ======= WEATHER SYSTEM =======
 const Weather = (() => {
   // Weather types

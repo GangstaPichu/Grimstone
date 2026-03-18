@@ -59,6 +59,7 @@ function tileColor(t) {
 // expensive path/gradient work every frame for unchanging tiles.
 const TILE_CACHE = new Map();
 const _lightCache = {}; // keyed by (radius*100+alphaInt), reused each frame
+const _BOOK_COLORS = ['#8a2020','#1a4a2a','#2a2a6a','#6a5010','#5a1a5a']; // bookshelf tile colours
 const _staticTileCache = {}; // keyed by T.xxx tile constant
 
 // Render a static (non-animated) tile via a cached offscreen TILE×TILE sprite.
@@ -809,6 +810,67 @@ function drawTile(x,y,t,floorT) {
     drawDungeonStair(ctx2,px,py,T.DUNGEON_STAIR_DOWN);
     // Purple tint for crypt
     ctx2.fillStyle='rgba(80,0,120,0.3)'; ctx2.fillRect(px,py,TILE,TILE);
+  } else if(t===T.LIBRARY_STAIR_DOWN||t===T.LIBRARY_STAIR_UP){
+    drawDungeonStair(ctx2,px,py, t===T.LIBRARY_STAIR_UP ? T.DUNGEON_STAIR_UP : T.DUNGEON_STAIR_DOWN);
+    // Dusty age tint — old stone, slightly purple from rune residue
+    ctx2.fillStyle='rgba(35,18,55,0.22)'; ctx2.fillRect(px,py,TILE,TILE);
+  } else if(t===T.BLOOD_TRAIL){
+    // Blood is drawn on top of the floor tile (floor already rendered via DECOR_TILES mechanism).
+    // Deterministic variation so each blood tile looks slightly different.
+    const bv = (Math.floor(px/TILE)*7 + Math.floor(py/TILE)*13) % 100;
+    // Main dried-blood puddle
+    ctx2.fillStyle = 'rgba(88,7,7,0.82)';
+    ctx2.beginPath();
+    ctx2.ellipse(cx-3+bv%6, cy+1+bv%4, 7+bv%4, 4+bv%3, bv*0.08, 0, Math.PI*2);
+    ctx2.fill();
+    // Irregular extension / smear in one direction
+    ctx2.fillStyle = 'rgba(70,5,5,0.55)';
+    ctx2.beginPath();
+    ctx2.ellipse(cx+4+bv%5, cy-2+bv%3, 4+bv%3, 2+bv%2, bv*0.12+0.5, 0, Math.PI*2);
+    ctx2.fill();
+    // Drip dots
+    ctx2.fillStyle = 'rgba(110,10,10,0.65)';
+    [[cx-8+bv%4, cy-4+bv%3],[cx+5+bv%3, cy+5+bv%2],[cx-2+bv%2, cy-7+bv%4]].forEach(([ax,ay])=>{
+      ctx2.beginPath(); ctx2.arc(ax,ay,1.3,0,Math.PI*2); ctx2.fill();
+    });
+  } else if(t===T.DEAD_SKELETON_DECOR){
+    // Lying skeleton — bones on the floor (floor tile drawn first via DECOR_TILES).
+    // Tilt varies deterministically so each body looks different.
+    const tilt = (((px/TILE)|0)*7 + ((py/TILE)|0)*11) % 6 / 6 * Math.PI - Math.PI/2;
+    ctx2.save();
+    ctx2.translate(cx, cy);
+    ctx2.rotate(tilt);
+    // Ribcage / torso oval
+    ctx2.fillStyle   = 'rgba(185,170,148,0.58)';
+    ctx2.strokeStyle = 'rgba(160,145,125,0.7)';
+    ctx2.lineWidth   = 1;
+    ctx2.beginPath(); ctx2.ellipse(0,0,7,4,0,0,Math.PI*2); ctx2.fill(); ctx2.stroke();
+    // Rib lines
+    ctx2.strokeStyle = 'rgba(100,90,75,0.5)'; ctx2.lineWidth = 0.6;
+    [-3,-1,1,3].forEach(ox2 => {
+      ctx2.beginPath(); ctx2.moveTo(ox2,-4); ctx2.lineTo(ox2,4); ctx2.stroke();
+    });
+    // Skull
+    ctx2.fillStyle   = 'rgba(200,185,162,0.82)';
+    ctx2.strokeStyle = 'rgba(140,125,105,0.65)'; ctx2.lineWidth = 0.9;
+    ctx2.beginPath(); ctx2.arc(-12,0,4.5,0,Math.PI*2); ctx2.fill(); ctx2.stroke();
+    // Eye sockets
+    ctx2.fillStyle = 'rgba(18,10,10,0.92)';
+    ctx2.beginPath(); ctx2.arc(-13.5,-1,1.2,0,Math.PI*2); ctx2.fill();
+    ctx2.beginPath(); ctx2.arc(-10.5,-1,1.2,0,Math.PI*2); ctx2.fill();
+    // Leg bones
+    ctx2.strokeStyle = 'rgba(175,160,138,0.68)'; ctx2.lineWidth = 1.8;
+    ctx2.beginPath(); ctx2.moveTo(6, 2); ctx2.lineTo(16, 5);  ctx2.stroke();
+    ctx2.beginPath(); ctx2.moveTo(6,-2); ctx2.lineTo(16,-5); ctx2.stroke();
+    // Arm reaching outward
+    ctx2.strokeStyle = 'rgba(185,168,145,0.62)'; ctx2.lineWidth = 1.4;
+    ctx2.beginPath(); ctx2.moveTo(-3,4); ctx2.lineTo(3,11); ctx2.stroke();
+    // Finger nubs at end
+    ctx2.fillStyle = 'rgba(180,165,142,0.55)';
+    [[2,12],[4,12],[3,13]].forEach(([fx,fy])=>{
+      ctx2.beginPath(); ctx2.arc(fx,fy,0.9,0,Math.PI*2); ctx2.fill();
+    });
+    ctx2.restore();
   } else if(t===T.DUNGEON_TORCH){
     drawDungeonTorch(ctx2,px,py,frameNow);
   } else if(t===T.COBBLE){
@@ -945,7 +1007,7 @@ function drawTile(x,y,t,floorT) {
     ctx2.beginPath(); ctx2.moveTo(px+3,py+14); ctx2.lineTo(px+TILE-3,py+14); ctx2.stroke();
     ctx2.beginPath(); ctx2.moveTo(px+3,py+24); ctx2.lineTo(px+TILE-3,py+24); ctx2.stroke();
     // Books — row 1
-    const bookColors=['#8a2020','#1a4a2a','#2a2a6a','#6a5010','#5a1a5a'];
+    const bookColors=_BOOK_COLORS;
     for(let i=0;i<5;i++){
       ctx2.fillStyle=bookColors[i];
       ctx2.fillRect(px+5+i*6,py+5,5,8);
@@ -2545,6 +2607,8 @@ function renderMap(){
 
   // Fireflies — appear at night in grassy outdoor zones
   Fireflies.draw();
+  // Spiders — scurry across the floor in the Forsaken Library
+  Spiders.draw();
 
   // ---- Clock display (top-center) ----
   const timeLabel   = getTimeLabel();
@@ -2663,6 +2727,7 @@ function gameLoop(){
   Music.tick();
   Weather.tick();
   Fireflies.update(lastDt);
+  Spiders.update(lastDt);
   // Smoothly interpolate remote players toward their last known position
   if(isOnline()) {
     const lf = 0.18;
