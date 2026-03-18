@@ -51,6 +51,10 @@ const TILE_COLORS = {
   [T.HOME_POTATO]:'#2a1a0a', [T.HOME_ONION]:'#2a1a0a',
   // Library / bookshelf tiles — dark wood so the base fill is correct when used as floorT
   [T.BOOKSHELF]:'#2a1808', [T.BOOKSHELF_N]:'#2a1808', [T.BOOKSHELF_E]:'#2a1808', [T.BOOKSHELF_W]:'#2a1808',
+  // Hidden Vault tiles
+  [T.SECRET_BOOKSHELF]:'#0e0a06', [T.MOSSY_FLOOR]:'#121812',
+  [T.SPIDER_WEB]:'#121812', [T.BOOK_PILE]:'#121812', [T.VASE]:'#121812',
+  [T.SECRET_EXIT]:'#060606',
 };
 
 function tileColor(t) {
@@ -873,6 +877,168 @@ function drawTile(x,y,t,floorT) {
       ctx2.beginPath(); ctx2.arc(fx,fy,0.9,0,Math.PI*2); ctx2.fill();
     });
     ctx2.restore();
+  } else if(t===T.MOSSY_FLOOR){
+    // Damp stone with green moss patches — same static appearance for all tiles.
+    _drawCachedTile(ctx2, T.MOSSY_FLOOR, px, py, (c,bx,by) => {
+      const TS=TILE;
+      c.fillStyle='#121812'; c.fillRect(bx,by,TS,TS);
+      // Faint stone seam lines
+      c.strokeStyle='rgba(255,255,255,0.04)'; c.lineWidth=0.6;
+      c.beginPath(); c.moveTo(bx,by+10); c.lineTo(bx+18,by+10); c.stroke();
+      c.beginPath(); c.moveTo(bx+10,by+22); c.lineTo(bx+TS,by+22); c.stroke();
+      // Moss patches — irregular dark-green blobs
+      const patches = [[5,4,6,3],[20,12,5,4],[3,20,7,3],[18,25,6,4],[12,8,4,3],[24,19,5,3]];
+      c.fillStyle='rgba(30,60,20,0.60)';
+      patches.forEach(([mx,my,rw,rh])=>{
+        c.beginPath(); c.ellipse(bx+mx,by+my,rw,rh,0,0,Math.PI*2); c.fill();
+      });
+      c.fillStyle='rgba(50,90,30,0.30)';
+      patches.forEach(([mx,my,rw,rh])=>{
+        c.beginPath(); c.ellipse(bx+mx,by+my,rw*0.55,rh*0.55,0,0,Math.PI*2); c.fill();
+      });
+    });
+  } else if(t===T.SECRET_BOOKSHELF){
+    // Battered, moss-covered shelf with one faintly glowing tome.
+    // Visually based on BOOKSHELF_S but noticeably different.
+    _drawCachedTile(ctx2, T.SECRET_BOOKSHELF, px, py, (c,bx,by) => {
+      const TS=TILE, bc=_BOOK_COLORS;
+      // Dark, aged frame
+      c.fillStyle='#0e0a06'; c.fillRect(bx,by,TS,TS);
+      // Side pillars — thicker, rotting
+      c.fillStyle='#1c0f06'; c.fillRect(bx,by,4,TS); c.fillRect(bx+TS-4,by,4,TS);
+      // Top surface — worn, darker than normal shelf
+      c.fillStyle='#3a2010'; c.fillRect(bx+4,by,TS-8,4);
+      // Shelf planks
+      c.fillStyle='#2a1408'; c.fillRect(bx+4,by+13,TS-8,2); c.fillRect(bx+4,by+22,TS-8,2);
+      // Row 1 books — muted, faded colors (not bc[] directly, slightly washed)
+      for(let i=0;i<5;i++){
+        c.fillStyle=bc[i]; c.globalAlpha=0.65;
+        c.fillRect(bx+5+i*5,by+5,4,7);
+        c.fillStyle='rgba(0,0,0,0.35)'; c.globalAlpha=1;
+        c.fillRect(bx+5+i*5+3,by+5,1,7);
+      }
+      // Row 2 books — similarly faded
+      for(let i=0;i<5;i++){
+        c.fillStyle=bc[(i+3)%5]; c.globalAlpha=0.55;
+        c.fillRect(bx+5+i*5,by+15,4,6);
+        c.fillStyle='rgba(0,0,0,0.35)'; c.globalAlpha=1;
+        c.fillRect(bx+5+i*5+3,by+15,1,6);
+      }
+      // Row 3 — sparse, one glowing tome at bx+9
+      c.fillStyle=bc[2]; c.globalAlpha=0.5;
+      c.fillRect(bx+5,by+24,4,5);
+      c.globalAlpha=1;
+      // The glowing tome — soft cyan/purple glow
+      c.fillStyle='#1a0e2a'; c.fillRect(bx+10,by+23,5,6);
+      c.fillStyle='rgba(150,80,220,0.85)'; c.fillRect(bx+11,by+24,3,4); // spine glow
+      c.fillStyle='rgba(200,140,255,0.60)'; c.fillRect(bx+11,by+24,3,1); // highlight top
+      // Glow halo around the tome
+      c.fillStyle='rgba(120,50,200,0.18)'; c.fillRect(bx+8,by+21,9,10);
+      // Moss patches on the frame corners
+      c.fillStyle='rgba(35,70,20,0.72)';
+      c.beginPath(); c.ellipse(bx+2,by+2,3,2.5,0,0,Math.PI*2); c.fill();
+      c.beginPath(); c.ellipse(bx+TS-2,by+3,2.5,2,0,0,Math.PI*2); c.fill();
+      c.beginPath(); c.ellipse(bx+2,by+TS-4,3,2,0,0,Math.PI*2); c.fill();
+      c.beginPath(); c.ellipse(bx+TS-2,by+TS-4,2.5,2.5,0,0,Math.PI*2); c.fill();
+      // Cobweb strands in top-left corner
+      c.strokeStyle='rgba(200,200,200,0.20)'; c.lineWidth=0.5;
+      [[0,0,8,4],[0,0,4,8],[0,0,10,2]].forEach(([x1,y1,x2,y2])=>{
+        c.beginPath(); c.moveTo(bx+x1,by+y1); c.lineTo(bx+x2,by+y2); c.stroke();
+      });
+      // Bottom shadow
+      c.fillStyle='#060402'; c.fillRect(bx,by+TS-1,TS,1);
+    });
+  } else if(t===T.SPIDER_WEB){
+    // Corner-to-corner cobweb stretched across the tile (decor over floor).
+    _drawCachedTile(ctx2, T.SPIDER_WEB, px, py, (c,bx,by) => {
+      const TS=TILE, mx=bx+TS/2, my=by+TS/2;
+      c.strokeStyle='rgba(210,210,210,0.30)'; c.lineWidth=0.7;
+      // Radial strands from centre to edges/corners
+      const anchors=[[bx,by],[bx+TS,by],[bx,by+TS],[bx+TS,by+TS],
+                     [mx,by],[bx+TS,my],[mx,by+TS],[bx,my]];
+      anchors.forEach(([ax,ay])=>{
+        c.beginPath(); c.moveTo(mx,my); c.lineTo(ax,ay); c.stroke();
+      });
+      // Concentric rings (3 rings — scaled quads connecting strands)
+      c.strokeStyle='rgba(210,210,210,0.20)'; c.lineWidth=0.6;
+      [0.28,0.52,0.78].forEach(r=>{
+        const pts=anchors.map(([ax,ay])=>[mx+(ax-mx)*r, my+(ay-my)*r]);
+        c.beginPath(); c.moveTo(pts[0][0],pts[0][1]);
+        pts.forEach(p=>c.lineTo(p[0],p[1]));
+        c.closePath(); c.stroke();
+      });
+      // A tiny spider silhouette in the centre
+      c.fillStyle='rgba(30,20,20,0.70)';
+      c.beginPath(); c.arc(mx,my,2,0,Math.PI*2); c.fill();
+      c.beginPath(); c.arc(mx,my+3,1.2,0,Math.PI*2); c.fill();
+    });
+  } else if(t===T.BOOK_PILE){
+    // Heap of fallen books on the floor (decor).
+    _drawCachedTile(ctx2, T.BOOK_PILE, px, py, (c,bx,by) => {
+      const TS=TILE, bc=_BOOK_COLORS;
+      // Three books at different angles — drawn as rotated rectangles
+      const books=[
+        {dx: 2, dy:14, w:18, h:5, col:bc[0], rot: 0.18},
+        {dx: 5, dy:10, w:16, h:4, col:bc[2], rot:-0.25},
+        {dx: 7, dy:18, w:14, h:4, col:bc[4], rot: 0.08},
+      ];
+      books.forEach(({dx,dy,w,h,col,rot})=>{
+        c.save();
+        c.translate(bx+dx+w/2, by+dy+h/2);
+        c.rotate(rot);
+        c.fillStyle=col; c.fillRect(-w/2,-h/2,w,h);
+        c.fillStyle='rgba(220,190,140,0.60)'; c.fillRect(-w/2,-h/2,w,1); // page edge
+        c.fillStyle='rgba(0,0,0,0.35)'; c.fillRect(-w/2,-h/2,2,h); // spine
+        c.restore();
+      });
+    });
+  } else if(t===T.VASE){
+    // Cracked stone funerary urn (decor).
+    _drawCachedTile(ctx2, T.VASE, px, py, (c,bx,by) => {
+      const TS=TILE, vx=bx+TS/2, vy=by+TS/2;
+      // Shadow
+      c.fillStyle='rgba(0,0,0,0.25)';
+      c.beginPath(); c.ellipse(vx,vy+9,7,2.5,0,0,Math.PI*2); c.fill();
+      // Body
+      c.fillStyle='#3a3228';
+      c.beginPath(); c.ellipse(vx,vy+3,8,11,0,0,Math.PI*2); c.fill();
+      // Neck
+      c.fillStyle='#2e2820'; c.fillRect(vx-3,vy-11,6,6);
+      // Rim
+      c.fillStyle='#3a3228'; c.fillRect(vx-5,vy-13,10,3);
+      // Crack lines
+      c.strokeStyle='rgba(0,0,0,0.55)'; c.lineWidth=0.8;
+      c.beginPath(); c.moveTo(vx+2,vy-4); c.lineTo(vx+4,vy+4); c.lineTo(vx+3,vy+9); c.stroke();
+      // Highlight
+      c.fillStyle='rgba(255,255,255,0.08)';
+      c.beginPath(); c.ellipse(vx-2,vy+1,3,5,0.3,0,Math.PI*2); c.fill();
+      // Moss on base
+      c.fillStyle='rgba(35,70,20,0.55)';
+      c.beginPath(); c.ellipse(vx,vy+10,5,2,0,0,Math.PI*2); c.fill();
+    });
+  } else if(t===T.SECRET_EXIT){
+    // Dark crawlspace hole in the north wall — step on it to return to the library.
+    // Looks like a ragged oval void cut into rough stone.
+    ctx2.fillStyle='#060606'; ctx2.fillRect(px,py,TILE,TILE);
+    // Stone frame around the hole
+    ctx2.fillStyle='#1e1c1a';
+    ctx2.fillRect(px,py,TILE,4); // top ledge
+    ctx2.fillRect(px,py,4,TILE); // left
+    ctx2.fillRect(px+TILE-4,py,4,TILE); // right
+    ctx2.fillRect(px,py+TILE-4,TILE,4); // bottom
+    // Oval void
+    ctx2.fillStyle='#030303';
+    ctx2.beginPath(); ctx2.ellipse(px+TILE/2,py+TILE/2,10,12,0,0,Math.PI*2); ctx2.fill();
+    // Rough stone edge around oval
+    ctx2.strokeStyle='rgba(80,70,60,0.60)'; ctx2.lineWidth=2;
+    ctx2.beginPath(); ctx2.ellipse(px+TILE/2,py+TILE/2,10,12,0,0,Math.PI*2); ctx2.stroke();
+    // Faint upward-glow hint (light from the library above)
+    ctx2.fillStyle='rgba(60,40,80,0.18)';
+    ctx2.beginPath(); ctx2.ellipse(px+TILE/2,py+TILE/2-4,7,6,0,0,Math.PI*2); ctx2.fill();
+    // Moss cracks around the frame
+    ctx2.strokeStyle='rgba(30,60,18,0.45)'; ctx2.lineWidth=1;
+    ctx2.beginPath(); ctx2.moveTo(px+2,py+8); ctx2.lineTo(px+8,py+2); ctx2.stroke();
+    ctx2.beginPath(); ctx2.moveTo(px+TILE-6,py+10); ctx2.lineTo(px+TILE-2,py+5); ctx2.stroke();
   } else if(t===T.DUNGEON_TORCH){
     drawDungeonTorch(ctx2,px,py,frameNow);
   } else if(t===T.COBBLE){
@@ -2767,7 +2933,8 @@ function drawMinimap() {
       [T.TOWN_WELL]:'#1a3a5a',[T.LAMPPOST]:'#6a5a20',
       [T.INN_DOOR]:'#c87840',[T.EXIT_INTERIOR]:'#4a8a30',
       [T.TABLE]:'#3a2410',[T.BARREL]:'#3a2208',
-      [T.BED]:'#6a3a5a',[T.BOOKSHELF]:'#2a1808',[T.BOOKSHELF_N]:'#2a1808',[T.BOOKSHELF_E]:'#2a1808',[T.BOOKSHELF_W]:'#2a1808',[T.CANDLE]:'#c8922a',
+      [T.BED]:'#6a3a5a',[T.BOOKSHELF]:'#2a1808',[T.BOOKSHELF_N]:'#2a1808',[T.BOOKSHELF_E]:'#2a1808',[T.BOOKSHELF_W]:'#2a1808',[T.SECRET_BOOKSHELF]:'#1a1208',[T.CANDLE]:'#c8922a',
+      [T.MOSSY_FLOOR]:'#121812',[T.SPIDER_WEB]:'#181818',[T.BOOK_PILE]:'#1a1208',[T.VASE]:'#2a2820',[T.SECRET_EXIT]:'#060606',
       [T.CHEST]:'#4a2c10',[T.NOTICE_BOARD]:'#5a3810',
       [T.GRAVE]:'#2a2830',[T.FENCE]:'#5a3a10',
       [T.HOUSE_A]:'#5a2a1a',[T.HOUSE_B]:'#2a3a5a',[T.HOUSE_C]:'#3a2a4a',

@@ -2868,9 +2868,24 @@ function checkZoneExit() {
     setTimeout(()=>log('📚 The steps lead into a vast underground library. Dust, silence, and something else...','bad'),600);
   } else if(t === T.LIBRARY_STAIR_UP) {
     exitInterior();
+  } else if(t === T.SECRET_EXIT) {
+    exitInterior();
   } else if(t === T.EXIT_INTERIOR) {
     exitInterior();
   }
+}
+
+// Called from the tooltip action when the player pulls the glowing tome.
+// Removes the secret bookshelf tile and drops the player into the hidden vault.
+function activateSecretBookshelf(bx, by) {
+  if(!currentMap) return;
+  // Remove the shelf — leave empty dungeon floor so the passage stays open on return
+  currentMap.tiles[by][bx] = T.DUNGEON_FLOOR;
+  currentMap.floor[by][bx]  = T.DUNGEON_FLOOR;
+  SFX.door && SFX.door();
+  enterInterior(makeSecretLibrary, 'THE HIDDEN VAULT');
+  setTimeout(()=>log('📖 The shelf grinds aside with a deep rumble. Cold air pours through the gap...','bad'),600);
+  setTimeout(()=>log('A crawlspace opens in the wall — you squeeze through into the darkness.','bad'),1400);
 }
 
 let zoneTransitioning = false;
