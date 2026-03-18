@@ -2869,7 +2869,10 @@ function checkZoneExit() {
   } else if(t === T.LIBRARY_STAIR_UP) {
     exitInterior();
   } else if(t === T.SECRET_EXIT) {
-    exitInterior();
+    // Only exit when actually inside the vault — the same tile is placed in the
+    // library wall as a visual hole after the bookshelf is pulled, and we don't
+    // want stepping near it there to fire exitInterior.
+    if(currentMap && currentMap.name === 'THE HIDDEN VAULT') exitInterior();
   } else if(t === T.EXIT_INTERIOR) {
     exitInterior();
   }
@@ -2879,8 +2882,9 @@ function checkZoneExit() {
 // Removes the secret bookshelf tile and drops the player into the hidden vault.
 function activateSecretBookshelf(bx, by) {
   if(!currentMap) return;
-  // Remove the shelf — leave empty dungeon floor so the passage stays open on return
-  currentMap.tiles[by][bx] = T.DUNGEON_FLOOR;
+  // Replace the shelf with the hole tile so it looks the same as the vault exit.
+  // The SECRET_EXIT zone-guard in checkZoneExit prevents it from firing here.
+  currentMap.tiles[by][bx] = T.SECRET_EXIT;
   currentMap.floor[by][bx]  = T.DUNGEON_FLOOR;
   SFX.door && SFX.door();
   enterInterior(makeSecretLibrary, 'THE HIDDEN VAULT');
