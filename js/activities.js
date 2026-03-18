@@ -2863,6 +2863,11 @@ function checkZoneExit() {
     const cataSeed = worldSeed+99991;
     enterInterior(()=>makeCultistCatacombs(cataSeed), 'The Cultist Catacombs');
     setTimeout(()=>log('⚰ Ancient steps descend into the catacombs. Something stirs below.','bad'),600);
+  } else if(t === T.LIBRARY_STAIR_DOWN) {
+    enterInterior(makeChapelLibrary, 'The Forsaken Library');
+    setTimeout(()=>log('📚 The steps lead into a vast underground library. Dust, silence, and something else...','bad'),600);
+  } else if(t === T.LIBRARY_STAIR_UP) {
+    exitInterior();
   } else if(t === T.EXIT_INTERIOR) {
     exitInterior();
   }

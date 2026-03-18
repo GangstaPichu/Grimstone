@@ -600,6 +600,11 @@ const T = {
   // ---- Ashgrove Hollow ----
   ASH_GRASS: 204,  // pale dying yellowish-white grass
   ASH_TREE:  205,  // white-barked ash tree
+  // ---- Forsaken Library (chapel basement) ----
+  LIBRARY_STAIR_DOWN: 206, // stair descending from chapel to the library
+  LIBRARY_STAIR_UP:   207, // stair ascending from library back to chapel
+  BLOOD_TRAIL:        208, // dried blood stains on the floor (decor over floor)
+  DEAD_SKELETON_DECOR:209, // lying dead skeleton (decorative, not an enemy)
 };
 
 // Set of tile IDs that are decorations drawn over a floor layer
@@ -629,6 +634,8 @@ const DECOR_TILES = new Set([
   T.CARAVAN_PORTAL,
   // Crafting stations
   T.ANVIL,
+  // Forsaken Library floor decorations
+  T.BLOOD_TRAIL, T.DEAD_SKELETON_DECOR,
 ]);
 
 // Place a decoration tile and record the floor underneath in the floor layer

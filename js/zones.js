@@ -1893,6 +1893,11 @@ function makeChapelMap() {
   // ---- EXIT (south porch door back to Ashenveil) ----
   placeDecor(tiles,floor,28,21,T.EXIT_INTERIOR);
 
+  // ---- LIBRARY STAIRCASE (east apse — hidden behind the altar) ----
+  // A stone trapdoor set into the sanctuary floor, discoverable by exploring the apse.
+  tiles[6][25] = T.LIBRARY_STAIR_DOWN;
+  floor[6][25] = T.STONE_FLOOR;
+
   return {tiles, floor, W, H, isInterior:true, name:'THE FORSAKEN CHAPEL'};
 }
 
@@ -1963,6 +1968,86 @@ function examineAltar(x, y) {
   showReadPanel('Desecrated Altar', lines, null);
 }
 
+
+// ======= THE FORSAKEN LIBRARY =======
+// Underground library beneath the chapel apse.
+// Layout (W=36, H=24):
+//   y=0,H-1 and x=0,W-1 = outer walls
+//   y=1, x=1..34        = north wall of bookshelves
+//   x=1, x=34, y=2..15  = side bookshelf walls
+//   Interior stacks (2-wide) at x=5-6, 11-12, 17-18, 23-24, 29-30, y=2..14
+//   Aisles between stacks (3-tile wide)
+//   Open reading room at y=16..22
+//   Stair UP at y=21, x=17 (returns to chapel)
+function makeChapelLibrary() {
+  const W = 36, H = 24;
+  const tiles = Array.from({length:H}, () => Array(W).fill(T.DUNGEON_FLOOR));
+  const floor  = Array.from({length:H}, () => Array(W).fill(T.DUNGEON_FLOOR));
+
+  // Outer walls
+  for(let y = 0; y < H; y++) for(let x = 0; x < W; x++)
+    if(y===0||y===H-1||x===0||x===W-1) tiles[y][x] = T.WALL;
+
+  // North wall of bookshelves (ceiling-to-floor)
+  for(let x = 1; x <= W-2; x++) tiles[1][x] = T.BOOKSHELF;
+
+  // Side bookshelf walls (east + west, floor-to-ceiling stacks)
+  for(let y = 2; y <= 15; y++) {
+    tiles[y][1]    = T.BOOKSHELF;
+    tiles[y][W-2]  = T.BOOKSHELF;
+  }
+
+  // Interior bookshelf stacks — 2 tiles wide, run north-south y=2..14
+  const STACKS = [5, 11, 17, 23, 29]; // left x of each stack
+  for(const sx of STACKS) {
+    for(let y = 2; y <= 14; y++) {
+      tiles[y][sx]   = T.BOOKSHELF;
+      tiles[y][sx+1] = T.BOOKSHELF;
+    }
+  }
+
+  // Snapshot floor (before decorations so floor[] records what's underneath)
+  for(let y = 0; y < H; y++) for(let x = 0; x < W; x++) floor[y][x] = tiles[y][x];
+
+  // Purple floor runes in the aisles — same tile as chapel runes, same glow
+  [[4,3],[8,9],[5,15],[11,21],[7,27],[3,9],[10,15],[6,21]].forEach(([ry,rx]) => {
+    if(tiles[ry][rx] === T.DUNGEON_FLOOR) tiles[ry][rx] = T.CHAPEL_RUNE;
+  });
+
+  // Blood trails — dried blood stains on the floor
+  [[7,3],[8,3],[6,9],[7,9],[11,14],[12,14],[9,20],[10,20]].forEach(([by,bx]) => {
+    if(tiles[by][bx] === T.DUNGEON_FLOOR) placeDecor(tiles, floor, by, bx, T.BLOOD_TRAIL);
+  });
+
+  // Dead skeletons — three bodies, one per section
+  [[16,3],[17,22],[14,14]].forEach(([sy,sx]) => {
+    if(tiles[sy][sx] === T.DUNGEON_FLOOR) placeDecor(tiles, floor, sy, sx, T.DEAD_SKELETON_DECOR);
+  });
+
+  // Reading area: a pair of study tables with candles
+  placeDecor(tiles, floor, 18, 14, T.TABLE);
+  placeDecor(tiles, floor, 18, 15, T.TABLE);
+  placeDecor(tiles, floor, 19, 14, T.TABLE);
+  placeDecor(tiles, floor, 19, 15, T.TABLE);
+  placeDecor(tiles, floor, 17, 14, T.CANDLE);
+  placeDecor(tiles, floor, 17, 16, T.CANDLE);
+
+  // A few scattered loose candles at aisle ends
+  [[15,3],[15,9],[15,21],[15,27]].forEach(([cy,cx]) => {
+    if(tiles[cy][cx] === T.DUNGEON_FLOOR) placeDecor(tiles, floor, cy, cx, T.CANDLE);
+  });
+
+  // Staircase UP (returns to chapel) — south-centre of the room
+  tiles[21][17] = T.LIBRARY_STAIR_UP;
+  floor[21][17] = T.DUNGEON_FLOOR;
+
+  return {
+    tiles, floor, W, H,
+    isInterior: true,
+    name: 'THE FORSAKEN LIBRARY',
+    entryX: 17, entryY: 20,  // spawn one tile north of the stair
+  };
+}
 
 // When entering a building we push the current world state onto a stack,
 // load the interior, and pop back out when stepping on EXIT_INTERIOR.
@@ -2227,6 +2312,7 @@ function enterInterior(makeMapFn, entryName) {
     // Remember the portal entry point for respawn (outdoor position before entering)
     if(!currentMap || !currentMap.isInterior) lastPortalZone = zoneIndex;
     Fireflies.init();
+    Spiders.init();
     enemies = [];
     spawnNpcsFromMap();
     spawnEnemiesFromMap();

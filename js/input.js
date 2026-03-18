@@ -572,9 +572,11 @@ function getTileActions(t, x, y){
       log('📖 '+pages[Math.floor(Math.random()*pages.length)],'neutral');
     })}
   ];
-  if(t===T.DUNGEON_STAIR_DOWN) return [{icon:'⬇',label:'Descend into dungeon', action:(x,y)=>movePlayerToward(x,y)}];
-  if(t===T.DUNGEON_STAIR_UP)   return [{icon:'⬆',label:'Climb back up',        action:(x,y)=>movePlayerToward(x,y)}];
-  if(t===T.CRYPT_STAIR)        return [{icon:'⬇',label:'Descend into catacombs',action:(x,y)=>movePlayerToward(x,y)}];
+  if(t===T.DUNGEON_STAIR_DOWN)    return [{icon:'⬇',label:'Descend into dungeon',       action:(x,y)=>movePlayerToward(x,y)}];
+  if(t===T.DUNGEON_STAIR_UP)      return [{icon:'⬆',label:'Climb back up',               action:(x,y)=>movePlayerToward(x,y)}];
+  if(t===T.CRYPT_STAIR)           return [{icon:'⬇',label:'Descend into catacombs',      action:(x,y)=>movePlayerToward(x,y)}];
+  if(t===T.LIBRARY_STAIR_DOWN)    return [{icon:'📚',label:'Descend to the library',     action:(x,y)=>movePlayerToward(x,y)}];
+  if(t===T.LIBRARY_STAIR_UP)      return [{icon:'⬆',label:'Climb back up to the chapel', action:(x,y)=>movePlayerToward(x,y)}];
   if(t===T.GRAVE) {
     const inChapel = currentMap && currentMap.name==='THE FORSAKEN CHAPEL';
     if(inChapel && !questFlags.crypt_stair_revealed)

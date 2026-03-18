@@ -279,6 +279,7 @@ function startGame(mode) {
     SFX.init();
     Weather.initParticles();
     Fireflies.init();
+    Spiders.init();
     startAutoSave();
     startHomeGrowthTick();
     // Show Co-Op session button for all game modes (can start/join at any time)
@@ -323,6 +324,7 @@ function startGameFromSave(savedPos) {
     SFX.init();
     Weather.initParticles();
     Fireflies.init();
+    Spiders.init();
     startAutoSave();
     startHomeGrowthTick();
     const sbw2 = document.getElementById('session-btn-wrap');
