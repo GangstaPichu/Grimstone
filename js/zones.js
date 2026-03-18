@@ -1868,11 +1868,13 @@ function makeChapelMap() {
   placeDecor(tiles,floor,4,21,T.ALTAR);
 
   // ---- LORE OBJECTS ----
-  // Bookshelves in transepts (heretical texts)
-  placeDecor(tiles,floor,10,3,T.BOOKSHELF);
-  placeDecor(tiles,floor,13,3,T.BOOKSHELF);
-  placeDecor(tiles,floor,10,41,T.BOOKSHELF);
-  placeDecor(tiles,floor,13,41,T.BOOKSHELF);
+  // Bookshelves in transepts (heretical texts).
+  // West transept (x=3): pushed against west wall → books face east → BOOKSHELF_E
+  // East transept (x=41): pushed against east wall → books face west → BOOKSHELF_W
+  placeDecor(tiles,floor,10,3,T.BOOKSHELF_E);
+  placeDecor(tiles,floor,13,3,T.BOOKSHELF_E);
+  placeDecor(tiles,floor,10,41,T.BOOKSHELF_W);
+  placeDecor(tiles,floor,13,41,T.BOOKSHELF_W);
   // Chests in apse corners
   placeDecor(tiles,floor,3,10,T.CHEST);
   placeDecor(tiles,floor,3,33,T.CHEST);
@@ -1990,21 +1992,25 @@ function makeChapelLibrary() {
   for(let y = 0; y < H; y++) for(let x = 0; x < W; x++)
     if(y===0||y===H-1||x===0||x===W-1) tiles[y][x] = T.WALL;
 
-  // North wall of bookshelves (ceiling-to-floor)
+  // North wall of bookshelves — books face south (into the room). T.BOOKSHELF = south-facing.
   for(let x = 1; x <= W-2; x++) tiles[1][x] = T.BOOKSHELF;
 
-  // Side bookshelf walls (east + west, floor-to-ceiling stacks)
+  // Side bookshelf walls:
+  //   West wall (x=1):    books face east  → T.BOOKSHELF_E
+  //   East wall (x=W-2):  books face west  → T.BOOKSHELF_W
   for(let y = 2; y <= 15; y++) {
-    tiles[y][1]    = T.BOOKSHELF;
-    tiles[y][W-2]  = T.BOOKSHELF;
+    tiles[y][1]    = T.BOOKSHELF_E;
+    tiles[y][W-2]  = T.BOOKSHELF_W;
   }
 
-  // Interior bookshelf stacks — 2 tiles wide, run north-south y=2..14
-  const STACKS = [5, 11, 17, 23, 29]; // left x of each stack
+  // Interior bookshelf stacks — 2 tiles wide, run north-south y=2..14.
+  // Left column of each stack: books face west (into the aisle to the left)  → BOOKSHELF_W
+  // Right column of each stack: books face east (into the aisle to the right) → BOOKSHELF_E
+  const STACKS = [5, 11, 17, 23, 29]; // left x of each 2-wide stack
   for(const sx of STACKS) {
     for(let y = 2; y <= 14; y++) {
-      tiles[y][sx]   = T.BOOKSHELF;
-      tiles[y][sx+1] = T.BOOKSHELF;
+      tiles[y][sx]   = T.BOOKSHELF_W;
+      tiles[y][sx+1] = T.BOOKSHELF_E;
     }
   }
 

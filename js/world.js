@@ -605,6 +605,11 @@ const T = {
   LIBRARY_STAIR_UP:   207, // stair ascending from library back to chapel
   BLOOD_TRAIL:        208, // dried blood stains on the floor (decor over floor)
   DEAD_SKELETON_DECOR:209, // lying dead skeleton (decorative, not an enemy)
+  // ---- Directional bookshelves (4 variants for pseudo-3D depth) ----
+  // T.BOOKSHELF (121) = south-facing: depth strip at top, books face south (against north wall)
+  BOOKSHELF_N: 210, // north-facing: large top-surface visible, book tops at top of tile (against south wall)
+  BOOKSHELF_E: 211, // east-facing:  depth strip on left,  books face east  (against west wall)
+  BOOKSHELF_W: 212, // west-facing:  depth strip on right, books face west  (against east wall)
 };
 
 // Set of tile IDs that are decorations drawn over a floor layer
@@ -636,6 +641,8 @@ const DECOR_TILES = new Set([
   T.ANVIL,
   // Forsaken Library floor decorations
   T.BLOOD_TRAIL, T.DEAD_SKELETON_DECOR,
+  // Directional bookshelves — all are decor drawn over a floor tile
+  T.BOOKSHELF_N, T.BOOKSHELF_E, T.BOOKSHELF_W,
 ]);
 
 // Place a decoration tile and record the floor underneath in the floor layer
