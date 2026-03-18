@@ -997,30 +997,126 @@ function drawTile(x,y,t,floorT) {
     ctx2.fillStyle='#3a2010';
     ctx2.fillRect(px+3,py+4,TILE-6,4);
   } else if(t===T.BOOKSHELF){
-    // Shelf frame
-    ctx2.fillStyle='#2a1808';
-    ctx2.fillRect(px+3,py+3,TILE-6,TILE-6);
-    ctx2.strokeStyle='#5a3010'; ctx2.lineWidth=1.5;
-    ctx2.strokeRect(px+3,py+3,TILE-6,TILE-6);
-    // Shelf planks
-    ctx2.strokeStyle='#4a2808'; ctx2.lineWidth=1;
-    ctx2.beginPath(); ctx2.moveTo(px+3,py+14); ctx2.lineTo(px+TILE-3,py+14); ctx2.stroke();
-    ctx2.beginPath(); ctx2.moveTo(px+3,py+24); ctx2.lineTo(px+TILE-3,py+24); ctx2.stroke();
-    // Books — row 1
-    const bookColors=_BOOK_COLORS;
-    for(let i=0;i<5;i++){
-      ctx2.fillStyle=bookColors[i];
-      ctx2.fillRect(px+5+i*6,py+5,5,8);
-    }
-    // Books — row 2
-    for(let i=0;i<4;i++){
-      ctx2.fillStyle=bookColors[(i+2)%5];
-      ctx2.fillRect(px+6+i*7,py+16,5,7);
-    }
-    // Books — row 3 (a couple)
-    ctx2.fillStyle=bookColors[0]; ctx2.fillRect(px+5,py+26,5,7);
-    ctx2.fillStyle=bookColors[3]; ctx2.fillRect(px+11,py+26,5,7);
-    ctx2.fillStyle=bookColors[2]; ctx2.fillRect(px+17,py+26,5,7);
+    // SOUTH-facing: depth strip at top, books face south (against north wall).
+    // Baked once to an offscreen canvas and blitted each frame.
+    _drawCachedTile(ctx2, T.BOOKSHELF, px, py, (c,bx,by) => {
+      const TS=TILE, bc=_BOOK_COLORS;
+      // Full frame background
+      c.fillStyle='#1a0e06'; c.fillRect(bx,by,TS,TS);
+      // Left / right side pillars — darker wood slivers give illusion of shelf depth
+      c.fillStyle='#2e1a0a'; c.fillRect(bx,by,3,TS); c.fillRect(bx+TS-3,by,3,TS);
+      // Top surface strip — lighter wood (the top edge visible from above)
+      c.fillStyle='#5c3a1c'; c.fillRect(bx+3,by,TS-6,5);
+      c.fillStyle='rgba(220,170,100,0.10)';            // subtle highlight on top lip
+      c.fillRect(bx+3,by,TS-6,1);
+      // Shelf planks (horizontal dividers)
+      c.fillStyle='#3a2010'; c.fillRect(bx+3,by+14,TS-6,2); c.fillRect(bx+3,by+23,TS-6,2);
+      // Row 1 books (5 books, 4px wide, 1px gap, start after left pillar)
+      for(let i=0;i<5;i++){
+        c.fillStyle=bc[i]; c.fillRect(bx+4+i*5,by+6,4,7);
+        c.fillStyle='rgba(0,0,0,0.28)'; c.fillRect(bx+4+i*5+3,by+6,1,7); // spine shadow
+      }
+      // Row 2 books (shifted palette)
+      for(let i=0;i<5;i++){
+        c.fillStyle=bc[(i+2)%5]; c.fillRect(bx+4+i*5,by+16,4,6);
+        c.fillStyle='rgba(0,0,0,0.28)'; c.fillRect(bx+4+i*5+3,by+16,1,6);
+      }
+      // Row 3 — sparse (3 books with gaps)
+      [[0,3],[3,12],[1,21]].forEach(([ci,ox])=>{ c.fillStyle=bc[ci]; c.fillRect(bx+ox,by+25,4,5); });
+      // Bottom shadow line
+      c.fillStyle='#0c0604'; c.fillRect(bx,by+TS-1,TS,1);
+    });
+  } else if(t===T.BOOKSHELF_N){
+    // NORTH-facing: large top surface visible from above, book tops visible at top of tile
+    // (shelf pushed against south wall — front faces north/up).
+    _drawCachedTile(ctx2, T.BOOKSHELF_N, px, py, (c,bx,by) => {
+      const TS=TILE, bc=_BOOK_COLORS;
+      // Side pillars (full height)
+      c.fillStyle='#2e1a0a'; c.fillRect(bx,by,3,TS); c.fillRect(bx+TS-3,by,3,TS);
+      // Book fronts at the very TOP of the tile — these face north, player sees them head-on
+      c.fillStyle='#1a0e06'; c.fillRect(bx+3,by,TS-6,9);
+      for(let i=0;i<5;i++){
+        c.fillStyle=bc[(i+4)%5]; c.fillRect(bx+4+i*5,by+1,4,7);
+        c.fillStyle='rgba(0,0,0,0.28)'; c.fillRect(bx+4+i*5+3,by+1,1,7);
+      }
+      // Plank dividing front strip from the top surface
+      c.fillStyle='#4a2e12'; c.fillRect(bx+3,by+9,TS-6,2);
+      // Top surface — the main feature (large area, lighter wood)
+      c.fillStyle='#5c3a1c'; c.fillRect(bx+3,by+11,TS-6,TS-11);
+      // Wood grain lines running across the top surface
+      c.strokeStyle='rgba(0,0,0,0.10)'; c.lineWidth=0.8;
+      [15,20,25].forEach(gy=>{
+        c.beginPath(); c.moveTo(bx+4,by+gy); c.lineTo(bx+TS-4,by+gy); c.stroke();
+      });
+      // Faint knot/ring near the centre
+      c.strokeStyle='rgba(0,0,0,0.08)'; c.lineWidth=1;
+      c.beginPath(); c.ellipse(bx+TS/2, by+21, 4, 2, 0, 0, Math.PI*2); c.stroke();
+      // Bottom shadow
+      c.fillStyle='#0c0604'; c.fillRect(bx,by+TS-1,TS,1);
+    });
+  } else if(t===T.BOOKSHELF_E){
+    // EAST-facing: depth strip on left side, books face right/east (against west wall).
+    _drawCachedTile(ctx2, T.BOOKSHELF_E, px, py, (c,bx,by) => {
+      const TS=TILE, bc=_BOOK_COLORS;
+      // Full background
+      c.fillStyle='#1a0e06'; c.fillRect(bx,by,TS,TS);
+      // Top surface strip
+      c.fillStyle='#5c3a1c'; c.fillRect(bx,by,TS,5);
+      c.fillStyle='rgba(220,170,100,0.10)'; c.fillRect(bx,by,TS,1);
+      // LEFT depth strip — the side of the shelf against the west wall (darkest, most shadowed)
+      c.fillStyle='#160c04'; c.fillRect(bx,by+5,5,TS-5);
+      // Inner edge of depth strip — lighter trim line where front face meets side
+      c.fillStyle='#4a2e12'; c.fillRect(bx+5,by+5,1,TS-5);
+      // Right edge trim (far side of shelf)
+      c.fillStyle='#2e1a0a'; c.fillRect(bx+TS-3,by+5,3,TS-5);
+      // Shelf planks
+      c.fillStyle='#3a2010'; c.fillRect(bx+6,by+14,TS-9,2); c.fillRect(bx+6,by+23,TS-9,2);
+      // Row 1 (4 books — slightly wider to use the remaining space well)
+      for(let i=0;i<4;i++){
+        c.fillStyle=bc[(i+1)%5]; c.fillRect(bx+7+i*6,by+6,5,7);
+        c.fillStyle='rgba(0,0,0,0.28)'; c.fillRect(bx+7+i*6+4,by+6,1,7);
+      }
+      // Row 2
+      for(let i=0;i<4;i++){
+        c.fillStyle=bc[(i+3)%5]; c.fillRect(bx+7+i*6,by+16,5,6);
+        c.fillStyle='rgba(0,0,0,0.28)'; c.fillRect(bx+7+i*6+4,by+16,1,6);
+      }
+      // Row 3 (sparse)
+      [[2,7],[0,19]].forEach(([ci,ox])=>{ c.fillStyle=bc[ci]; c.fillRect(bx+ox,by+25,5,5); });
+      // Bottom shadow
+      c.fillStyle='#0c0604'; c.fillRect(bx,by+TS-1,TS,1);
+    });
+  } else if(t===T.BOOKSHELF_W){
+    // WEST-facing: depth strip on right side, books face left/west (against east wall).
+    _drawCachedTile(ctx2, T.BOOKSHELF_W, px, py, (c,bx,by) => {
+      const TS=TILE, bc=_BOOK_COLORS;
+      c.fillStyle='#1a0e06'; c.fillRect(bx,by,TS,TS);
+      // Top surface strip
+      c.fillStyle='#5c3a1c'; c.fillRect(bx,by,TS,5);
+      c.fillStyle='rgba(220,170,100,0.10)'; c.fillRect(bx,by,TS,1);
+      // RIGHT depth strip (against east wall)
+      c.fillStyle='#160c04'; c.fillRect(bx+TS-5,by+5,5,TS-5);
+      // Inner edge trim
+      c.fillStyle='#4a2e12'; c.fillRect(bx+TS-6,by+5,1,TS-5);
+      // Left edge trim
+      c.fillStyle='#2e1a0a'; c.fillRect(bx,by+5,3,TS-5);
+      // Shelf planks
+      c.fillStyle='#3a2010'; c.fillRect(bx+3,by+14,TS-9,2); c.fillRect(bx+3,by+23,TS-9,2);
+      // Row 1 (4 books)
+      for(let i=0;i<4;i++){
+        c.fillStyle=bc[(i+2)%5]; c.fillRect(bx+4+i*6,by+6,5,7);
+        c.fillStyle='rgba(0,0,0,0.28)'; c.fillRect(bx+4+i*6+4,by+6,1,7);
+      }
+      // Row 2
+      for(let i=0;i<4;i++){
+        c.fillStyle=bc[(i+4)%5]; c.fillRect(bx+4+i*6,by+16,5,6);
+        c.fillStyle='rgba(0,0,0,0.28)'; c.fillRect(bx+4+i*6+4,by+16,1,6);
+      }
+      // Row 3 (sparse)
+      [[1,4],[3,16]].forEach(([ci,ox])=>{ c.fillStyle=bc[ci]; c.fillRect(bx+ox,by+25,5,5); });
+      // Bottom shadow
+      c.fillStyle='#0c0604'; c.fillRect(bx,by+TS-1,TS,1);
+    });
   } else if(t===T.CANDLE){
     // Candle holder base
     ctx2.fillStyle='#4a3a10';
@@ -2676,7 +2772,7 @@ function drawMinimap() {
       [T.TOWN_WELL]:'#1a3a5a',[T.LAMPPOST]:'#6a5a20',
       [T.INN_DOOR]:'#c87840',[T.EXIT_INTERIOR]:'#4a8a30',
       [T.TABLE]:'#3a2410',[T.BARREL]:'#3a2208',
-      [T.BED]:'#6a3a5a',[T.BOOKSHELF]:'#2a1808',[T.CANDLE]:'#c8922a',
+      [T.BED]:'#6a3a5a',[T.BOOKSHELF]:'#2a1808',[T.BOOKSHELF_N]:'#2a1808',[T.BOOKSHELF_E]:'#2a1808',[T.BOOKSHELF_W]:'#2a1808',[T.CANDLE]:'#c8922a',
       [T.CHEST]:'#4a2c10',[T.NOTICE_BOARD]:'#5a3810',
       [T.GRAVE]:'#2a2830',[T.FENCE]:'#5a3a10',
       [T.HOUSE_A]:'#5a2a1a',[T.HOUSE_B]:'#2a3a5a',[T.HOUSE_C]:'#3a2a4a',
