@@ -1992,6 +1992,10 @@ function makeChapelLibrary() {
   for(let y = 0; y < H; y++) for(let x = 0; x < W; x++)
     if(y===0||y===H-1||x===0||x===W-1) tiles[y][x] = T.WALL;
 
+  // Snapshot floor FIRST so floor[] = DUNGEON_FLOOR under all bookshelf positions.
+  // Bookshelves are DECOR_TILES; floor[] must record the tile beneath them.
+  for(let y = 0; y < H; y++) for(let x = 0; x < W; x++) floor[y][x] = tiles[y][x];
+
   // North wall of bookshelves — books face south (into the room). T.BOOKSHELF = south-facing.
   for(let x = 1; x <= W-2; x++) tiles[1][x] = T.BOOKSHELF;
 
@@ -2013,9 +2017,6 @@ function makeChapelLibrary() {
       tiles[y][sx+1] = T.BOOKSHELF_E;
     }
   }
-
-  // Snapshot floor (before decorations so floor[] records what's underneath)
-  for(let y = 0; y < H; y++) for(let x = 0; x < W; x++) floor[y][x] = tiles[y][x];
 
   // Purple floor runes in the aisles — same tile as chapel runes, same glow
   [[4,3],[8,9],[5,15],[11,21],[7,27],[3,9],[10,15],[6,21]].forEach(([ry,rx]) => {

@@ -49,6 +49,8 @@ const TILE_COLORS = {
   [T.TILLED_SOIL]:'#2a1a0a', [T.SEEDLING]:'#2a1a0a', [T.CROP_GROWING]:'#2a1a0a',
   [T.HOME_WHEAT]:'#2a1a0a',  [T.HOME_TURNIP]:'#2a1a0a', [T.HOME_CARROT]:'#2a1a0a',
   [T.HOME_POTATO]:'#2a1a0a', [T.HOME_ONION]:'#2a1a0a',
+  // Library / bookshelf tiles — dark wood so the base fill is correct when used as floorT
+  [T.BOOKSHELF]:'#2a1808', [T.BOOKSHELF_N]:'#2a1808', [T.BOOKSHELF_E]:'#2a1808', [T.BOOKSHELF_W]:'#2a1808',
 };
 
 function tileColor(t) {
