@@ -333,6 +333,7 @@
   #inv-grid {
     display: grid; grid-template-columns: repeat(4, 1fr);
     gap: 2px; padding: 6px; overflow-y: auto; flex: 1;
+    align-content: start;
   }
   .inv-slot {
     aspect-ratio: 1; background: var(--bg-mid);
