@@ -9,9 +9,13 @@ engine (attached here as the `engine/` git submodule, pointing at
 from scratch" section for the underlying plugin model this project follows
 (`TileGridHost` + `game-sdk/`, Milestone 246+).
 
-**Status: scaffold only.** `src/GrimstoneGame.{h,cpp}` and
-`src/GrimstonePlugin.cpp` are an empty, buildable Game SDK plugin (mirrors
-`engine/games/tinytown/src/`) -- no zones/tile kinds/systems ported yet.
+**Status.** `src/GrimstoneGame.{h,cpp}` and `src/GrimstonePlugin.cpp` are a
+buildable Game SDK plugin (mirrors `engine/games/tinytown/src/`).
+`registerGrimstoneTileKinds()` registers the full ~90-entry (128 including
+every `T` constant) tile-kind palette from `js/world.js`'s `const T = {...}`,
+and `buildAshenveilLevel()` transcribes the one hand-authored zone
+(`js/zones.js`'s `makeAshenveil()`) into a real `TileGrid` -- see the table
+below for both rows. Every other zone/system is still not ported.
 Build with:
 
 ```
@@ -23,8 +27,8 @@ cd ../.. && cmake -B build && cmake --build build
 
 | JS file (three.js version) | What it does | C++ engine primitive to port onto | Status |
 |---|---|---|---|
-| `js/world.js` | Zone graph, portals, world map, day/night, weather | `TileGrid` per zone + `requestedLevelPath` zone swap (v4 ABI) for portals; `TileGrid::sunColor/sunIntensity` (v11) can drive day/night tinting; **no weather primitive exists yet** | Not started |
-| `js/zones.js` | Per-zone tile/entity layout for all 7 zones | Author each zone as a `TileGrid` in BEditor (TILES tab), painted tile kinds + `TileMarker`s for portals | Not started |
+| `js/world.js` | Zone graph, portals, world map, day/night, weather; also the ~90-entry `const T = {...}` tile-kind palette | `TileGrid` per zone + `requestedLevelPath` zone swap (v4 ABI) for portals; `TileGrid::sunColor/sunIntensity` (v11) can drive day/night tinting; **no weather primitive exists yet**. Tile-kind palette: `TileKindDesc` via `TileKindRegistry` | **Tile-kind palette: done** (`registerGrimstoneTileKinds()`, `src/GrimstoneGame.cpp` -- all 128 `T` constants registered, colors/solid/shape per `js/input.js`'s own `SOLID_TILES` set). Zone graph/day-night/weather: Not started |
+| `js/zones.js` | Per-zone tile/entity layout for all 7 zones | Author each zone as a `TileGrid` in BEditor (TILES tab), painted tile kinds + `TileMarker`s for portals | **Ashenveil (the one hand-authored zone): done** (`buildAshenveilLevel()`, `src/GrimstoneGame.cpp`, transcribed from `makeAshenveil()`, `js/zones.js` lines 817-1213). The other 6 zones (Ashwood Vale, Whisperwood, Greenfield Pastures, the Iron Peaks/Cursed Marshes/Obsidian Depths procedural biomes, etc.) are all **procedurally generated in JS** via `makeZoneMap()`/`ZONE_CONFIGS` (see `js/world.js`'s `ZONE_CONFIGS` array) rather than hand-authored like Ashenveil -- porting them is a separate follow-up (likely a C++ port of the noise/cellular-automata generator, not a second `buildXLevel()` transcription). Not started. |
 | `js/character.js` | Character creation, classes/origins, appearance, skills (Combat/Gathering/Crafting), XP | Host has no skills/XP primitive -- plugin-owned state via `game.lua`/`onTileGridUpdate`, persisted through `saveState`/`loadState` (v5 ABI) | Not started |
 | `js/activities.js` | Mining/woodcutting/fishing/cooking/smithing/farming action loops | Plugin-owned per-frame logic (`onTileGridUpdate`), tile edits via `requestedTileEdits` (v4) for stateful tiles (crops) | Not started |
 | `js/npcs.js` | NPC definitions, dialogue, schedules, enemy stats | `TileAgentSpawn` (host-owned wander/chase/flee, v6 gives freeze control) for movement; `DialogueTree`/`push_dialog` (v255/DialogueScriptCommands) for conversations; combat framework (`WeaponDef`, `attack_hitbox`) for enemy fights | Not started |
