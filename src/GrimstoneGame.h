@@ -427,3 +427,37 @@ TileGrid buildSecretLibrary(const TileKindRegistry& registry);
 // toward a not-yet-ported destination" convention this file already
 // establishes.
 TileGrid buildAshgroveHollowLevel(const TileKindRegistry& registry);
+
+// ---- The Western Pass (the Caravan Zone) --------------------------------
+//
+// An abandoned caravan road, reached from Ashgrove Hollow's own west
+// CARAVAN_PORTAL (targetZone "western_pass" -- see buildAshgroveHollowLevel()'s
+// own doc comment above for that portal's fixed-bug history), transcribed
+// from `function makeCaravanZoneMap()` (js/zones.js, lines 2245-2303 as of
+// this writing) -- the LAST of the hand-authored zones still left before the
+// Homestead, this port's own PORTING_PLAN.md queue's remaining not-started
+// entry.
+//
+// Grid size is 50x20 (js/zones.js's own W/H locals for this zone) -- a
+// narrow, wholly interior zone (`isInterior:true` in the JS, unlike every
+// other hand-authored zone in this file): a dead, dirt east-west road lined
+// with dead trees, a goblin camp with overturned-wagon debris on the west
+// side (including a quest chest at y=5,x=9 holding "the caravan manifest" --
+// noted here only as a comment on that chest's placement, since the quest-
+// item/manifest content itself is plugin/quest-system state not ported yet,
+// see PORTING_PLAN.md), a mid-road debris field, an eastern wreckage field,
+// and scattered goblin/wolf enemy tiles -- all painted tiles using their
+// already-registered `_spawn`/tile kind, no markers, matching how every
+// other zone in this file handles enemies.
+//
+// Its own east wall EXIT_INTERIOR (JS: `pd(10, W-1, T.EXIT_INTERIOR)`) is
+// ported as a "portal" TileMarker targeting "ashgrove_hollow" -- the parent
+// zone that is the only way into this interior, the same "interiors re-enter
+// their parent zone" convention buildWizardTowerInterior()/buildChapelLibrary()/
+// buildSecretLibrary() already establish for their own single-entrance
+// interiors.
+//
+// Player spawn is the JS's own returned entryX:47, entryY:10 (just west of
+// the east EXIT_INTERIOR, the arrival point coming back in from Ashgrove
+// Hollow).
+TileGrid buildCaravanZoneLevel(const TileKindRegistry& registry);

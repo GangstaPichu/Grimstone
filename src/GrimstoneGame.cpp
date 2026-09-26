@@ -3796,3 +3796,146 @@ TileGrid buildAshgroveHollowLevel(const TileKindRegistry& registry) {
 
     return grid;
 }
+
+// ======= THE WESTERN PASS (THE CARAVAN ZONE) =======
+// Transcribed from `function makeCaravanZoneMap()` in js/zones.js (lines
+// 2245-2303 as of this writing) -- see GrimstoneGame.h's own doc comment on
+// buildCaravanZoneLevel() for the zone-graph wiring (reached via Ashgrove
+// Hollow's own west CARAVAN_PORTAL) and the quest-chest/manifest judgement
+// call.
+//
+// Grid size is 50x20 (js/zones.js's own W/H locals for this zone) -- a
+// fixed, hand-authored layout with no PRNG/noise at all, like
+// buildAshenveilLevel(). Unlike every other hand-authored zone ported so
+// far, the JS marks this one `isInterior:true` even though it reads as an
+// outdoor road -- that only affects the JS's own interior-stack/rendering
+// bookkeeping, not this port (this file's own TileGrid has no such
+// distinction), so it changes nothing here beyond confirming the single
+// EXIT_INTERIOR tile is this zone's one and only way out, back to its
+// parent, Ashgrove Hollow.
+TileGrid buildCaravanZoneLevel(const TileKindRegistry& registry) {
+    const TileKindId grass = registry.idFromName("grass");
+    const TileKindId wall = registry.idFromName("wall");
+    const TileKindId dirt = registry.idFromName("dirt");
+    const TileKindId normalTree = registry.idFromName("normal_tree");
+    const TileKindId barrel = registry.idFromName("barrel");
+    const TileKindId chest = registry.idFromName("chest");
+    const TileKindId cookingFire = registry.idFromName("cooking_fire");
+    const TileKindId goblin = registry.idFromName("goblin_spawn");
+    const TileKindId wolf = registry.idFromName("wolf_spawn");
+    const TileKindId exitInterior = registry.idFromName("exit_interior");
+
+    const int W = 50, H = 20; // js/zones.js's own W/H locals for this zone
+
+    TileGrid grid(W, H, 1.0f);
+
+    // ---- Fill everything with grass -- JS lines 2247-2248 ----
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) grid.setFloor(x, y, grass);
+
+    // ---- Border walls -- JS lines 2253-2254 ----
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x)
+            if (y == 0 || y == H - 1 || x == 0 || x == W - 1) grid.setFloor(x, y, wall);
+
+    // ---- The Abandoned Road -- wide dirt path east-west -- JS lines
+    // 2257-2261 ----
+    for (int x = 1; x < W - 1; ++x) {
+        grid.setFloor(x, 9, dirt);
+        grid.setFloor(x, 10, dirt);
+        grid.setFloor(x, 11, dirt);
+    }
+
+    // ---- Open passage at east wall, EXIT_INTERIOR -- JS lines 2264-2265 ----
+    grid.setFloor(W - 1, 9, grass);
+    grid.setFloor(W - 1, 10, grass);
+    grid.setFloor(W - 1, 11, grass);
+    placeDecor(grid, 10, W - 1, exitInterior);
+
+    // ---- Dead trees -- atmosphere along road edges -- JS lines 2267-2271.
+    // The JS's own guard (`tiles[ty]&&tiles[ty][tx]===T.GRASS`) only ever
+    // matters for out-of-bounds rows/a cell some earlier write already
+    // changed; every coordinate below lands on plain grass laid down by the
+    // fill above, so the check is reproduced as a straight floor-kind
+    // comparison rather than a bounds check this port doesn't need. ----
+    for (const auto& yx : {std::pair{2, 8}, std::pair{2, 18}, std::pair{2, 30}, std::pair{2, 42}, std::pair{4, 12},
+                            std::pair{4, 24}, std::pair{4, 37}, std::pair{4, 46}, std::pair{14, 5}, std::pair{14, 16},
+                            std::pair{14, 28}, std::pair{14, 40}, std::pair{16, 10}, std::pair{16, 22},
+                            std::pair{16, 35}, std::pair{16, 47}}) {
+        const int ty = yx.first, tx = yx.second;
+        if (grid.floorAt(tx, ty) == grass) grid.setFloor(tx, ty, normalTree);
+    }
+
+    // ---- GOBLIN CAMP (west, x=2-16) -- JS lines 2273-2288 ----
+    // Overturned first wagon -- debris field.
+    placeDecor(grid, 7, 2, barrel);
+    placeDecor(grid, 7, 3, barrel);
+    placeDecor(grid, 8, 2, barrel);
+    placeDecor(grid, 6, 4, chest);
+    placeDecor(grid, 6, 5, barrel);
+    // Camp fire remnants.
+    placeDecor(grid, 8, 6, cookingFire);
+    // Second wagon debris north of road.
+    placeDecor(grid, 5, 12, barrel);
+    placeDecor(grid, 6, 12, barrel);
+    placeDecor(grid, 5, 13, chest);
+    // Third debris south of road.
+    placeDecor(grid, 13, 4, barrel);
+    placeDecor(grid, 12, 4, barrel);
+    placeDecor(grid, 13, 5, chest);
+    placeDecor(grid, 13, 10, barrel);
+    placeDecor(grid, 14, 11, barrel);
+    // Quest chest -- contains the caravan manifest (JS's own comment, y=5,
+    // x=9). Ported as a plain CHEST decor tile like every other chest here;
+    // the manifest/quest-item content itself is out of scope for this pass
+    // (plugin/quest-system state, not ported yet -- see PORTING_PLAN.md and
+    // this function's own header doc comment), flagged here for a future
+    // quest-system pass to find easily.
+    placeDecor(grid, 5, 9, chest);
+    // Goblin enemies.
+    grid.setFloor(4, 7, goblin);
+    grid.setFloor(8, 6, goblin);
+    grid.setFloor(6, 13, goblin);
+    grid.setFloor(14, 5, goblin);
+    grid.setFloor(11, 8, goblin);
+
+    // ---- MID-ROAD DEBRIS (x=20-32) -- JS lines 2291-2292 ----
+    placeDecor(grid, 9, 20, barrel);
+    placeDecor(grid, 11, 21, barrel);
+    placeDecor(grid, 10, 24, chest);
+    placeDecor(grid, 8, 27, barrel);
+    placeDecor(grid, 12, 28, barrel);
+    placeDecor(grid, 9, 31, barrel);
+
+    // ---- EASTERN WRECKAGE (x=35-46) -- JS lines 2295-2296 ----
+    placeDecor(grid, 9, 35, barrel);
+    placeDecor(grid, 11, 37, barrel);
+    placeDecor(grid, 10, 39, chest);
+    placeDecor(grid, 8, 41, barrel);
+    placeDecor(grid, 12, 43, barrel);
+    placeDecor(grid, 10, 45, barrel);
+
+    // ---- Wolf enemies -- scattered throughout, kept clear of east entry
+    // (x=47) -- JS lines 2299-2300 ----
+    grid.setFloor(22, 3, wolf);
+    grid.setFloor(25, 16, wolf);
+    grid.setFloor(38, 4, wolf);
+    grid.setFloor(41, 15, wolf);
+    grid.setFloor(43, 5, wolf);
+
+    // ---- Portal as a TileMarker -- same "paint + marker" convention every
+    // other zone builder in this file already uses. This interior's one and
+    // only exit, back to its parent zone, Ashgrove Hollow. ----
+    TileMarker exitMarker;
+    exitMarker.kind = "portal";
+    exitMarker.name = "Exit -> Ashgrove Hollow";
+    exitMarker.position = glm::vec2(static_cast<float>(W - 1) + 0.5f, 10.5f);
+    exitMarker.properties["targetZone"] = "ashgrove_hollow";
+    grid.markers.push_back(exitMarker);
+
+    // ---- Player spawn -- js's own returned entryX:47, entryY:10 (the
+    // arrival point coming from Ashgrove Hollow's own west CARAVAN_PORTAL). ----
+    grid.markers.push_back({"player_spawn", glm::vec2(47.5f, 10.5f), "Player Spawn"});
+
+    return grid;
+}
