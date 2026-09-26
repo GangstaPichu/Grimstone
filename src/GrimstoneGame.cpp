@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <functional>
 #include <initializer_list>
+#include <random>
 #include <utility>
 #include <vector>
 
@@ -2189,14 +2190,18 @@ TileKindId currentAt(const TileGrid& grid, int x, int y) {
 // Portals: the east FARM_PORTAL returns to Ashenveil -- targetZone
 // "ashenveil", matching Ashenveil's own west FARM_PORTAL, which already
 // targets "greenfield_pastures" (buildAshenveilLevel()). The west
-// CARAVAN_PORTAL leads into `makeCaravanZoneMap()`'s own zone (js/zones.js),
-// named "THE WESTERN PASS" in its own returned `name` field even though the
-// code comment beside its portal calls the corridor "The Abandoned Road" --
-// NOT ported by this function. targetZone "western_pass" follows this
-// port's own established "snake_case the destination zone's real `name`"
-// convention (buildAshenveilLevel()'s own CHAPEL_PORTAL -> "forsaken_chapel"
-// for "THE FORSAKEN CHAPEL" is the precedent) for a not-yet-ported
-// destination, same as that marker's own precedent.
+// CARAVAN_PORTAL targets "ashgrove_hollow" -- ground truth from
+// js/activities.js's own T.CARAVAN_PORTAL step-on handler (lines 2839-2848),
+// which enters `makeAshgroveHollowMap()` when stepping through this exact
+// portal, NOT `makeCaravanZoneMap()`/"THE WESTERN PASS" directly. (Corrected
+// from an earlier pass's "western_pass" guess, made before Ashgrove Hollow's
+// own zones.js section had been read -- see PORTING_PLAN.md.) It's Ashgrove
+// Hollow's OWN west CARAVAN_PORTAL, one zone further out, that actually
+// leads to "THE WESTERN PASS" -- see buildAshgroveHollowLevel() below, which
+// keeps this port's established "snake_case the destination zone's real
+// `name`" convention (buildAshenveilLevel()'s own CHAPEL_PORTAL ->
+// "forsaken_chapel" for "THE FORSAKEN CHAPEL" is the precedent) for that
+// still-not-yet-ported destination.
 TileGrid buildGreenfieldLevel(const TileKindRegistry& registry) {
     const TileKindId grass = registry.idFromName("grass");
     const TileKindId dirt = registry.idFromName("dirt");
@@ -2403,10 +2408,15 @@ TileGrid buildGreenfieldLevel(const TileKindRegistry& registry) {
         grid.markers.push_back(marker);
     };
     addPortalMarker("Farm Portal -> Ashenveil", static_cast<float>(W - 1), static_cast<float>(laneY), "ashenveil");
-    // "THE WESTERN PASS" (js/zones.js's makeCaravanZoneMap(), NOT ported by
-    // this function) -- see this function's own header doc comment for the
-    // "western_pass" slug's derivation.
-    addPortalMarker("Caravan Portal -> The Western Pass", 0.0f, static_cast<float>(laneY), "western_pass");
+    // Fixed portal-graph bug: this used to target "western_pass" directly,
+    // guessed before Ashgrove Hollow had been read -- js/activities.js's own
+    // T.CARAVAN_PORTAL step-on handler (lines 2839-2848) shows Greenfield's
+    // west portal actually leads to ASHGROVE HOLLOW first (`enterInterior(
+    // makeAshgroveHollowMap, ...)` when NOT already inside Ashgrove Hollow);
+    // it's Ashgrove Hollow's OWN west CARAVAN_PORTAL that continues on to
+    // The Western Pass (see buildAshgroveHollowLevel() below). See
+    // PORTING_PLAN.md for this fix's own history note.
+    addPortalMarker("Caravan Portal -> Ashgrove Hollow", 0.0f, static_cast<float>(laneY), "ashgrove_hollow");
 
     // ---- NPC spawn markers (kind="npc_spawn") -- js/zones.js's own
     // `namedNpcs` array (JS lines 1336-1340), used directly per this
@@ -3609,6 +3619,180 @@ TileGrid buildSecretLibrary(const TileKindRegistry& registry) {
     // ---- Player spawn -- js's own returned entryX:11, entryY:4 (just
     // south of the crawlspace exit). ----
     grid.markers.push_back({"player_spawn", glm::vec2(11.5f, 4.5f), "Player Spawn"});
+
+    return grid;
+}
+
+// ---- Ashgrove Hollow ----------------------------------------------------
+//
+// A pale ash-tree grove reached from Greenfield Pastures' own west
+// CARAVAN_PORTAL, transcribed from `function makeAshgroveHollowMap()` (js/
+// zones.js, lines 2176-2242 as of this writing) -- one of the two remaining
+// hand-authored zones this port's own PORTING_PLAN.md queue names (the
+// Homestead is the other). js/zones.js continues past line 2242 into
+// makeCaravanZoneMap() ("THE WESTERN PASS") -- NOT ported here.
+//
+// Grid size is 62x36 (js/zones.js's own W/H locals for this zone): a wide,
+// mostly-open grove split by a 3-tile-wide east-west dirt road (rows
+// pathY-1..pathY+1, pathY=17), with two tree groves -- north (rows 1-13) and
+// south (rows 22-34) -- clear of a 3-row buffer either side of the road.
+//
+// Tree placement: NOT this file's own FractalNoise2D/ValueNoise2D (that
+// machinery backs buildProceduralZone()/buildStormcragLevel()/
+// buildWhisperwoodLevel() instead) -- this zone's JS uses a completely
+// different, one-off deterministic hash: `Math.abs(Math.sin(x*127.1+
+// y*311.7)*43758.5453) % 1`, a classic cheap "hash a 2D coordinate into
+// [0,1)" trick with no seed/RNG state at all, just x/y themselves. Ported
+// verbatim below (ashHash()) rather than reusing ValueNoise2D, since it is
+// in fact a different algorithm, not a variant of the existing one.
+//
+// Wolves are the interesting case: unlike every other zone builder in this
+// file (all seeded via ProceduralPrng for determinism), the JS's own wolf
+// placement here calls plain `Math.random()` -- genuinely non-deterministic,
+// re-rolling wolf positions on every single visit to this zone, a real JS
+// quirk rather than an oversight this port should "fix". Preserved via
+// std::mt19937 seeded from std::random_device (this file's own first use of
+// either), not this file's own seeded ProceduralPrng, so repeated calls to
+// this function produce different wolf layouts each time exactly as the JS
+// does. `wolfCount` is 5-10 (5 + a 0-5 roll); each candidate cell must still
+// read as ash grass AND sit more than 3 rows from the road (`pathY`), up to
+// 600 attempts, matching the JS's own placement loop precisely.
+//
+// Layering: like buildAshenveilLevel()/buildGreenfieldLevel(), there's a
+// direct-authoring-then-snapshot shape here, not a bulk floor-array-then-
+// overlay split -- border walls, the dirt road, the ash trees AND the
+// wolves are all direct `tiles[y][x] = X` writes made BEFORE the JS's own
+// "Floor snapshot (before portals)" line, so all four become Floor writes
+// here (setFloor()), exactly like buildAshenveilLevel()'s own trees/paths.
+// Only the two portals, painted via `pd()` AFTER that snapshot line, become
+// Overlay writes (placeDecor()).
+//
+// Portals: east FARM_PORTAL targets "greenfield_pastures" -- ground truth
+// from js/activities.js's own T.FARM_PORTAL handler (lines 2827-2838): when
+// currentMap.name is 'ASHGROVE HOLLOW', stepping on FARM_PORTAL calls
+// exitInterior() (return to the parent zone), and the ONLY zone that enters
+// Ashgrove Hollow via a portal step (see buildGreenfieldLevel()'s own fixed
+// CARAVAN_PORTAL doc comment above) is Greenfield Pastures -- so this is the
+// "return to Greenfield" side of that same two-way link, matching
+// Greenfield's own east FARM_PORTAL, which targets "ashenveil" (a
+// DIFFERENT zone -- Greenfield has two distinct portals of its own, its own
+// east FARM_PORTAL back to Ashenveil and its own west CARAVAN_PORTAL onward
+// to here; this zone's FARM_PORTAL is its own third, unrelated portal
+// keyword reused for "the portal back to whichever zone brought you here",
+// same reuse convention Ashenveil's/Greenfield's own FARM_PORTAL pair
+// already establishes). West CARAVAN_PORTAL targets "western_pass" (js/
+// zones.js's own makeCaravanZoneMap(), NOT ported by this function) -- the
+// same "portal toward a not-yet-ported destination" convention Ashenveil's
+// own CHAPEL_PORTAL and Greenfield's own (now-corrected) CARAVAN_PORTAL
+// already establish.
+TileGrid buildAshgroveHollowLevel(const TileKindRegistry& registry) {
+    const TileKindId wall = registry.idFromName("wall");
+    const TileKindId dirt = registry.idFromName("dirt");
+    const TileKindId ashGrass = registry.idFromName("ash_grass");
+    const TileKindId ashTree = registry.idFromName("ash_tree");
+    const TileKindId wolfSpawn = registry.idFromName("wolf_spawn");
+    const TileKindId farmPortal = registry.idFromName("farm_portal");
+    const TileKindId caravanPortal = registry.idFromName("caravan_portal");
+
+    const int W = 62, H = 36; // js/zones.js's own W/H locals for this zone
+    const int pathY = 17;     // centre tile of the 3-wide east-west road
+
+    TileGrid grid(W, H, 1.0f);
+
+    // ---- Fill everything with pale ash grass -- JS lines 2180-2182 ----
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) grid.setFloor(x, y, ashGrass);
+
+    // ---- Border walls -- JS lines 2187-2188 ----
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x)
+            if (y == 0 || y == H - 1 || x == 0 || x == W - 1) grid.setFloor(x, y, wall);
+
+    // ---- Dirt path east-west, 3 tiles wide -- JS lines 2191-2195 ----
+    for (int x = 1; x < W - 1; ++x) {
+        grid.setFloor(x, pathY - 1, dirt);
+        grid.setFloor(x, pathY, dirt);
+        grid.setFloor(x, pathY + 1, dirt);
+    }
+
+    // ---- Ash tree groves -- deterministic pattern via a one-off sin-hash,
+    // NOT this file's own ValueNoise2D/FractalNoise2D -- see this function's
+    // own doc comment above. JS lines 2197-2211: northern grove rows 1-13,
+    // southern grove rows 22 to H-2, a 3-row buffer (rows 14-21) around the
+    // dirt path left untouched by construction (neither loop's y range
+    // reaches it). ----
+    auto ashHash = [](int x, int y) {
+        const double v = std::sin(static_cast<double>(x) * 127.1 + static_cast<double>(y) * 311.7) * 43758.5453;
+        return std::fmod(std::abs(v), 1.0);
+    };
+    for (int y = 1; y < 14; ++y)
+        for (int x = 1; x < W - 1; ++x)
+            if (ashHash(x, y) < 0.28) grid.setFloor(x, y, ashTree);
+    for (int y = 22; y < H - 1; ++y)
+        for (int x = 1; x < W - 1; ++x)
+            if (ashHash(x, y) < 0.28) grid.setFloor(x, y, ashTree);
+
+    // ---- Wolves -- 5-10 per visit, placed with genuine non-deterministic
+    // randomness (std::random_device-seeded std::mt19937), NOT this file's
+    // own seeded ProceduralPrng -- see this function's own doc comment above
+    // for why that's a deliberate JS quirk this port preserves rather than
+    // "fixes" into determinism. JS lines 2214-2224. ----
+    std::random_device rd;
+    std::mt19937 wolfRng(rd());
+    std::uniform_int_distribution<int> countRoll(0, 5);
+    std::uniform_int_distribution<int> xRoll(0, W - 3);
+    std::uniform_int_distribution<int> yRoll(0, H - 3);
+    const int wolfCount = 5 + countRoll(wolfRng);
+    int placed = 0, attempts = 0;
+    while (placed < wolfCount && attempts < 600) {
+        const int wx = 1 + xRoll(wolfRng);
+        const int wy = 1 + yRoll(wolfRng);
+        if (grid.floorAt(wx, wy) == ashGrass && std::abs(wy - pathY) > 3) {
+            grid.setFloor(wx, wy, wolfSpawn);
+            ++placed;
+        }
+        ++attempts;
+    }
+
+    // ---- Floor layer is now fully authored (matches the JS's own "Floor
+    // snapshot (before portals)" line, JS line 2227) -- everything from here
+    // on paints ON TOP via Overlay, per this file's own placeDecor(). ----
+
+    // ---- East wall portal -> Greenfield Pastures (FARM_PORTAL) -- JS lines
+    // 2230-2233 ----
+    grid.setFloor(W - 1, pathY - 1, ashGrass);
+    grid.setFloor(W - 1, pathY, ashGrass);
+    grid.setFloor(W - 1, pathY + 1, ashGrass);
+    placeDecor(grid, pathY, W - 1, farmPortal);
+
+    // ---- West wall portal -> The Western Pass (CARAVAN_PORTAL) -- JS lines
+    // 2236-2239 ----
+    grid.setFloor(0, pathY - 1, ashGrass);
+    grid.setFloor(0, pathY, ashGrass);
+    grid.setFloor(0, pathY + 1, ashGrass);
+    placeDecor(grid, pathY, 0, caravanPortal);
+
+    // ---- Portals as TileMarkers -- same "paint + marker" convention every
+    // other zone builder in this file already uses. ----
+    auto addPortalMarker = [&](const char* name, float px, float py, const char* targetZone) {
+        TileMarker marker;
+        marker.kind = "portal";
+        marker.name = name;
+        marker.position = glm::vec2(px + 0.5f, py + 0.5f);
+        marker.properties["targetZone"] = targetZone;
+        grid.markers.push_back(marker);
+    };
+    addPortalMarker("Farm Portal -> Greenfield Pastures", static_cast<float>(W - 1), static_cast<float>(pathY),
+                     "greenfield_pastures");
+    // "THE WESTERN PASS" (js/zones.js's makeCaravanZoneMap(), NOT ported by
+    // this function) -- see this function's own header doc comment for the
+    // "western_pass" slug's derivation.
+    addPortalMarker("Caravan Portal -> The Western Pass", 0.0f, static_cast<float>(pathY), "western_pass");
+
+    // ---- Player spawn -- js's own returned entryX:W-2, entryY:pathY (the
+    // arrival point coming from Greenfield's own west CARAVAN_PORTAL). ----
+    grid.markers.push_back(
+        {"player_spawn", glm::vec2(static_cast<float>(W - 2) + 0.5f, static_cast<float>(pathY) + 0.5f), "Player Spawn"});
 
     return grid;
 }

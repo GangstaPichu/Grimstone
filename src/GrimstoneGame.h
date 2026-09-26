@@ -398,3 +398,32 @@ TileGrid buildChapelLibrary(const TileKindRegistry& registry);
 //
 // Grid size is 22x16 (js/zones.js's own W/H locals for this zone).
 TileGrid buildSecretLibrary(const TileKindRegistry& registry);
+
+// ---- Ashgrove Hollow -----------------------------------------------------
+//
+// A pale ash-tree grove reached from Greenfield Pastures' own west
+// CARAVAN_PORTAL (targetZone "ashgrove_hollow" -- see buildGreenfieldLevel()'s
+// own doc comment above for that portal's fixed-bug history), transcribed
+// from `function makeAshgroveHollowMap()` (js/zones.js, lines 2176-2242 as
+// of this writing) -- one of the two remaining hand-authored zones (the
+// Homestead is the other) this port's own PORTING_PLAN.md queue still names
+// as Not started.
+//
+// Grid size is 62x36 (js/zones.js's own W/H locals for this zone) -- a wide
+// open grove split by a 3-tile-wide east-west dirt road, with two ash-tree
+// groves (north/south) placed via a one-off deterministic sin-hash that is
+// NOT this file's own ValueNoise2D/FractalNoise2D, and wolves scattered via
+// genuinely non-deterministic randomness (std::random_device-seeded
+// std::mt19937, NOT this file's own seeded ProceduralPrng) -- a real JS
+// quirk (plain `Math.random()`, unlike every other zone's seeded PRNG use)
+// preserved deliberately rather than "fixed" into determinism. See
+// GrimstoneGame.cpp's own doc comment on this function for both algorithms
+// and the Floor/Overlay judgement call.
+//
+// East FARM_PORTAL targets "greenfield_pastures" (the return trip back to
+// Greenfield Pastures, the only zone that ever enters here); west
+// CARAVAN_PORTAL targets "western_pass" (js/zones.js's own
+// makeCaravanZoneMap(), NOT ported by this function), the same "portal
+// toward a not-yet-ported destination" convention this file already
+// establishes.
+TileGrid buildAshgroveHollowLevel(const TileKindRegistry& registry);
