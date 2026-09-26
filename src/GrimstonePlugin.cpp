@@ -1,6 +1,7 @@
 #include "GameModuleApi.h"
 
 #include "GrimstoneGame.h"
+#include "GrimstoneRuntime.h"
 
 #include <filesystem>
 
@@ -28,9 +29,11 @@ const BeGameModule kModule = {
     pluginRegisterRuntime,
     nullptr, // registerEditor -- Grimstone has no level-generator UI to
              // register (2D plugins don't have one yet, see BEditor/CLAUDE.md)
-    nullptr, // onTileGridUpdate -- wired up once Grimstone's own per-frame
-             // systems (day/night, farming, quests, combat) are ported; see
-             // PORTING_PLAN.md
+    updateGrimstoneRuntime, // onTileGridUpdate -- Grimstone's own per-frame
+                            // gameplay systems (see GrimstoneRuntime.h);
+                            // more systems (combat, quests, dialogue) land
+                            // there incrementally, this hookup doesn't
+                            // change as they do.
 };
 
 } // namespace

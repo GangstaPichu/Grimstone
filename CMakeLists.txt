@@ -43,6 +43,7 @@ endif()
 add_library(grimstone_game SHARED
   src/GrimstonePlugin.cpp
   src/GrimstoneGame.cpp
+  src/GrimstoneRuntime.cpp
 )
 target_include_directories(grimstone_game PRIVATE "${BE_GAME_SDK_DIR}/include" src)
 target_link_libraries(grimstone_game PRIVATE glm::glm nlohmann_json::nlohmann_json)
