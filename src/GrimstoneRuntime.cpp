@@ -121,6 +121,10 @@ std::vector<BeTimerRequest>& timerStartBuffer() {
     static std::vector<BeTimerRequest> buf;
     return buf;
 }
+std::vector<BeHitboxRequest>& hitboxBuffer() {
+    static std::vector<BeHitboxRequest> buf;
+    return buf;
+}
 void queueTileEdit(int layerIndex, int cellX, int cellY, const char* kindId) {
     BeTileCellEdit edit;
     edit.layerIndex = layerIndex;
@@ -134,6 +138,16 @@ void queueTimerStart(const char* key, double seconds) {
     req.key = key;
     req.seconds = seconds;
     timerStartBuffer().push_back(req);
+}
+void queueHitbox(float centerX, float centerY, int shape, float sizeX, float sizeY, const char* weaponName) {
+    BeHitboxRequest req;
+    req.centerX = centerX;
+    req.centerY = centerY;
+    req.shape = shape;
+    req.sizeX = sizeX;
+    req.sizeY = sizeY;
+    req.weaponName = weaponName;
+    hitboxBuffer().push_back(req);
 }
 
 // Farming's per-cell flag/timer keys are built at runtime ("farmplot_grow_
@@ -317,6 +331,215 @@ void handleMiningAndWoodcutting(BeTileGridFrame* frame) {
             frame->requestedToastText = toastScratch().c_str();
             return; // one resource per interact press, matching the JS's own single-activity-at-a-time rule
         }
+    }
+}
+
+// ======= Combat (simplified real-time interaction, NOT the JS's turn-based
+// battle menu) =======
+// js/activities.js's real combat is a full turn-based modal battle-menu
+// system (executeCombatMove(), ~line 1293, and the whole panel around it,
+// ~lines 1109-1790): move buttons with damage multipliers/multi-hit/buffs/
+// debuffs/miss chance/magic-scaling, turn order, flee, etc. This engine's
+// own combat primitives (BeHitboxRequest/BeAgentState::health,
+// GameModuleApi.h's "combat framework v20->v21" section) are built for a
+// REAL-TIME action-combat model instead -- a hitbox fired at a moment of the
+// caller's choosing, resolved against a named WeaponDef's FIXED damage, no
+// menu, no turns, no per-swing damage override. Building the full turn-based
+// menu system is explicitly OUT OF SCOPE for this pass (a much larger,
+// separate body of work -- an entire modal dialog-stack UI with move
+// buttons, buff/debuff tracking, turn sequencing); what follows is a real,
+// working SIMPLIFIED real-time stand-in instead: one BeHitboxRequest per
+// interact press against the nearest living enemy agent, using the JS's own
+// basic-attack (Punch, dmgMult:1.0) damage formula.
+//
+// **Real gap, found while wiring this up, not a simplification this port can
+// paper over**: NOTHING in this port currently spawns a live TileAgentSpawn
+// for ANY enemy kind -- grep GrimstoneGame.cpp for "agentSpawns"/
+// "TileAgentSpawn" and there are zero hits. Every goblin/skeleton/wolf/
+// zombie/cultist placed by every buildXLevel()/buildProceduralZone()
+// function so far is a purely decorative painted TILE
+// (registerGrimstoneTileKinds()'s own enemy-kind entries), matching
+// PORTING_PLAN.md's own repeated "painted tiles only, no markers" note on
+// every zone that places one. That means frame->agents is currently EMPTY
+// (agentCount == 0) in every ported zone today -- there is no live agent
+// anywhere in this port with a health/maxHealth for a hitbox to resolve
+// against yet. This code is written against the real, intended mechanism
+// (BeHitboxRequest resolved host-side against frame->agents by kind) so it
+// works the moment a FUTURE pass authors these enemy placements as real
+// TileAgentSpawn entries -- swapping dozens of painted-tile placements
+// across every zone for host-owned agents is its own separate, larger
+// authoring task, out of scope here. It is UNVERIFIED against a live agent
+// in this sandbox for exactly that reason (no engine build exists here
+// either), and this comment says so rather than claiming otherwise.
+//
+// **Judgement call on how damage is applied**: BeHitboxRequest can only name
+// a WeaponDef with a FIXED damage value (WeaponDef.h's own doc comment: "no
+// per-attack runtime concept... a weapon's active frames are the caller's
+// own responsibility"), and GameModuleApi.h has no direct agent-health
+// write-back at all -- searched the whole header (grep for
+// "requestedHealthDelta", which exists ONLY for the PLAYER's own health, and
+// for any agent-health-shaped write-back) and BeAgentState::health's own doc
+// comment is explicit that a hit is applied only by "the host resolving a
+// requestedHitboxes hit." Hitbox resolution against a named weapon is
+// therefore the ONLY way an agent's health changes -- there is no second,
+// more-precise option to pick between. This resolves the two choices
+// GrimstoneRuntime's own task framing offered in favor of (a): a small SET
+// of discrete weapon tiers (content/weapons.json, see below), each a
+// candidate fixed damage value, with the closest tier to the JS's own
+// computed roll fired each swing. This is real, deliberate quantization, not
+// a faithful per-swing roll -- e.g. a computed roll of 24 snaps to whichever
+// authored tier is nearest (21 or 28), same as any other "pick the closest
+// bucket" approximation.
+constexpr const char* kEnemyAgentKinds[] = {"goblin_spawn", "skeleton_spawn", "wolf_spawn", "zombie"};
+constexpr int kEnemyAgentKindCount = sizeof(kEnemyAgentKinds) / sizeof(kEnemyAgentKinds[0]);
+
+// ~1.5 tiles (TileGrid::tileSize defaults to 1.0 world unit) -- the "player
+// must be standing right next to it" adjacency spirit
+// handleMiningAndWoodcutting() already uses, generalized to a plain radius
+// since there's no facing direction in this ABI.
+constexpr float kMeleeRangeWorldUnits = 1.5f;
+
+// content/weapons.json's own real, hand-authored entries (its own header
+// comment documents the exact WeaponDef.h/WeaponDef.cpp schema this was
+// verified against) -- `damage` here MUST match that file's own "damage"
+// field for each `weaponName`, since this table is what PICKS which one to
+// fire, not a duplicate source of truth for the number itself.
+struct CombatWeaponTier {
+    const char* weaponName;
+    double damage;
+};
+constexpr CombatWeaponTier kCombatWeaponTiers[] = {
+    {"grimstone_fists_t1", 3.0},   {"grimstone_fists_t2", 6.0},    {"grimstone_fists_t3", 10.0},
+    {"grimstone_fists_t4", 15.0},  {"grimstone_fists_t5", 21.0},   {"grimstone_fists_t6", 28.0},
+    {"grimstone_fists_t7", 37.0},  {"grimstone_fists_t8", 48.0},   {"grimstone_fists_t9", 62.0},
+    {"grimstone_fists_t10", 80.0}, {"grimstone_fists_t11", 100.0}, {"grimstone_fists_t12", 125.0},
+};
+constexpr int kCombatWeaponTierCount = sizeof(kCombatWeaponTiers) / sizeof(kCombatWeaponTiers[0]);
+
+// js/activities.js's own ENEMY_DEFS (line 741) -- xp values only. Gold isn't
+// granted here: no gold/economy flag or item exists anywhere in this port
+// yet (checked -- no "gold" item id appears anywhere in GrimstoneRuntime.cpp/
+// GrimstoneGame.cpp), a real gap this function doesn't invent a workaround
+// for. hp/minDmg/maxDmg/aggroRange/speed/patrolRadius are irrelevant here:
+// the HOST owns HP itself (BeAgentState::health/maxHealth), and this port
+// has no per-species aggro/patrol AI wired up either (js/npcs.js's own
+// PORTING_PLAN.md row: "Not started").
+struct EnemyDef {
+    const char* kind; // registerGrimstoneTileKinds()'s own tile-kind id
+    const char* displayName;
+    double xp; // matches ENEMY_DEFS[...].xp exactly
+};
+constexpr EnemyDef kEnemyDefs[] = {
+    {"goblin_spawn", "Goblin", 12.0},
+    {"skeleton_spawn", "Skeleton", 18.0},
+    {"wolf_spawn", "Wolf", 15.0},
+    {"zombie", "Zombie", 20.0},
+};
+constexpr int kEnemyDefCount = sizeof(kEnemyDefs) / sizeof(kEnemyDefs[0]);
+
+const EnemyDef* findEnemyDef(const char* kind) {
+    if (kind == nullptr) return nullptr;
+    for (int i = 0; i < kEnemyDefCount; ++i)
+        if (std::strcmp(kind, kEnemyDefs[i].kind) == 0) return &kEnemyDefs[i];
+    return nullptr;
+}
+
+// Fires one BeHitboxRequest against the nearest living enemy agent within
+// melee range -- one attack per interact press, matching every other
+// activity's own "one grant per press" rule.
+void handleCombatAttack(BeTileGridFrame* frame) {
+    if (!frame->interactPressed) return;
+    if (frame->agents == nullptr) return;
+
+    int targetIdx = -1;
+    float bestDistSq = kMeleeRangeWorldUnits * kMeleeRangeWorldUnits;
+    for (int i = 0; i < frame->agentCount; ++i) {
+        const BeAgentState& agent = frame->agents[i];
+        if (agent.health <= 0.0f) continue; // dead agents stay in the array (index-stable), never a target
+        if (findEnemyDef(agent.kind) == nullptr) continue;
+        const float dx = agent.worldX - frame->playerWorldX;
+        const float dy = agent.worldY - frame->playerWorldY;
+        const float distSq = dx * dx + dy * dy;
+        if (distSq <= bestDistSq) {
+            bestDistSq = distSq;
+            targetIdx = i;
+        }
+    }
+    if (targetIdx < 0) return;
+
+    // js/activities.js's own executeCombatMove() basic-attack formula
+    // (Punch, dmgMult:1.0, line ~1355): floor(random()*(strLvl*2+4))+1,
+    // plus floor((attackBonus+tempAtk+extraAtk)/3) -- the latter is always 0
+    // here since no equipment-bonus/temp-buff system exists anywhere in this
+    // port yet (the same "no equipment bonus tracking" gap every other
+    // activity in this file already has, not a new one introduced here).
+    // frame->randomUint32 (v27->v28 ABI) draws from the SAME seeded stream
+    // handleFishing() already uses, in place of the JS's Math.random().
+    const int strLevel = readSkillLevel(frame, GrimstoneSkill::Strength);
+    double roll;
+    if (frame->randomUint32 != nullptr) {
+        constexpr double kUint32Max = 4294967295.0;
+        const double unit = static_cast<double>(frame->randomUint32()) / kUint32Max;
+        roll = std::floor(unit * static_cast<double>(strLevel * 2 + 4)) + 1.0;
+    } else {
+        roll = static_cast<double>(strLevel) + 2.5; // deterministic fallback: the roll's own mean
+    }
+
+    const CombatWeaponTier* chosen = &kCombatWeaponTiers[0];
+    double bestDiff = std::fabs(kCombatWeaponTiers[0].damage - roll);
+    for (int i = 1; i < kCombatWeaponTierCount; ++i) {
+        const double diff = std::fabs(kCombatWeaponTiers[i].damage - roll);
+        if (diff < bestDiff) {
+            bestDiff = diff;
+            chosen = &kCombatWeaponTiers[i];
+        }
+    }
+
+    queueHitbox(frame->playerWorldX, frame->playerWorldY, /*shape=*/1, kMeleeRangeWorldUnits, 0.0f,
+                chosen->weaponName);
+
+    const EnemyDef* def = findEnemyDef(frame->agents[targetIdx].kind);
+    toastScratch() = std::string("You strike at the ") + (def != nullptr ? def->displayName : "enemy") + ".";
+    frame->requestedToastText = toastScratch().c_str();
+}
+
+// Runs every frame (not gated on interactPressed) -- detects the
+// health <= 0 transition the host's own hitbox resolution produces on some
+// LATER frame than the one that fired it (BeAgentState::health is a
+// snapshot from BEFORE this frame's own resolution, so a kill can never be
+// observed on the same frame the hitbox that caused it was requested), and
+// grants the JS's own _combatVictory() xp split exactly once per agent
+// (Attack/Strength get the full xp, Defence half, Hitpoints a third,
+// js/activities.js lines 1762-1766) -- gated on a per-agent-index flag,
+// since BeAgentState's own doc comment guarantees agent slots are
+// index-stable and never shrink. Same "gate on a real transition, not every
+// frame" discipline handleFarmGrowthTick() already establishes for its own
+// stage-repaint.
+void handleCombatDeathRewards(BeTileGridFrame* frame) {
+    if (frame->agents == nullptr) return;
+    for (int i = 0; i < frame->agentCount; ++i) {
+        const BeAgentState& agent = frame->agents[i];
+        if (agent.health > 0.0f) continue;
+        const EnemyDef* def = findEnemyDef(agent.kind);
+        if (def == nullptr) continue;
+
+        const std::string rewardedKey = "combat_rewarded_agent_" + std::to_string(i);
+        if (readFlag(frame, rewardedKey.c_str(), 0.0) != 0.0) continue; // already rewarded this death
+
+        queueXpGrant(GrimstoneSkill::Attack, def->xp);
+        queueXpGrant(GrimstoneSkill::Strength, def->xp);
+        queueXpGrant(GrimstoneSkill::Defence, std::floor(def->xp * 0.5));
+        queueXpGrant(GrimstoneSkill::Hitpoints, std::floor(def->xp * 0.33));
+        queueItemGrant("bones", 1); // js's own addToInventory('bones'), always granted on a kill
+
+        BeFlagUpdate rewardedFlag;
+        rewardedFlag.key = internString(rewardedKey);
+        rewardedFlag.value = 1.0;
+        rewardedFlag.mode = 0; // SET
+        flagUpdateBuffer().push_back(rewardedFlag);
+
+        toastScratch() = std::string("You have defeated the ") + def->displayName + "!";
+        frame->requestedToastText = toastScratch().c_str();
     }
 }
 
@@ -880,10 +1103,13 @@ void updateGrimstoneRuntime(BeTileGridFrame* frame) {
     itemUpdateBuffer().clear();
     tileEditBuffer().clear();
     timerStartBuffer().clear();
+    hitboxBuffer().clear();
     stringScratch().clear();
 
     syncHitpointsMaxHealth(frame);
     handleMiningAndWoodcutting(frame);
+    handleCombatAttack(frame);
+    handleCombatDeathRewards(frame); // per-frame, not gated on interactPressed
     handleFishing(frame);
     handleCooking(frame);
     handleSmelting(frame);
@@ -913,5 +1139,9 @@ void updateGrimstoneRuntime(BeTileGridFrame* frame) {
     if (!timerStartBuffer().empty()) {
         frame->requestedTimerStarts = timerStartBuffer().data();
         frame->requestedTimerStartCount = static_cast<int>(timerStartBuffer().size());
+    }
+    if (!hitboxBuffer().empty()) {
+        frame->requestedHitboxes = hitboxBuffer().data();
+        frame->requestedHitboxCount = static_cast<int>(hitboxBuffer().size());
     }
 }
