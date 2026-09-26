@@ -347,3 +347,54 @@ TileGrid buildIronPeaksDungeon(const TileKindRegistry& registry, uint32_t seed);
 // seed is falsy) is ported as `seed == 0 ? 12345 : seed`, uint32_t's
 // closest equivalent to JS's falsy-number check.
 TileGrid buildCultistCatacombs(const TileKindRegistry& registry, uint32_t seed);
+
+// ---- The Forsaken Chapel (and its own library/vault) -------------------
+//
+// The last of the 5 remaining hand-authored zones this port's own
+// PORTING_PLAN.md queue names (Stormcrag Reach/the Aetheric Spire/the
+// Whisperwood/Greenfield Pastures came before it) -- reached via
+// buildAshenveilLevel()'s own north CHAPEL_PORTAL (targetZone
+// "forsaken_chapel"). Transcribed from `function makeChapelMap()` (js/
+// zones.js, lines 1805-1906 as of this writing): a cross-shaped stone
+// chapel (nave, west/east transepts, north apse/sanctuary, south porch),
+// with cultist enemies (always painted, see GrimstoneGame.cpp's own doc
+// comment on this function for the day/night judgement call), a hidden
+// tomb leading to buildCultistCatacombs() (targetZone
+// "cultist_catacombs", this port's own new slug -- see that same doc
+// comment for the "paint the already-revealed crypt stair" judgement
+// call), and a library staircase leading to buildChapelLibrary() below
+// (targetZone "forsaken_library"). Its own south porch door returns to
+// Ashenveil (targetZone "ashenveil").
+//
+// Grid size is 44x32 (js/zones.js's own W/H locals for this zone).
+TileGrid buildChapelLevel(const TileKindRegistry& registry);
+
+// The Forsaken Library -- an underground library beneath the chapel apse,
+// transcribed from `function makeChapelLibrary()` (js/zones.js, lines
+// 1986-2062 as of this writing). Reached via buildChapelLevel()'s own
+// LIBRARY_STAIR_DOWN (targetZone "forsaken_library"); its own stair up
+// returns to the chapel (targetZone "forsaken_chapel") -- interiors
+// re-enter their parent zone, the same convention
+// buildWizardTowerInterior() already establishes. Its own hidden
+// SECRET_BOOKSHELF leads to buildSecretLibrary() below (targetZone
+// "hidden_vault", see GrimstoneGame.cpp's own doc comment on this function
+// for the reveal-mechanic judgement call the port makes there).
+//
+// Grid size is 36x24 (js/zones.js's own W/H locals for this zone).
+TileGrid buildChapelLibrary(const TileKindRegistry& registry);
+
+// The Hidden Vault -- a cramped, forgotten chamber behind the library's
+// secret bookshelf, transcribed from `function makeSecretLibrary()` (js/
+// zones.js, lines 2068-2119 as of this writing). Reached via
+// buildChapelLibrary()'s own SECRET_BOOKSHELF (targetZone "hidden_vault");
+// its own SECRET_EXIT crawlspace returns to the library (targetZone
+// "forsaken_library"). Unlike every other interior in this file the JS
+// fills this zone with T.MOSSY_FLOOR rather than T.DUNGEON_FLOOR/
+// T.STONE_FLOOR -- see GrimstoneGame.cpp's own doc comment on this
+// function for that and the shared reveal-mechanic judgement call (this
+// port links the secret passage directly via a portal marker rather than
+// modelling the JS's own interact-to-reveal gameplay state, which isn't
+// ported yet -- see PORTING_PLAN.md).
+//
+// Grid size is 22x16 (js/zones.js's own W/H locals for this zone).
+TileGrid buildSecretLibrary(const TileKindRegistry& registry);

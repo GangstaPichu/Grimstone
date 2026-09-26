@@ -3168,3 +3168,447 @@ TileGrid buildCultistCatacombs(const TileKindRegistry& registry, uint32_t seed) 
     config.exitTargetZone = "forsaken_chapel";
     return buildDungeonMap(registry, config, seed == 0 ? 12345u : seed);
 }
+
+// ======= THE FORSAKEN CHAPEL =======
+// Transcribed from `function makeChapelMap()` in js/zones.js (lines
+// 1805-1906 as of this writing) -- reached via buildAshenveilLevel()'s own
+// north CHAPEL_PORTAL (targetZone "forsaken_chapel", the slug this
+// function's own return portal below targets right back at). js/zones.js
+// continues past line 1906 into revealCryptStair()/the chapel rune-text
+// tables/readChapelRune()/examineAltar() (gameplay/dialogue, not terrain,
+// see this function's own doc comment on the crypt-stair judgement call
+// below) and then makeChapelLibrary() (line 1986, see buildChapelLibrary()
+// below) -- neither ported here.
+//
+// The JS itself flags this zone `isInterior:true` despite being the
+// "outdoor" building the player walks into from Ashenveil's town square --
+// same "portal-entered building" shape as every Ashenveil interior this
+// file already ports, just larger and containing its own further portals.
+//
+// Cultists (T.CULTIST): the JS only spawns them at night via
+// spawnChapelCultists()/CULTIST_SPAWNS (js/activities.js, lines 757-788),
+// toggled by checkZoneExit()'s own atNight check on entry and despawned at
+// dawn -- day/night state isn't tracked by this port yet (see
+// PORTING_PLAN.md, the same gap buildShopInterior()'s own doc comment
+// already calls out for Dorin's day/night hiding). This function paints
+// all 8 CULTIST_SPAWNS positions directly as Overlay tiles, matching this
+// port's "enemy spawn = painted tile kind" convention elsewhere
+// (buildDungeonMap()'s skeleton/zombie scatter, buildWhisperwoodLevel()'s/
+// buildStormcragLevel()'s shadow-walker placements) -- i.e. always-present
+// rather than night-only, the same "pick the default/always-on state"
+// judgement buildShopInterior() already made for Dorin.
+//
+// Hidden tomb -> Cultist Catacombs: the JS hides T.CRYPT_STAIR beneath a
+// plain T.GRAVE tile in the west transept, revealed only by interacting
+// with it (revealCryptStair(), js/zones.js lines 1911-1918 -- gameplay
+// logic this port doesn't implement, see PORTING_PLAN.md). Since
+// buildCultistCatacombs() now exists, and its own doc comment
+// (GrimstoneGame.h) explicitly calls for "a 'crypt_stair' marker the
+// Chapel's own builder would place once ported", this function paints the
+// ALREADY-REVEALED T.CRYPT_STAIR tile directly (skipping the hidden-GRAVE
+// intermediate state -- the same "port the structure, not the reveal
+// gameplay" scope this port's own secret-bookshelf/hidden-vault case below
+// also uses) and adds a "portal" TileMarker there targeting
+// "cultist_catacombs" -- this port's own new slug for entering
+// buildCultistCatacombs(), snake_casing its own returned name ("THE
+// CULTIST CATACOMBS"), the same convention buildGreenfieldLevel()'s own
+// doc comment already documents for "forsaken_chapel"/"western_pass".
+//
+// Library staircase: T.LIBRARY_STAIR_DOWN in the east apse leads to
+// buildChapelLibrary() below (targetZone "forsaken_library", this port's
+// own slug for "THE FORSAKEN LIBRARY", same snake_case convention).
+//
+// Grid size is 44x32 (js/zones.js's own W/H locals for this zone).
+TileGrid buildChapelLevel(const TileKindRegistry& registry) {
+    const TileKindId dungeonFloor = registry.idFromName("dungeon_floor");
+    const TileKindId wall = registry.idFromName("wall");
+    const TileKindId stoneFloor = registry.idFromName("stone_floor");
+    const TileKindId pillar = registry.idFromName("pillar");
+    const TileKindId chapelRune = registry.idFromName("chapel_rune");
+    const TileKindId altar = registry.idFromName("altar");
+    const TileKindId bookshelfE = registry.idFromName("bookshelf_e");
+    const TileKindId bookshelfW = registry.idFromName("bookshelf_w");
+    const TileKindId chest = registry.idFromName("chest");
+    const TileKindId candle = registry.idFromName("candle");
+    const TileKindId barrel = registry.idFromName("barrel");
+    const TileKindId cryptStair = registry.idFromName("crypt_stair");
+    const TileKindId exitInterior = registry.idFromName("exit_interior");
+    const TileKindId libraryStairDown = registry.idFromName("library_stair_down");
+    const TileKindId cultist = registry.idFromName("cultist");
+
+    const int W = 44, H = 32; // js/zones.js's own W/H locals for this zone
+
+    // ---- Base fill + outer walls -- JS lines 1806-1812 ----
+    std::vector<std::vector<TileKindId>> tiles(H, std::vector<TileKindId>(W, dungeonFloor));
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x)
+            if (y == 0 || y == H - 1 || x == 0 || x == W - 1) tiles[y][x] = wall;
+
+    // ---- NAVE (main hall, centre) -- JS lines 1814-1816 ----
+    for (int y = 2; y <= 22; ++y)
+        for (int x = 8; x <= 35; ++x) tiles[y][x] = stoneFloor;
+
+    // ---- TRANSEPTS (side wings) -- JS lines 1818-1822 ----
+    for (int y = 8; y <= 16; ++y)
+        for (int x = 2; x <= 8; ++x) tiles[y][x] = stoneFloor;
+    for (int y = 8; y <= 16; ++y)
+        for (int x = 35; x <= 42; ++x) tiles[y][x] = stoneFloor;
+
+    // ---- APSE / SANCTUARY (north end behind altar) -- JS lines 1824-1825 ----
+    for (int y = 2; y <= 7; ++y)
+        for (int x = 12; x <= 31; ++x) tiles[y][x] = stoneFloor;
+
+    // ---- WALLS around nave perimeter -- JS lines 1827-1840 ----
+    for (int x = 8; x <= 35; ++x) tiles[2][x] = wall;
+    for (int y = 2; y <= 22; ++y) {
+        tiles[y][8] = wall;
+        tiles[y][35] = wall;
+    }
+    tiles[22][8] = wall;
+    tiles[22][35] = wall;
+    for (int y = 8; y <= 16; ++y) {
+        tiles[y][2] = wall;
+        tiles[y][42] = wall;
+    }
+    for (int x = 2; x <= 8; ++x) {
+        tiles[8][x] = wall;
+        tiles[16][x] = wall;
+    }
+    for (int x = 35; x <= 42; ++x) {
+        tiles[8][x] = wall;
+        tiles[16][x] = wall;
+    }
+    tiles[11][8] = stoneFloor;
+    tiles[12][8] = stoneFloor;
+    tiles[11][35] = stoneFloor;
+    tiles[12][35] = stoneFloor;
+    for (int x = 8; x <= 35; ++x) tiles[7][x] = wall;
+    tiles[7][19] = stoneFloor;
+    tiles[7][20] = stoneFloor;
+
+    // ---- COLUMNS down the nave -- JS lines 1842-1847 ----
+    for (const auto& yx : {std::pair{5, 11}, std::pair{5, 17}, std::pair{5, 23}, std::pair{5, 29},
+                            std::pair{10, 11}, std::pair{10, 17}, std::pair{10, 23}, std::pair{10, 29},
+                            std::pair{15, 11}, std::pair{15, 17}, std::pair{15, 23}, std::pair{15, 29},
+                            std::pair{20, 11}, std::pair{20, 17}, std::pair{20, 23}, std::pair{20, 29}})
+        tiles[yx.first][yx.second] = pillar;
+
+    // ---- SOUTH PORCH / ENTRANCE -- JS lines 1849-1856 ----
+    for (int y = 22; y <= 28; ++y)
+        for (int x = 16; x <= 27; ++x) tiles[y][x] = stoneFloor;
+    for (int x = 16; x <= 27; ++x) tiles[28][x] = wall;
+    for (int y = 22; y <= 28; ++y) {
+        tiles[y][16] = wall;
+        tiles[y][27] = wall;
+    }
+    tiles[28][21] = stoneFloor;
+    tiles[28][22] = stoneFloor;
+    for (int x = 16; x <= 27; ++x)
+        if (x < 20 || x > 23) tiles[22][x] = wall;
+
+    // ---- FLOOR RUNES (carved into nave floor) -- JS lines 1858-1862. Before
+    // the floor snapshot below, same as buildWhisperwoodLevel()'s own
+    // terrain-vs-decor judgement -- genuine floor carving, not placeDecor()
+    // furniture, so these stay Floor. ----
+    for (const auto& yx : {std::pair{9, 21}, std::pair{12, 21}, std::pair{15, 21}, std::pair{18, 21},
+                            std::pair{21, 21}, std::pair{9, 22}, std::pair{12, 22}, std::pair{15, 22},
+                            std::pair{18, 22}})
+        tiles[yx.first][yx.second] = chapelRune;
+
+    // ---- Floor layer is now fully authored -- JS's own "SNAPSHOT FLOOR"
+    // (lines 1864-1865). ----
+    TileGrid grid(W, H, 1.0f);
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) grid.setFloor(x, y, tiles[y][x]);
+
+    // ---- ALTAR (north apse, centred) -- JS line 1868 ----
+    placeDecor(grid, 4, 21, altar);
+
+    // ---- LORE OBJECTS -- bookshelves, chests, candles, barrels -- JS lines
+    // 1870-1888 ----
+    placeDecor(grid, 10, 3, bookshelfE);
+    placeDecor(grid, 13, 3, bookshelfE);
+    placeDecor(grid, 10, 41, bookshelfW);
+    placeDecor(grid, 13, 41, bookshelfW);
+    placeDecor(grid, 3, 10, chest);
+    placeDecor(grid, 3, 33, chest);
+    for (const auto& yx : {std::pair{4, 13}, std::pair{4, 16}, std::pair{4, 27}, std::pair{4, 30},
+                            std::pair{8, 10}, std::pair{8, 33}, std::pair{21, 10}, std::pair{21, 33}})
+        placeDecor(grid, yx.first, yx.second, candle);
+    placeDecor(grid, 25, 18, barrel);
+    placeDecor(grid, 25, 25, barrel);
+    placeDecor(grid, 26, 18, barrel);
+
+    // ---- HIDDEN TOMB (west transept) -- JS lines 1890-1893. See this
+    // function's own doc comment above for the "paint the already-revealed
+    // crypt stair" judgement call in place of the JS's hidden-GRAVE +
+    // interact-to-reveal mechanic. ----
+    placeDecor(grid, 14, 6, cryptStair);
+    placeDecor(grid, 13, 5, candle); // candle hint, kept from the JS
+
+    // ---- EXIT (south porch door back to Ashenveil) -- JS line 1896 ----
+    placeDecor(grid, 28, 21, exitInterior);
+    addExitPortalMarker(grid, 21.0f, 28.0f);
+
+    // ---- LIBRARY STAIRCASE (east apse) -- JS lines 1898-1903 ----
+    placeDecor(grid, 5, 25, libraryStairDown);
+    {
+        TileMarker marker;
+        marker.kind = "portal";
+        marker.name = "Library Stair -> The Forsaken Library";
+        marker.position = glm::vec2(25.5f, 5.5f);
+        marker.properties["targetZone"] = "forsaken_library";
+        grid.markers.push_back(marker);
+    }
+
+    // ---- Crypt-stair portal -- see this function's own doc comment above. ----
+    {
+        TileMarker marker;
+        marker.kind = "portal";
+        marker.name = "Crypt Stair -> The Cultist Catacombs";
+        marker.position = glm::vec2(6.5f, 14.5f);
+        marker.properties["targetZone"] = "cultist_catacombs";
+        grid.markers.push_back(marker);
+    }
+
+    // ---- Cultists (T.CULTIST) -- js/activities.js's own CULTIST_SPAWNS (8
+    // positions), always painted rather than night-only -- see this
+    // function's own doc comment above. ----
+    for (const auto& yx : {std::pair{9, 13}, std::pair{13, 26}, std::pair{17, 14}, std::pair{20, 28},
+                            std::pair{11, 4}, std::pair{12, 39}, std::pair{5, 14}, std::pair{5, 27}})
+        grid.setOverlay(yx.second, yx.first, cultist);
+
+    // ---- Player spawn -- makeChapelMap() returns no entryX/entryY, so
+    // entering falls back to enterInterior()'s own default
+    // (Math.floor(W/2), H-3) = (22, 29), the same fallback
+    // buildInnInterior()'s own doc comment already documents for that
+    // zone. ----
+    grid.markers.push_back({"player_spawn", glm::vec2(22.5f, 29.5f), "Player Spawn"});
+
+    return grid;
+}
+
+// ======= THE FORSAKEN LIBRARY =======
+// Transcribed from `function makeChapelLibrary()` in js/zones.js (lines
+// 1986-2062 as of this writing) -- reached via buildChapelLevel()'s own
+// east-apse LIBRARY_STAIR_DOWN (targetZone "forsaken_library"); this
+// function's own return stair-up below targets right back at
+// "forsaken_chapel", the same "interiors re-enter their parent zone"
+// convention buildWizardTowerInterior()'s own doc comment already
+// establishes. js/zones.js continues past line 2062 into
+// makeSecretLibrary() (line 2068, see buildSecretLibrary() below, reached
+// via this function's own SECRET_BOOKSHELF) -- not ported here.
+//
+// Layering: the JS snapshots floor immediately after the border walls (JS
+// lines 1995-1997), BEFORE any bookshelf/rune/blood-trail/skeleton/
+// furniture write -- most of those are direct `tiles[y][x] = ...`
+// assignments rather than named placeDecor() calls, but since they all
+// land AFTER that snapshot they're still genuine decor sitting over a
+// DUNGEON_FLOOR base, the same "when relative to the floor snapshot, not
+// which JS function was called" rule buildWizardTowerInterior()'s own doc
+// comment already establishes -- so every one of them is ported as an
+// Overlay write here.
+//
+// The scattered rune/blood-trail/dead-skeleton coordinates below each
+// carry the JS's own `if(tiles[ry][rx] === T.DUNGEON_FLOOR)` guard --
+// never actually false for the coordinates the JS chose (none collide
+// with a bookshelf stack column), so this port skips re-checking it.
+//
+// Grid size is 36x24 (js/zones.js's own W/H locals for this zone).
+TileGrid buildChapelLibrary(const TileKindRegistry& registry) {
+    const TileKindId dungeonFloor = registry.idFromName("dungeon_floor");
+    const TileKindId wall = registry.idFromName("wall");
+    const TileKindId bookshelf = registry.idFromName("bookshelf");
+    const TileKindId secretBookshelf = registry.idFromName("secret_bookshelf");
+    const TileKindId bookshelfE = registry.idFromName("bookshelf_e");
+    const TileKindId bookshelfW = registry.idFromName("bookshelf_w");
+    const TileKindId chapelRune = registry.idFromName("chapel_rune");
+    const TileKindId bloodTrail = registry.idFromName("blood_trail");
+    const TileKindId deadSkeleton = registry.idFromName("dead_skeleton_decor");
+    const TileKindId table = registry.idFromName("table");
+    const TileKindId candle = registry.idFromName("candle");
+    const TileKindId libraryStairUp = registry.idFromName("library_stair_up");
+
+    const int W = 36, H = 24; // js/zones.js's own W/H locals for this zone
+
+    // ---- Base fill + outer walls, then snapshot -- JS lines 1988-1997 ----
+    TileGrid grid(W, H, 1.0f);
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            const bool edge = (y == 0 || y == H - 1 || x == 0 || x == W - 1);
+            grid.setFloor(x, y, edge ? wall : dungeonFloor);
+        }
+    }
+
+    // ---- North wall of bookshelves -- JS lines 1999-2003 -- one secret
+    // bookshelf overrides the run 2 tiles west of centre, exactly matching
+    // the JS's own "loop, then override" order. ----
+    for (int x = 1; x <= W - 2; ++x) placeDecor(grid, 1, x, bookshelf);
+    placeDecor(grid, 1, 15, secretBookshelf);
+
+    // ---- Side bookshelf walls -- JS lines 2005-2011 ----
+    for (int y = 2; y <= 15; ++y) {
+        placeDecor(grid, y, 1, bookshelfE);
+        placeDecor(grid, y, W - 2, bookshelfW);
+    }
+
+    // ---- Interior bookshelf stacks, 2 tiles wide -- JS lines 2013-2022 ----
+    constexpr int kStacks[] = {5, 11, 17, 23, 29};
+    for (int sx : kStacks) {
+        for (int y = 2; y <= 14; ++y) {
+            placeDecor(grid, y, sx, bookshelfW);
+            placeDecor(grid, y, sx + 1, bookshelfE);
+        }
+    }
+
+    // ---- Purple floor runes in the aisles -- JS lines 2024-2027 ----
+    for (const auto& yx : {std::pair{4, 3}, std::pair{8, 9}, std::pair{5, 15}, std::pair{11, 21},
+                            std::pair{7, 27}, std::pair{3, 9}, std::pair{10, 15}, std::pair{6, 21}})
+        placeDecor(grid, yx.first, yx.second, chapelRune);
+
+    // ---- Blood trails -- JS lines 2029-2032 ----
+    for (const auto& yx : {std::pair{7, 3}, std::pair{8, 3}, std::pair{6, 9}, std::pair{7, 9},
+                            std::pair{11, 14}, std::pair{12, 14}, std::pair{9, 20}, std::pair{10, 20}})
+        placeDecor(grid, yx.first, yx.second, bloodTrail);
+
+    // ---- Dead skeletons -- JS lines 2034-2037 ----
+    for (const auto& yx : {std::pair{16, 3}, std::pair{17, 22}, std::pair{14, 14}})
+        placeDecor(grid, yx.first, yx.second, deadSkeleton);
+
+    // ---- Reading area: study tables + candles -- JS lines 2039-2045 ----
+    placeDecor(grid, 18, 14, table);
+    placeDecor(grid, 18, 15, table);
+    placeDecor(grid, 19, 14, table);
+    placeDecor(grid, 19, 15, table);
+    placeDecor(grid, 17, 14, candle);
+    placeDecor(grid, 17, 16, candle);
+
+    // ---- Loose candles at aisle ends -- JS lines 2047-2050 ----
+    for (const auto& yx : {std::pair{15, 3}, std::pair{15, 9}, std::pair{15, 21}, std::pair{15, 27}})
+        placeDecor(grid, yx.first, yx.second, candle);
+
+    // ---- Staircase UP (returns to the chapel) -- JS lines 2052-2054 ----
+    placeDecor(grid, 21, 17, libraryStairUp);
+    {
+        TileMarker marker;
+        marker.kind = "portal";
+        marker.name = "Stairs Up -> The Forsaken Chapel";
+        marker.position = glm::vec2(17.5f, 21.5f);
+        marker.properties["targetZone"] = "forsaken_chapel";
+        grid.markers.push_back(marker);
+    }
+
+    // ---- Secret passage -- see this function's own doc comment above and
+    // buildSecretLibrary()'s doc comment below: the JS only turns the
+    // SECRET_BOOKSHELF at (1,15) into a walkable T.SECRET_EXIT once the
+    // player interacts with it (activateSecretBookshelf(), js/zones.js
+    // lines 2884-2895 -- gameplay logic not ported here, see
+    // PORTING_PLAN.md). This port instead links the terrain directly: a
+    // "portal" TileMarker at the same tile, targeting "hidden_vault" (this
+    // port's own slug for buildSecretLibrary()'s "THE HIDDEN VAULT", same
+    // snake_case convention as every other targetZone here). ----
+    {
+        TileMarker marker;
+        marker.kind = "portal";
+        marker.name = "Secret Bookshelf -> The Hidden Vault";
+        marker.position = glm::vec2(15.5f, 1.5f);
+        marker.properties["targetZone"] = "hidden_vault";
+        grid.markers.push_back(marker);
+    }
+
+    // ---- Player spawn -- js's own returned entryX:17, entryY:20 (one tile
+    // north of the stair, spawning just inside the reading room). ----
+    grid.markers.push_back({"player_spawn", glm::vec2(17.5f, 20.5f), "Player Spawn"});
+
+    return grid;
+}
+
+// ======= THE HIDDEN VAULT =======
+// Transcribed from `function makeSecretLibrary()` in js/zones.js (lines
+// 2068-2119 as of this writing) -- reached via buildChapelLibrary()'s own
+// SECRET_BOOKSHELF (targetZone "hidden_vault", see that function's own doc
+// comment); this function's own SECRET_EXIT below targets right back at
+// "forsaken_library". js/zones.js continues past line 2119 into the
+// interior-stack bookkeeping (`interiorStack`, gameplay state, not
+// terrain) -- not ported here.
+//
+// Unlike every other interior in this file, the JS fills BOTH `tiles` and
+// `floor` with T.MOSSY_FLOOR (not T.DUNGEON_FLOOR/T.STONE_FLOOR) and
+// snapshots immediately after the border walls (JS lines 2070-2078),
+// before any decor -- so, same as buildChapelLibrary() above, every
+// spider-web/skeleton/chest/book-pile/vase/exit write below is Overlay
+// over a MOSSY_FLOOR base. The JS's own `pd()` local helper (JS line 2080)
+// is the same conditional-placeDecor idiom buildChapelLibrary() already
+// documents (never actually false here either), so this port calls
+// placeDecor() directly without re-checking it.
+//
+// Grid size is 22x16 (js/zones.js's own W/H locals for this zone).
+TileGrid buildSecretLibrary(const TileKindRegistry& registry) {
+    const TileKindId mossyFloor = registry.idFromName("mossy_floor");
+    const TileKindId wall = registry.idFromName("wall");
+    const TileKindId spiderWeb = registry.idFromName("spider_web");
+    const TileKindId deadSkeleton = registry.idFromName("dead_skeleton_decor");
+    const TileKindId chest = registry.idFromName("chest");
+    const TileKindId bookPile = registry.idFromName("book_pile");
+    const TileKindId vase = registry.idFromName("vase");
+    const TileKindId secretExit = registry.idFromName("secret_exit");
+
+    const int W = 22, H = 16; // js/zones.js's own W/H locals for this zone
+
+    // ---- Base fill (mossy floor) + outer walls, then snapshot -- JS lines
+    // 2070-2078 ----
+    TileGrid grid(W, H, 1.0f);
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            const bool edge = (y == 0 || y == H - 1 || x == 0 || x == W - 1);
+            grid.setFloor(x, y, edge ? wall : mossyFloor);
+        }
+    }
+
+    // ---- Spider webs -- corners and alcoves -- JS lines 2082-2086 ----
+    placeDecor(grid, 1, 1, spiderWeb);
+    placeDecor(grid, 1, 20, spiderWeb);
+    placeDecor(grid, 14, 1, spiderWeb);
+    placeDecor(grid, 14, 20, spiderWeb);
+    placeDecor(grid, 1, 10, spiderWeb);
+    placeDecor(grid, 7, 1, spiderWeb);
+    placeDecor(grid, 7, 20, spiderWeb);
+
+    // ---- Dead skeletons -- JS lines 2088-2091 ----
+    placeDecor(grid, 3, 5, deadSkeleton);
+    placeDecor(grid, 8, 16, deadSkeleton);
+    placeDecor(grid, 12, 9, deadSkeleton);
+
+    // ---- Chests -- JS lines 2093-2095 ----
+    placeDecor(grid, 2, 3, chest);
+    placeDecor(grid, 2, 18, chest);
+
+    // ---- Book piles -- JS lines 2097-2101 ----
+    placeDecor(grid, 5, 8, bookPile);
+    placeDecor(grid, 9, 14, bookPile);
+    placeDecor(grid, 12, 5, bookPile);
+    placeDecor(grid, 6, 19, bookPile);
+
+    // ---- Vases / urns -- JS lines 2103-2107 ----
+    placeDecor(grid, 4, 2, vase);
+    placeDecor(grid, 10, 20, vase);
+    placeDecor(grid, 13, 13, vase);
+    placeDecor(grid, 3, 11, vase);
+
+    // ---- Crawlspace exit -- JS lines 2109-2111 ----
+    placeDecor(grid, 2, 11, secretExit);
+    {
+        TileMarker marker;
+        marker.kind = "portal";
+        marker.name = "Crawlspace -> The Forsaken Library";
+        marker.position = glm::vec2(11.5f, 2.5f);
+        marker.properties["targetZone"] = "forsaken_library";
+        grid.markers.push_back(marker);
+    }
+
+    // ---- Player spawn -- js's own returned entryX:11, entryY:4 (just
+    // south of the crawlspace exit). ----
+    grid.markers.push_back({"player_spawn", glm::vec2(11.5f, 4.5f), "Player Spawn"});
+
+    return grid;
+}
