@@ -1360,3 +1360,269 @@ TileGrid buildProceduralZone(const TileKindRegistry& registry, int zoneIndex, ui
 
     return grid;
 }
+
+// ======= STORMCRAG REACH =======
+// Transcribed from `function makeStormcragMap()` in js/zones.js (lines
+// 251-380 as of this writing) -- see GrimstoneGame.h's own doc comment on
+// buildStormcragLevel() for how this differs from buildAshenveilLevel()
+// (which has no randomness at all) and from buildProceduralZone() (which
+// generates a whole biome from a small config table); this one is a fixed
+// hand-authored layout that happens to lean on the same noise primitives.
+//
+// Placeholder seed: js/world.js's `worldSeed` (a per-playthrough value
+// chosen once at new-game time) isn't threaded through this port yet --
+// buildAshenveilLevel() never needed one (no randomness), and
+// buildProceduralZone() takes it as an explicit parameter since its own
+// caller already has to pick a per-zone seed anyway. This function's own
+// signature was specified to stay `(registry)`-only (see GrimstoneGame.h),
+// so a fixed constant stands in for `worldSeed` below -- purely a
+// placeholder judgement call, not a real per-playthrough seed. Once a real
+// seed concept lands on this side (see PORTING_PLAN.md), thread it through
+// here the same way buildProceduralZone() already takes one, rather than
+// leaving this the one hand-authored zone whose noise never varies.
+constexpr uint32_t kStormcragPlaceholderWorldSeed = 1u;
+
+// Layering follows buildProceduralZone()'s own convention (its doc
+// comment above), not buildAshenveilLevel()'s: everything the JS bakes
+// into `tiles` BEFORE its own floor snapshot (`// Snapshot floor`, JS
+// lines 325-326) -- the elevation bands, the water pools, the winding
+// path, the clearing, and the scattered rubble -- goes on this TileGrid's
+// Floor layer via a local `tiles` vector exactly like buildProceduralZone()
+// builds one, then snapshotted into the grid at that point. Everything
+// AFTER the snapshot follows the JS's own per-site choice: the tower ring
+// and the door's floor-clearing gap set BOTH `tiles` AND `floor` in the JS
+// (lines 336-341, 348-349) -- a genuine floor-terrain change, not decor --
+// so those become Floor writes here too; the north portal, the tower's
+// cracked walls, the ore nodes, and the shadow walkers set `tiles` ONLY
+// post-snapshot (decor sitting on top of whatever floor is already there),
+// so those become Overlay paints via setOverlay(), the same "final visible
+// tile differs from the floor snapshot" test buildAshenveilLevel()'s own
+// placeDecor()-vs-direct-assignment split already uses.
+//
+// Post-snapshot occupancy checks (the ore/shadow-walker placement loops)
+// read grid.floorAt() rather than reconstructing the JS's own post-snapshot
+// `tiles` array: every post-snapshot Overlay paint placed before those
+// loops run (the portal, the tower ring's cracked walls, the door) sits
+// inside this function's own nearTower/nearPortal/nearPortalOrDoor
+// exclusion radii, so floorAt() alone gives the identical accept/reject
+// result the JS's own `tiles[y][x]` check would -- documented here rather
+// than silently relied on, since it stops being true if a future edit
+// moves those exclusion radii.
+TileGrid buildStormcragLevel(const TileKindRegistry& registry) {
+    const TileKindId darkGrass = registry.idFromName("dark_grass");
+    const TileKindId wall = registry.idFromName("wall");
+    const TileKindId stoneFloor = registry.idFromName("stone_floor");
+    const TileKindId dirt = registry.idFromName("dirt");
+    const TileKindId water = registry.idFromName("water");
+    const TileKindId normalTree = registry.idFromName("normal_tree");
+    const TileKindId oakTree = registry.idFromName("oak_tree");
+    const TileKindId forestPortal = registry.idFromName("forest_portal");
+    const TileKindId crackedWall = registry.idFromName("cracked_wall");
+    const TileKindId wizardDoor = registry.idFromName("wizard_door");
+    const TileKindId goldOre = registry.idFromName("gold_ore_node");
+    const TileKindId mithrilOre = registry.idFromName("mithril_ore_node");
+    const TileKindId stoneRubble = registry.idFromName("stone_rubble");
+    const TileKindId shadowWalker = registry.idFromName("shadow_walker");
+
+    const int W = 60, H = 50; // js/zones.js's own W/H locals for this zone
+    ProceduralPrng rng(kStormcragPlaceholderWorldSeed + 77742u);
+
+    // ---- Init to dark grass + hard border -- JS lines 252-259 ----
+    std::vector<std::vector<TileKindId>> tiles(H, std::vector<TileKindId>(W, darkGrass));
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x)
+            if (y == 0 || y == H - 1 || x == 0 || x == W - 1) tiles[y][x] = wall;
+
+    // ---- Elevation bands: forest (north) fading into bare stone (south)
+    // -- JS lines 261-281 ----
+    FractalNoise2D elevNoise(kStormcragPlaceholderWorldSeed + 55521u, W, H, 4);
+    FractalNoise2D rockNoise(kStormcragPlaceholderWorldSeed + 33318u, W, H, 3);
+    for (int y = 1; y < H - 1; ++y) {
+        const double elevation = static_cast<double>(y) / (H - 1);
+        for (int x = 1; x < W - 1; ++x) {
+            const double n = elevNoise.sample(x, y);
+            const double rocky = elevation * 0.7 + n * 0.3;
+            if (rocky > 0.72) {
+                tiles[y][x] = (rockNoise.sample(x, y) > 0.5) ? stoneFloor : wall; // bare rock / boulders
+            } else if (rocky > 0.5) {
+                tiles[y][x] = dirt; // transitional scree
+            } else if (rocky > 0.35) {
+                tiles[y][x] = darkGrass; // sparse scrub
+            } else {
+                tiles[y][x] = (n > 0.55) ? normalTree : (n > 0.42 ? oakTree : darkGrass); // forest
+            }
+        }
+    }
+
+    // ---- Smooth water pools, northern third only -- JS lines 283-286 ----
+    FractalNoise2D waterNoise(kStormcragPlaceholderWorldSeed + 11198u, W, H, 3);
+    for (int y = 2; y < static_cast<int>(H * 0.35); ++y)
+        for (int x = 2; x < W - 2; ++x)
+            if (waterNoise.sample(x, y) > 0.80 && tiles[y][x] == darkGrass) tiles[y][x] = water;
+
+    // ---- Guaranteed-connected winding path from the north portal (x=18)
+    // to the tower (x=30): wind south while drifting toward towerX, then a
+    // straight connector -- JS lines 288-310 ----
+    const int towerX = 30, towerY = H - 8;
+    const int startX = 18;
+    int cx = startX;
+    for (int y = 1; y < towerY - 4; ++y) {
+        const int bias = (cx < towerX) ? 1 : (cx > towerX ? -1 : 0);
+        const int drift = static_cast<int>(std::floor(rng.next() * 3.0)) - 1 + ((rng.next() < 0.4) ? bias : 0);
+        cx = std::max(4, std::min(W - 5, cx + drift));
+        for (int dx = -1; dx <= 1; ++dx) {
+            const int nx = cx + dx;
+            if (nx > 0 && nx < W - 1) tiles[y][nx] = dirt;
+        }
+    }
+    const int connY = towerY - 4;
+    const int step = (cx < towerX) ? 1 : -1;
+    for (int x = cx; x != towerX; x += step) {
+        if (x > 0 && x < W - 1) {
+            tiles[connY][x] = dirt;
+            tiles[connY - 1][x] = dirt;
+        }
+    }
+    for (int y = connY; y < towerY + 2; ++y)
+        if (y > 0 && y < H - 1) tiles[y][towerX] = dirt;
+
+    // ---- Wide clearing south of the tower approach -- JS lines 312-316 ----
+    for (int dy = -5; dy <= 4; ++dy)
+        for (int dx = -8; dx <= 8; ++dx) {
+            const int ny = towerY + dy, nx = towerX + dx;
+            if (ny > 0 && ny < H - 1 && nx > 0 && nx < W - 1) tiles[ny][nx] = stoneFloor;
+        }
+
+    // ---- Scatter rubble around the clearing -- JS lines 318-323 ----
+    for (int att = 0; att < 40; ++att) {
+        const int rx = towerX - 10 + static_cast<int>(std::floor(rng.next() * 20.0));
+        const int ry = towerY - 8 + static_cast<int>(std::floor(rng.next() * 12.0));
+        if (ry > 0 && ry < H - 1 && rx > 0 && rx < W - 1 && tiles[ry][rx] == stoneFloor) tiles[ry][rx] = stoneRubble;
+    }
+
+    // ---- Floor layer is now fully authored -- JS's own "Snapshot floor"
+    // (lines 325-326). See this function's own doc comment above for the
+    // Floor-vs-Overlay split on everything from here on. ----
+    TileGrid grid(W, H, 1.0f);
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) grid.setFloor(x, y, tiles[y][x]);
+
+    // ---- North return portal at x=18 (aligned with the Whisperwood's own
+    // south exit) -- JS lines 328-330. `tiles[0][startX]=DARK_GRASS`
+    // overrides the hard-border WALL for this one cell before the portal
+    // decor paints on top -- setFloor() first, matching that override,
+    // then setOverlay() for the portal itself. ----
+    grid.setFloor(startX, 0, darkGrass);
+    grid.setOverlay(startX, 0, forestPortal);
+
+    // ---- Tower: rough 9x9 ring of walls around a stone-floor interior --
+    // JS lines 332-342. Sets BOTH tiles and floor in the JS (a genuine
+    // floor-terrain change, not decor) -- setFloor(), not setOverlay(). ----
+    const int tw = 9, th = 9;
+    const int tx = towerX - tw / 2, ty = towerY - th + 2;
+    for (int dy = 0; dy < th; ++dy) {
+        for (int dx = 0; dx < tw; ++dx) {
+            const int ny = ty + dy, nx = tx + dx;
+            if (ny < 0 || ny >= H || nx < 0 || nx >= W) continue;
+            const bool isEdge = (dy == 0 || dy == th - 1 || dx == 0 || dx == tw - 1);
+            grid.setFloor(nx, ny, isEdge ? wall : stoneFloor);
+        }
+    }
+    // Cracked exterior walls -- JS lines 344-346. Sets `tiles` only (the
+    // ring above already set `floor` to WALL at these same cells) --
+    // decor over that wall, so setOverlay().
+    for (const auto& yx : {std::pair{ty, tx + 2}, std::pair{ty, tx + 6}, std::pair{ty + 2, tx},
+                           std::pair{ty + 6, tx}, std::pair{ty + 2, tx + tw - 1}, std::pair{ty + 6, tx + tw - 1}}) {
+        const int ny = yx.first, nx = yx.second;
+        if (ny > 0 && ny < H - 1 && nx > 0 && nx < W - 1) grid.setOverlay(nx, ny, crackedWall);
+    }
+    // Tower door -- south face, clears the ring's wall gap -- JS lines
+    // 347-350. Sets BOTH tiles and floor to STONE_FLOOR (clearing the
+    // gap -- a real floor change) before placeDecor() paints WIZARD_DOOR
+    // on top -- setFloor() then setOverlay(), same split
+    // buildAshenveilLevel()'s own building-door tiles already use.
+    const int doorX = tx + tw / 2, doorY = ty + th - 1;
+    grid.setFloor(doorX, doorY, stoneFloor);
+    grid.setOverlay(doorX, doorY, wizardDoor);
+
+    // ---- Gold + mithril ore scattered in the rocky mid/south terrain --
+    // JS lines 352-368. Sets `tiles` only post-snapshot -- Overlay (see
+    // this function's own doc comment on the floorAt() occupancy check
+    // below). ----
+    struct OreScatter {
+        TileKindId tile;
+        int count;
+        double minYFrac;
+    };
+    const OreScatter oreTypes[] = {
+        {goldOre, 10, 0.35},
+        {mithrilOre, 8, 0.55},
+    };
+    for (const OreScatter& ore : oreTypes) {
+        const int minY = static_cast<int>(std::floor(H * ore.minYFrac));
+        int placed = 0;
+        for (int att = 0; att < 400 && placed < ore.count; ++att) {
+            const int ox = 3 + static_cast<int>(std::floor(rng.next() * (W - 6)));
+            const int oy = minY + static_cast<int>(std::floor(rng.next() * (H - minY - 8)));
+            const TileKindId cur = grid.floorAt(ox, oy);
+            if (cur == stoneFloor || cur == dirt || cur == darkGrass) {
+                // Keep away from the tower and the north portal.
+                const bool nearTower = std::abs(ox - towerX) < 12 && std::abs(oy - towerY) < 12;
+                const bool nearPortal = oy < 6;
+                if (!nearTower && !nearPortal) {
+                    grid.setOverlay(ox, oy, ore.tile);
+                    ++placed;
+                }
+            }
+        }
+    }
+
+    // ---- Shadow walkers scattered in the rocky mid-section -- JS lines
+    // 370-377 ----
+    int swPlaced = 0;
+    for (int att = 0; att < 300 && swPlaced < 8; ++att) {
+        const int ex = 4 + static_cast<int>(std::floor(rng.next() * (W - 8)));
+        const int ey =
+            static_cast<int>(std::floor(H * 0.25)) + static_cast<int>(std::floor(rng.next() * std::floor(H * 0.5)));
+        const TileKindId cur = grid.floorAt(ex, ey);
+        if (cur != darkGrass && cur != dirt && cur != stoneFloor) continue;
+        const bool nearPortalOrDoor =
+            (std::abs(ex - 18) < 8 && ey < 8) || (std::abs(ex - towerX) < 10 && std::abs(ey - towerY) < 10);
+        if (!nearPortalOrDoor) {
+            grid.setOverlay(ex, ey, shadowWalker);
+            ++swPlaced;
+        }
+    }
+
+    // ---- Portals as TileMarkers, in addition to the painted tiles above
+    // -- same "paint + marker" convention buildAshenveilLevel() and
+    // buildProceduralZone() both already use for their own portals. ----
+    auto addPortalMarker = [&](const char* name, float px, float py, const char* targetZone) {
+        TileMarker marker;
+        marker.kind = "portal";
+        marker.name = name;
+        marker.position = glm::vec2(px + 0.5f, py + 0.5f);
+        marker.properties["targetZone"] = targetZone;
+        grid.markers.push_back(marker);
+    };
+    addPortalMarker("Forest Portal -> Whisperwood", static_cast<float>(startX), 0.0f, "whisperwood");
+    // The Wizard Tower's own interior (js/zones.js's makeWizardTowerInterior(),
+    // NOT ported by this function -- see this function's own header
+    // doc comment) is entered via `enterInterior()` in the JS, the same
+    // mechanism as buildAshenveilLevel()'s CHAPEL_PORTAL -- a "portal"
+    // marker here documents that wiring for a future pass, matching
+    // buildAshenveilLevel()'s own chapel_portal precedent of authoring a
+    // marker toward a not-yet-ported destination.
+    addPortalMarker("Wizard Tower Door", static_cast<float>(doorX), static_cast<float>(doorY), "aetheric_spire");
+
+    // ---- NPC spawn markers -- js/zones.js's own makeStormcragMap() has
+    // none of its own (no named NPCs, only the shadow-walker enemy tiles
+    // scattered above); nothing to add here, matching this function's own
+    // doc comment on what the JS actually authors. ----
+
+    // ---- Player spawn -- js's own returned entryX:18, entryY:2 (the
+    // arrival point coming from the Whisperwood's own south portal). ----
+    grid.markers.push_back({"player_spawn", glm::vec2(18.5f, 2.5f), "Player Spawn"});
+
+    return grid;
+}

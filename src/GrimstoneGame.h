@@ -88,3 +88,40 @@ TileGrid buildAshenveilLevel(const TileKindRegistry& registry);
 // function for the PRNG/noise porting notes and the judgement calls made
 // on layering (Floor vs. Overlay) and on what became TileMarkers.
 TileGrid buildProceduralZone(const TileKindRegistry& registry, int zoneIndex, uint32_t seed);
+
+// Stormcrag Reach -- the first of the 5 remaining hand-authored zones (see
+// buildProceduralZone()'s own doc comment above and PORTING_PLAN.md for the
+// category split), transcribed from `function makeStormcragMap()` in
+// `js/zones.js` (lines 251-380 as of this writing). `js/zones.js` continues
+// past line 380 into `makeWizardTowerInterior()` (line 383 -- the Aetheric
+// Spire's interior, entered via this zone's own WIZARD_DOOR marker below;
+// NOT ported by this function) and then into `makeWhisperwoodMap()` (line
+// 484) and the rest of the still-unported hand-authored zones -- see
+// PORTING_PLAN.md for the queue.
+//
+// A rocky mountain zone south of the Whisperwood: lush forest fades into
+// bare stone as elevation rises southward, with the Aetheric Spire (the
+// Wizard Tower) standing at the map's southern end. Like
+// buildAshenveilLevel() this is a fixed, hand-authored layout -- NOT part
+// of buildProceduralZone()'s ZONE_CONFIGS/makeZoneMap() machinery -- but it
+// leans on the SAME seeded-noise primitives that function already ports
+// (this file's own ProceduralPrng/FractalNoise2D, transcribing js/world.js's
+// makePRNG()/makeFractalNoise()) to carve its elevation bands and its
+// winding path, reused here rather than re-derived since they're the
+// identical JS functions either way.
+//
+// Grid size is 60x50 (js/zones.js's own W/H locals for this zone), NOT the
+// 60x36 MAP_W/MAP_H the other two functions above share -- Stormcrag Reach
+// authors its own dimensions.
+//
+// Seed: the JS calls `makePRNG(worldSeed + 77742)`/`makeFractalNoise(
+// worldSeed + N, ...)` against the per-playthrough `worldSeed` global,
+// which isn't threaded through this port at all yet (unlike
+// buildProceduralZone(), which takes it as an explicit `seed` parameter --
+// this function's signature deliberately stays `(registry)` only, matching
+// buildAshenveilLevel()'s own no-seed shape, since neither hand-authored
+// zone function takes one today). See GrimstoneGame.cpp's own doc comment
+// on this function for the placeholder-seed judgement call that follows
+// from that gap, and PORTING_PLAN.md for the real fix (threading a real
+// per-playthrough seed through every zone builder that needs one).
+TileGrid buildStormcragLevel(const TileKindRegistry& registry);
