@@ -3939,3 +3939,186 @@ TileGrid buildCaravanZoneLevel(const TileKindRegistry& registry) {
 
     return grid;
 }
+
+// ======= THE HOMESTEAD =======
+// Transcribed from `function makeHomeMap()` in js/zones.js (lines 2515-2600
+// as of this writing) -- the LAST hand-authored zone in this port's own
+// PORTING_PLAN.md queue; see GrimstoneGame.h's own doc comment on
+// buildHomesteadLevel() for the full write-up on the entry-trigger judgement
+// call (a sigil item's use-action, no walkable portal tile at all) and the
+// STATIC-tier-0-only scope boundary (no save state/quest flags/farming
+// activity loop ported yet, so the farmable plot is always PLOT_BOUNDS[0]
+// and never carries any planted crops).
+//
+// Grid size is 30x24 (js/zones.js's own W/H locals for this zone) -- a
+// fixed, hand-authored layout with no PRNG/noise at all, like
+// buildAshenveilLevel(). Built with the local-vector-then-snapshot shape
+// (matching the JS's own `tiles`/`floor` two-array structure and its
+// explicit "Snapshot floor" line) rather than buildGreenfieldLevel()'s
+// direct-authoring shape.
+TileGrid buildHomesteadLevel(const TileKindRegistry& registry) {
+    const TileKindId grass = registry.idFromName("grass");
+    const TileKindId fence = registry.idFromName("fence");
+    const TileKindId roofL = registry.idFromName("roof_l");
+    const TileKindId roofChimney = registry.idFromName("roof_chimney");
+    const TileKindId roofR = registry.idFromName("roof_r");
+    const TileKindId bwallWin = registry.idFromName("bwall_win");
+    const TileKindId bwallDoor = registry.idFromName("bwall_door");
+    const TileKindId stoneFloor = registry.idFromName("stone_floor");
+    const TileKindId dirt = registry.idFromName("dirt");
+    const TileKindId townWell = registry.idFromName("town_well");
+    const TileKindId normalTree = registry.idFromName("normal_tree");
+    const TileKindId flower = registry.idFromName("flower");
+    const TileKindId candle = registry.idFromName("candle");
+    const TileKindId barrel = registry.idFromName("barrel");
+    const TileKindId exitInterior = registry.idFromName("exit_interior");
+
+    const int W = 30, H = 24; // js/zones.js's own W/H locals for this zone
+
+    // Local vector-then-snapshot, mirroring the JS's own `tiles`/`floor`
+    // two-array structure (both start GRASS-filled).
+    std::vector<std::vector<TileKindId>> tiles(H, std::vector<TileKindId>(W, grass));
+
+    // ---- Border fence -- JS lines 2521-2523 ----
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x)
+            if (y == 0 || y == H - 1 || x == 0 || x == W - 1) tiles[y][x] = fence;
+
+    // ---- Small cabin, top-left (3x2 roof + wall row) -- JS lines 2526-2530
+    // ----
+    tiles[2][2] = roofL;
+    tiles[2][3] = roofChimney;
+    tiles[2][4] = roofR;
+    tiles[3][2] = bwallWin;
+    tiles[3][3] = bwallDoor; // bump-to-enter trigger -> buildHomeCabinInterior()
+    tiles[3][4] = bwallWin;
+    for (int fy = 1; fy <= 4; ++fy)
+        for (int fx = 1; fx <= 5; ++fx)
+            if (tiles[fy][fx] == grass) tiles[fy][fx] = stoneFloor;
+
+    // ---- Dirt path from cabin to farm area -- JS lines 2532-2534 ----
+    for (int y = 4; y <= 8; ++y) tiles[y][4] = dirt;
+    for (int x = 4; x <= 8; ++x) tiles[8][x] = dirt;
+
+    // ---- Farmable area -- STATIC tier-0 only, PLOT_BOUNDS[0]
+    // ({maxY:12, maxX:22}). See this function's own doc comment (and
+    // GrimstoneGame.h's) for why the JS's own homePlotTier/
+    // homestead_extended tier lookup isn't ported -- no save/quest-flag
+    // state exists yet, so this always builds the smallest/default plot,
+    // the same "port the default state" call buildShopInterior() already
+    // makes for its own day/night gate. JS lines 2536-2550. ----
+    constexpr int kPlotMaxY = 12, kPlotMaxX = 22;
+    for (int y = 3; y <= kPlotMaxY; ++y)
+        for (int x = 8; x <= kPlotMaxX; ++x) tiles[y][x] = dirt;
+
+    // ---- Well (left of farm) -- JS line 2553 ----
+    tiles[6][6] = townWell;
+
+    // ---- Trees along south and east edges for atmosphere -- JS lines
+    // 2556-2559 ----
+    for (const auto& yx : {std::pair{14, 2}, std::pair{15, 4}, std::pair{16, 3}, std::pair{14, 24},
+                            std::pair{15, 25}, std::pair{16, 24}, std::pair{20, 5}, std::pair{21, 6},
+                            std::pair{20, 8}, std::pair{22, 14}, std::pair{21, 16}, std::pair{22, 18},
+                            std::pair{18, 22}, std::pair{19, 24}, std::pair{20, 22}}) {
+        const int ty = yx.first, tx = yx.second;
+        if (tx > 0 && tx < W - 1 && ty > 0 && ty < H - 1) tiles[ty][tx] = normalTree;
+    }
+
+    // ---- Flowers near fence -- JS lines 2562-2563 ----
+    for (const auto& yx :
+         {std::pair{13, 4}, std::pair{13, 6}, std::pair{17, 6}, std::pair{13, 24}, std::pair{17, 24}}) {
+        const int ty = yx.first, tx = yx.second;
+        if (tx > 0 && tx < W - 1 && ty > 0 && ty < H - 1 && tiles[ty][tx] == grass) tiles[ty][tx] = flower;
+    }
+
+    // ---- Snapshot floor, then build the real TileGrid -- JS line 2566 ----
+    TileGrid grid(W, H, 1.0f);
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) grid.setFloor(x, y, tiles[y][x]);
+
+    // ---- Well and candle/barrel as decor after the floor snapshot -- JS
+    // lines 2569-2571 ----
+    placeDecor(grid, 6, 6, townWell);
+    placeDecor(grid, 4, 2, candle);
+    placeDecor(grid, 4, 5, barrel);
+
+    // ---- Exit back out (south wall centre) -- JS line 2574. No saved
+    // farm-plot restoration here (JS lines 2577-2597) -- see this function's
+    // own doc comment for the scope boundary (no state.farmPlots exists in
+    // this port). ----
+    placeDecor(grid, H - 1, W / 2, exitInterior);
+
+    // ---- Portal as a TileMarker -- see GrimstoneGame.h's own doc comment
+    // on buildHomesteadLevel() for why "greenfield_pastures" (not a literal
+    // JS zone-graph read -- exitInterior() pops a generic stack with no
+    // named target) is the chosen return destination. ----
+    TileMarker exitMarker;
+    exitMarker.kind = "portal";
+    exitMarker.name = "Exit -> Greenfield Pastures";
+    exitMarker.position = glm::vec2(static_cast<float>(W / 2) + 0.5f, static_cast<float>(H - 1) + 0.5f);
+    exitMarker.properties["targetZone"] = "greenfield_pastures";
+    grid.markers.push_back(exitMarker);
+
+    // ---- Player spawn -- js's own returned entryX:4, entryY:H-2. ----
+    grid.markers.push_back(
+        {"player_spawn", glm::vec2(4.5f, static_cast<float>(H - 2) + 0.5f), "Player Spawn"});
+
+    return grid;
+}
+
+// The Homestead's own cabin interior, transcribed from `function
+// makeHomeCabinInterior()` (js/zones.js, lines 2610-2642 as of this
+// writing) -- see GrimstoneGame.h's own doc comment on
+// buildHomeCabinInterior() for the STATIC-tier-0-only scope boundary (no
+// state.homeHouseTier/state.homeFurniture/state.homeBed restoration -- same
+// no-save-system gap buildHomesteadLevel() above documents).
+//
+// Grid size is 9x7 (js/zones.js's own HOUSE_TIER_SIZES[0] for this zone) --
+// a fixed, hand-authored layout with no PRNG/noise at all.
+TileGrid buildHomeCabinInterior(const TileKindRegistry& registry) {
+    const TileKindId stoneFloor = registry.idFromName("stone_floor");
+    const TileKindId wall = registry.idFromName("wall");
+    const TileKindId bed = registry.idFromName("bed");
+    const TileKindId exitInterior = registry.idFromName("exit_interior");
+
+    const int W = 9, H = 7; // HOUSE_TIER_SIZES[0] -- js/zones.js line 2604
+
+    TileGrid grid(W, H, 1.0f);
+
+    // ---- Fill with stone floor -- JS line 2613 ----
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) grid.setFloor(x, y, stoneFloor);
+
+    // ---- Outer walls -- JS lines 2617-2618 ----
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x)
+            if (y == 0 || y == H - 1 || x == 0 || x == W - 1) grid.setFloor(x, y, wall);
+
+    // ---- Bed -- JS's own hardcoded default position (2,2) (`state.homeBed
+    // ?.x ?? 2`/`?? 2`, the fallback used whenever no bed position has been
+    // saved -- this port never has one saved, see this function's own doc
+    // comment). JS lines 2624-2626. No state.homeFurniture restoration
+    // (JS lines 2629-2635) -- out of scope, same reason. ----
+    placeDecor(grid, 2, 2, bed);
+
+    // ---- Exit in south wall centre -- JS line 2638 ----
+    placeDecor(grid, H - 1, W / 2, exitInterior);
+
+    // ---- Portal as a TileMarker -- back to the Homestead, this port's own
+    // "homestead" slug (buildHomesteadLevel()'s own zone), the same
+    // "interiors re-enter their parent zone" convention every other interior
+    // in this file already establishes. ----
+    TileMarker exitMarker;
+    exitMarker.kind = "portal";
+    exitMarker.name = "Exit -> The Homestead";
+    exitMarker.position = glm::vec2(static_cast<float>(W / 2) + 0.5f, static_cast<float>(H - 1) + 0.5f);
+    exitMarker.properties["targetZone"] = "homestead";
+    grid.markers.push_back(exitMarker);
+
+    // ---- Player spawn -- js's own returned entryX:Math.floor(W/2),
+    // entryY:H-2. ----
+    grid.markers.push_back(
+        {"player_spawn", glm::vec2(static_cast<float>(W / 2) + 0.5f, static_cast<float>(H - 2) + 0.5f), "Player Spawn"});
+
+    return grid;
+}

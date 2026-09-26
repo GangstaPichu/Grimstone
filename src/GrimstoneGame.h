@@ -461,3 +461,82 @@ TileGrid buildAshgroveHollowLevel(const TileKindRegistry& registry);
 // the east EXIT_INTERIOR, the arrival point coming back in from Ashgrove
 // Hollow).
 TileGrid buildCaravanZoneLevel(const TileKindRegistry& registry);
+
+// ---- The Homestead (and its cabin interior) -----------------------------
+//
+// The player's personal farming plot -- the LAST of the hand-authored zones
+// this port's own PORTING_PLAN.md queue names, completing the full
+// `js/zones.js` zone-porting queue (every `makeXMap`/`makeXInterior`
+// function in that file now has a C++ counterpart here). Transcribed from
+// `function makeHomeMap()` (js/zones.js, lines 2515-2600 as of this
+// writing): a small fenced 30x24 plot with a cabin (top-left), a farmable
+// dirt plot, a well, and trees/flowers for atmosphere.
+//
+// Scope note (important): the JS sizes the farmable plot from runtime save
+// state (`state.homePlotTier`/`questFlags.homestead_extended`, resolved
+// through a 5-entry `PLOT_BOUNDS` tier table) and restores any previously
+// planted crops from `state.farmPlots`. NONE of that state exists in this
+// port yet -- there is no save system, no quest-flag store, and no farming
+// activity loop (all separately-scoped future work: `js/save-load.js`/
+// `js/quests.js`/`js/activities.js` each have their own still-"Not started"
+// row in PORTING_PLAN.md's system-by-system table). This function ports
+// only the STATIC base-tier layout: `PLOT_BOUNDS[0]` (`{maxY:12, maxX:22}`,
+// the smallest/default plot size) with no planted crops at all -- the same
+// "port the default, quest-not-started state" judgement call
+// buildShopInterior()'s own doc comment already makes for Dorin's day/night
+// gate.
+//
+// Grid size is 30x24 (js/zones.js's own W/H locals for this zone).
+//
+// Entry (important, and unlike every other zone in this port): there is no
+// walkable portal TILE that leads INTO the Homestead anywhere in js/zones.js
+// or js/world.js's own zone graph. The forward path is a pure item-use
+// action -- js/npcs.js's own Old Bertram quest line hands the player a
+// "Homestead Sigil" (`home_sigil`, js/world.js) whose own use-effect
+// (js/activities.js, around line 254) is `enterInterior(makeHomeMap, 'YOUR
+// HOMESTEAD')`, callable from anywhere, not a tile the player steps on. So
+// this function's own player_spawn marker exists (matching the JS's own
+// returned entryX:4, entryY:H-2) but has no corresponding portal TileMarker
+// anywhere else pointing at "homestead" -- that link would need to come from
+// wherever a future pass ports the sigil item's use-action, not from a map
+// tile. The one EXIT_INTERIOR this zone DOES have (south wall centre) is
+// wired as a "portal" TileMarker targeting "greenfield_pastures" -- the JS's
+// own `exitInterior()` just pops a generic "current interior" stack rather
+// than naming a zone (same gap this port's other interiors already work
+// around, see buildWizardTowerInterior()'s own doc comment), and Greenfield
+// Pastures is the zone that actually hosts Old Bertram and this whole quest
+// line, making it the most sensible return destination of any zone in this
+// port -- a judgement call, not something read directly off the JS.
+//
+// The cabin door (a plain T.BWALL_DOOR paint at tiles[3][3], no marker of
+// its own -- see buildAshenveilLevel()'s own doc comment on BWALL_DOOR being
+// a "bump-to-enter trigger" the gameplay layer reads directly, not a portal)
+// leads to buildHomeCabinInterior() below; that function's own south exit
+// targets this zone's slug in return.
+TileGrid buildHomesteadLevel(const TileKindRegistry& registry);
+
+// The Homestead's own cabin interior, transcribed from `function
+// makeHomeCabinInterior()` (js/zones.js, lines 2610-2642 as of this
+// writing) -- entered via buildHomesteadLevel()'s own BWALL_DOOR tile
+// (js/activities.js's own step-handler, around line 2795-2798, checks for
+// `northTile === T.BWALL_DOOR && currentMap.name === 'YOUR HOMESTEAD'`).
+//
+// Scope note, same shape as buildHomesteadLevel()'s own above: the JS sizes
+// this room from `state.homeHouseTier` (a 5-entry `HOUSE_TIER_SIZES` table)
+// and restores saved furniture placement (`state.homeFurniture`) plus a
+// saved bed position (`state.homeBed`) -- none of that state exists in this
+// port yet, same save-system/quest-flag/activity gaps named above. This
+// function ports only the STATIC tier-0 layout: `HOUSE_TIER_SIZES[0]`
+// (`{W:9, H:7}`, the smallest/default room size), just the outer walls plus
+// a bed at the JS's own hardcoded default position (2,2) (`state.homeBed?.x
+// ?? 2`/`?? 2`, i.e. the fallback that applies whenever no bed has been
+// saved) and the exit -- no extra furniture.
+//
+// Grid size is 9x7 (js/zones.js's own W/H locals for tier 0).
+//
+// South exit (js's own returned entryX:Math.floor(W/2), entryY:H-2 on
+// re-entry) is wired as a "portal" TileMarker targeting "homestead" --
+// buildHomesteadLevel()'s own slug -- the same "interiors re-enter their
+// parent zone" convention every other interior in this file already
+// establishes.
+TileGrid buildHomeCabinInterior(const TileKindRegistry& registry);
