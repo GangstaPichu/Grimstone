@@ -165,5 +165,171 @@
         ]
       }
     ]
+  },
+  {
+    "name": "willa_bank",
+    "startNodeId": "menu",
+    "nodes": [
+      {
+        "id": "menu",
+        "speaker": "Willa",
+        "text": "Welcome to the Grimstone Savings Bank! I can help you play the market, or lock some gold into a bond. What'll it be?",
+        "choices": [
+          { "text": "The Stock Market", "targetNodeId": "market" },
+          { "text": "Savings Bonds", "targetNodeId": "bonds" },
+          { "text": "Never mind, thanks." }
+        ]
+      },
+      {
+        "id": "market",
+        "speaker": "Willa",
+        "text": "Let me check the boards for you...",
+        "choices": [
+          { "text": "Grimco Mining Co.", "targetNodeId": "grimco_menu" },
+          { "text": "Ironvale Smelters", "targetNodeId": "ironvale_menu" },
+          { "text": "Ashenveil Gold Trust", "targetNodeId": "ashgold_menu" },
+          { "text": "Verdant Farms Ltd.", "targetNodeId": "verdant_menu" }
+        ]
+      },
+      {
+        "id": "grimco_menu",
+        "speaker": "Willa",
+        "text": "Grimco Mining Co. -- checking the board...",
+        "choices": [
+          { "text": "Buy 1 share", "targetNodeId": "grimco_buy_result" },
+          { "text": "Sell 1 share", "targetNodeId": "grimco_sell_result" },
+          { "text": "Back to the market board", "targetNodeId": "market" }
+        ]
+      },
+      {
+        "id": "grimco_buy_result",
+        "speaker": "Willa",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "grimco_menu" }
+        ]
+      },
+      {
+        "id": "grimco_sell_result",
+        "speaker": "Willa",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "grimco_menu" }
+        ]
+      },
+      {
+        "id": "ironvale_menu",
+        "speaker": "Willa",
+        "text": "Ironvale Smelters -- checking the board...",
+        "choices": [
+          { "text": "Buy 1 share", "targetNodeId": "ironvale_buy_result" },
+          { "text": "Sell 1 share", "targetNodeId": "ironvale_sell_result" },
+          { "text": "Back to the market board", "targetNodeId": "market" }
+        ]
+      },
+      {
+        "id": "ironvale_buy_result",
+        "speaker": "Willa",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "ironvale_menu" }
+        ]
+      },
+      {
+        "id": "ironvale_sell_result",
+        "speaker": "Willa",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "ironvale_menu" }
+        ]
+      },
+      {
+        "id": "ashgold_menu",
+        "speaker": "Willa",
+        "text": "Ashenveil Gold Trust -- checking the board...",
+        "choices": [
+          { "text": "Buy 1 share", "targetNodeId": "ashgold_buy_result" },
+          { "text": "Sell 1 share", "targetNodeId": "ashgold_sell_result" },
+          { "text": "Back to the market board", "targetNodeId": "market" }
+        ]
+      },
+      {
+        "id": "ashgold_buy_result",
+        "speaker": "Willa",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "ashgold_menu" }
+        ]
+      },
+      {
+        "id": "ashgold_sell_result",
+        "speaker": "Willa",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "ashgold_menu" }
+        ]
+      },
+      {
+        "id": "verdant_menu",
+        "speaker": "Willa",
+        "text": "Verdant Farms Ltd. -- checking the board...",
+        "choices": [
+          { "text": "Buy 1 share", "targetNodeId": "verdant_buy_result" },
+          { "text": "Sell 1 share", "targetNodeId": "verdant_sell_result" },
+          { "text": "Back to the market board", "targetNodeId": "market" }
+        ]
+      },
+      {
+        "id": "verdant_buy_result",
+        "speaker": "Willa",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "verdant_menu" }
+        ]
+      },
+      {
+        "id": "verdant_sell_result",
+        "speaker": "Willa",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "verdant_menu" }
+        ]
+      },
+      {
+        "id": "bonds",
+        "speaker": "Willa",
+        "text": "Bonds lock a fixed sum of gold away and return it with interest. A Short Bond locks 100g for 5 minutes and returns 110g. A Medium Bond locks 200g for 15 minutes and returns 250g. A Long Bond locks 400g for 30 minutes and returns 600g.",
+        "choices": [
+          { "text": "Lock in a Short Bond (100g)", "targetNodeId": "bond_short_result" },
+          { "text": "Lock in a Medium Bond (200g)", "targetNodeId": "bond_medium_result" },
+          { "text": "Lock in a Long Bond (400g)", "targetNodeId": "bond_long_result" },
+          { "text": "Back to Willa", "targetNodeId": "menu" }
+        ]
+      },
+      {
+        "id": "bond_short_result",
+        "speaker": "Willa",
+        "text": "One moment...",
+        "choices": [
+          { "text": "Understood.", "targetNodeId": "bonds" }
+        ]
+      },
+      {
+        "id": "bond_medium_result",
+        "speaker": "Willa",
+        "text": "One moment...",
+        "choices": [
+          { "text": "Understood.", "targetNodeId": "bonds" }
+        ]
+      },
+      {
+        "id": "bond_long_result",
+        "speaker": "Willa",
+        "text": "One moment...",
+        "choices": [
+          { "text": "Understood.", "targetNodeId": "bonds" }
+        ]
+      }
+    ]
   }
 ]

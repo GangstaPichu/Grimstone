@@ -1378,6 +1378,380 @@ void overrideAldermastLiveDialogueText(BeTileGridFrame* frame) {
     }
 }
 
+// ======= The Grimstone Savings Bank (js/bank.js) =======
+// Transcribed from js/bank.js's STOCKS/BOND_TIERS/ensureBankState()/
+// updateStockPrices()/checkBondMaturity() plus renderMarketTab()'s own
+// buy/sell handlers and renderBondsTab()'s own bond-purchase handler
+// (lines 6-49, 160-230, 233-310) -- read in full before writing any of
+// this, per this pass's own task framing.
+//
+// **Real, deliberate simplification, documented as such (same spirit as
+// handleMiningAndWoodcutting()'s own progress-bar note above)**: the JS's
+// own bank panel is a hand-typed-quantity UI (`qtyInput`/`amtInput`, a free-
+// form number field) -- no such text-entry primitive exists on a
+// DialogueTree choice (DialogueChoice.h: a fixed label + an optional fixed
+// action/actionParam, nothing reads a live player-typed number), and
+// PORTING_PLAN.md's own js/quests.js row already documents that no
+// DialogueTemplate UILayout exists in content/ yet either, so there is no
+// UI primitive here beyond the SAME requestedPushDialog/DialogueTree
+// mechanism the Aldermast quest-chain pass above just established. This
+// ports the bank as a real, working dialogue-tree hookup on Willa's own
+// npc_spawn marker (buildBankInterior(), GrimstoneGame.cpp) instead: FIXED
+// quantities -- 1 share per buy/sell click, a fixed 100g/200g/400g stake
+// per bond tier -- rather than the JS's arbitrary typed amount. A future
+// pass with a real number-entry UI primitive could restore free-form
+// amounts without changing anything below except the fixed constants.
+//
+// **Judgement call, not in the JS at all**: js/bank.js keeps a player's
+// "gold" (in hand) separate from "p.bank.gold" (the vault) -- deposit/
+// withdraw between the two, with stock/bond purchases spending ONLY
+// vault gold. This port has no existing gold/wallet concept anywhere yet
+// (checked, same as handleCombatDeathRewards()'s own doc comment above),
+// so rather than inventing a second parallel "vault" flag with no
+// deposit/withdraw UI to move money between the two (which would just
+// strand the player's gold in whichever bucket it landed in), this ports
+// a SINGLE wallet flag ("player_gold") that stock/bond purchases spend
+// and payouts credit directly -- the vault/in-hand split collapses to
+// one number, documented here as the reason rather than silently
+// dropped.
+constexpr const char* kPlayerGoldFlag = "player_gold";
+
+struct BankStock {
+    const char* id;          // js/bank.js's own STOCKS key
+    const char* displayName; // js/bank.js's own STOCKS[id].name
+    double basePrice;        // js/bank.js's own STOCKS[id].basePrice
+    const char* priceFlagKey;
+    const char* heldFlagKey;
+};
+constexpr BankStock kBankStocks[] = {
+    {"grimco", "Grimco Mining Co.", 12.0, "stock_price_grimco", "stock_held_grimco"},
+    {"ironvale", "Ironvale Smelters", 25.0, "stock_price_ironvale", "stock_held_ironvale"},
+    {"ashgold", "Ashenveil Gold Trust", 45.0, "stock_price_ashgold", "stock_held_ashgold"},
+    {"verdant", "Verdant Farms Ltd.", 8.0, "stock_price_verdant", "stock_held_verdant"},
+};
+constexpr int kBankStockCount = sizeof(kBankStocks) / sizeof(kBankStocks[0]);
+
+const BankStock* findBankStock(const char* id) {
+    for (int i = 0; i < kBankStockCount; ++i)
+        if (std::strcmp(kBankStocks[i].id, id) == 0) return &kBankStocks[i];
+    return nullptr;
+}
+
+// js/bank.js's own updateStockPrices() (lines 33-49): a 30-REAL-second
+// random walk, +/-13%, clamped to [0.4x, 2.5x] of each stock's own
+// basePrice. There is no wall-clock available to a 2D plugin
+// (BeTileGridFrame only offers a per-frame `dt`), so the 30-second
+// interval is accumulated in its own flag ("stock_market_elapsed",
+// incremented by frame->dt every frame, same "own the accumulator as a
+// flag since this file keeps no persistent struct of its own" discipline
+// handleFarmGrowthTick()'s own doc comment already establishes) and reset
+// + rerolled once it crosses 30.0 -- mirrors the JS's own
+// `now - state.stockMarket.lastUpdate < 30000` gate exactly, just in
+// accumulated-dt seconds instead of Date.now() milliseconds.
+// frame->randomUint32 (the SAME seeded stream every other weighted-roll
+// system in this file already draws from) stands in for the JS's own
+// Math.random(), matching handleFishing()/handleCombatAttack()'s own
+// convention.
+constexpr double kStockMarketTickSeconds = 30.0;
+
+void updateStockMarket(BeTileGridFrame* frame) {
+    const double elapsed = readFlag(frame, "stock_market_elapsed", 0.0) + static_cast<double>(frame->dt);
+    if (elapsed < kStockMarketTickSeconds) {
+        queueFlagSet("stock_market_elapsed", elapsed);
+        return;
+    }
+
+    queueFlagSet("stock_market_elapsed", 0.0);
+    for (int i = 0; i < kBankStockCount; ++i) {
+        const BankStock& stock = kBankStocks[i];
+        const double current = readFlag(frame, stock.priceFlagKey, stock.basePrice);
+
+        double unit = 0.5; // deterministic fallback, same convention as handleCombatAttack() above
+        if (frame->randomUint32 != nullptr) {
+            constexpr double kUint32Max = 4294967295.0;
+            unit = static_cast<double>(frame->randomUint32()) / kUint32Max;
+        }
+        const double factor = 0.88 + unit * 0.26; // js's own "+/-13% random walk"
+
+        const double lowClamp = std::round(stock.basePrice * 0.4);
+        const double highClamp = std::round(stock.basePrice * 2.5);
+        double next = std::round(current * factor);
+        if (next < lowClamp) next = lowClamp;
+        if (next > highClamp) next = highClamp;
+        queueFlagSet(stock.priceFlagKey, next);
+    }
+}
+
+// js/bank.js's own BOND_TIERS (lines 14-18) -- durations/rates transcribed
+// exactly (5/15/30 real minutes, +10%/+25%/+50% return). `fixedAmount` is
+// this port's own judgement call, replacing the JS's free-form typed
+// amount (see this section's own top-of-file doc comment) -- chosen to
+// scale with the tier the same way the JS's own numbers imply a bigger
+// commitment for a longer lockup, without inventing an amount-entry UI.
+struct BankBondTier {
+    const char* id;   // used to build this bond instance's own unique timer key
+    const char* displayName;
+    double durationSeconds;
+    double rate;
+    double fixedAmount;
+};
+constexpr BankBondTier kBankBondTiers[] = {
+    {"short", "Short Bond", 5.0 * 60.0, 0.10, 100.0},
+    {"medium", "Medium Bond", 15.0 * 60.0, 0.25, 200.0},
+    {"long", "Long Bond", 30.0 * 60.0, 0.50, 400.0},
+};
+constexpr int kBankBondTierCount = sizeof(kBankBondTiers) / sizeof(kBankBondTiers[0]);
+
+// js/bank.js's own checkBondMaturity() (lines 52-67): pays out
+// floor(amount * (1 + rate)) once a bond's matureAt passes. Here that's
+// the host timer's own "just expired" transition (BeTimerState::
+// remainingSeconds <= 0.0 for exactly one frame, GameModuleApi.h's own
+// v25->v26 doc comment) on any "bond_<tier>_<n>" timer -- <tier> is
+// parsed back out of the key to look up that tier's own fixedAmount/rate
+// (both are the SAME fixed constants used to start the timer, not
+// per-instance state, since this port's own bonds carry no free-form
+// amount to remember -- see kBankBondTiers's own doc comment above).
+// Multiple simultaneous bonds of the same tier get distinct keys via
+// "bond_counter" (a plain incrementing flag), matching this pass's own
+// task framing.
+void handleBondMaturity(BeTileGridFrame* frame) {
+    for (int i = 0; i < frame->timerCount; ++i) {
+        const BeTimerState& timer = frame->timers[i];
+        if (timer.key == nullptr) continue;
+        if (timer.remainingSeconds > 0.0) continue; // not the "just expired" frame
+
+        const std::string key(timer.key);
+        const BankBondTier* tier = nullptr;
+        for (int t = 0; t < kBankBondTierCount; ++t) {
+            const std::string prefix = std::string("bond_") + kBankBondTiers[t].id + "_";
+            if (key.rfind(prefix, 0) == 0) {
+                tier = &kBankBondTiers[t];
+                break;
+            }
+        }
+        if (tier == nullptr) continue; // not one of ours
+
+        const double payout = std::floor(tier->fixedAmount * (1.0 + tier->rate));
+        BeFlagUpdate goldUpdate;
+        goldUpdate.key = kPlayerGoldFlag;
+        goldUpdate.value = payout;
+        goldUpdate.mode = 1; // INCREMENT
+        flagUpdateBuffer().push_back(goldUpdate);
+
+        toastScratch() = std::string("Your ") + tier->displayName + " has matured! You received " +
+                          std::to_string(static_cast<int>(payout)) + "g.";
+        frame->requestedToastText = toastScratch().c_str();
+    }
+}
+
+// **Real, documented gap, same shape as playerNearAldermast()'s own doc
+// comment above**: BeTileMarker has no name/id crossing the ABI, so this
+// matches Willa's OWN npc_spawn marker by the exact world position
+// buildBankInterior() places it at -- addNpcSpawnMarker(grid, "Willa",
+// 6.0f, 3.0f) offsets both coordinates by +0.5 (GrimstoneGame.cpp's own
+// addNpcSpawnMarker()), landing at (6.5, 3.5). Checked against every
+// other addNpcSpawnMarker()/marker.position call site in
+// GrimstoneGame.cpp; none other lands on this exact float pair.
+constexpr float kWillaMarkerWorldX = 6.5f;
+constexpr float kWillaMarkerWorldY = 3.5f;
+constexpr float kWillaInteractRadius = 1.5f; // same adjacency spirit as kAldermastInteractRadius
+
+bool playerNearWilla(const BeTileGridFrame* frame) {
+    bool markerPresent = false;
+    for (int i = 0; i < frame->markerCount; ++i) {
+        const BeTileMarker& m = frame->markers[i];
+        if (m.kind == nullptr || std::strcmp(m.kind, "npc_spawn") != 0) continue;
+        if (std::fabs(m.worldX - kWillaMarkerWorldX) > 0.01f) continue;
+        if (std::fabs(m.worldY - kWillaMarkerWorldY) > 0.01f) continue;
+        markerPresent = true;
+        break;
+    }
+    if (!markerPresent) return false; // not currently in the Bank interior at all
+
+    const float dx = frame->playerWorldX - kWillaMarkerWorldX;
+    const float dy = frame->playerWorldY - kWillaMarkerWorldY;
+    return (dx * dx + dy * dy) <= kWillaInteractRadius * kWillaInteractRadius;
+}
+
+void startBankDialogue(BeTileGridFrame* frame) {
+    if (!frame->interactPressed) return;
+    if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
+    if (!playerNearWilla(frame)) return;
+    frame->requestedPushDialog = "dialogue:willa_bank";
+}
+
+// ======= Dialogue side effects the action vocabulary can't express (bank
+// half) ======= Same "belongs in GrimstoneRuntime.cpp, not the DialogueChoice
+// action vocabulary" reasoning applyAldermastDialogueSideEffects() already
+// documents above, including the same ordering subtlety: activeDialogueNodeId
+// already reflects the destination the click just advanced TO by the time
+// this runs, so every stock/bond choice above routes to its own named result
+// node rather than acting on the node the choice was clicked FROM.
+//
+// **Accepted, one-frame-stale display, same category as
+// handleCombatDeathRewards()'s own "detected on a later frame" doc comment
+// above**: the result text for a JUST-clicked buy/sell/bond choice is
+// computed INLINE from the pre-transaction flags this same function reads
+// (so the message it writes to requestedDialogueTextOverride this frame is
+// accurate for the click that just landed), but a flag this function queues
+// via requestedFlagUpdates (e.g. the new gold total) isn't visible via
+// frame->flags until the FOLLOWING frame -- so an idle frame sitting on the
+// same result node before the player clicks "All right." recomputes its own
+// status text from flags that, for exactly one frame, still show the
+// pre-transaction numbers. The dialogue box is on screen for far longer than
+// one frame before a human reacts, so this is imperceptible in practice, and
+// it is the same category of one-frame lag this file already accepts
+// elsewhere rather than a new kind of bug.
+void applyBankStockSideEffect(BeTileGridFrame* frame, const BankStock& stock, bool isBuy) {
+    const double gold = readFlag(frame, kPlayerGoldFlag, 0.0);
+    const double price = readFlag(frame, stock.priceFlagKey, stock.basePrice);
+    const double held = readFlag(frame, stock.heldFlagKey, 0.0);
+
+    if (isBuy) {
+        if (gold < price) {
+            dialogueOverrideScratch() =
+                std::string("You don't have enough gold in hand to buy a share of ") + stock.displayName + " (" +
+                std::to_string(static_cast<int>(price)) + "g).";
+        } else {
+            BeFlagUpdate goldUpdate;
+            goldUpdate.key = kPlayerGoldFlag;
+            goldUpdate.value = -price;
+            goldUpdate.mode = 1; // INCREMENT
+            flagUpdateBuffer().push_back(goldUpdate);
+            queueFlagSet(stock.heldFlagKey, held + 1.0); // SET: this file's own read-modify-write flag idiom
+            dialogueOverrideScratch() = std::string("Bought 1 share of ") + stock.displayName + " for " +
+                                         std::to_string(static_cast<int>(price)) + "g. You now own " +
+                                         std::to_string(static_cast<int>(held) + 1) + ".";
+        }
+    } else {
+        if (held < 1.0) {
+            dialogueOverrideScratch() = std::string("You don't own any shares of ") + stock.displayName + " to sell.";
+        } else {
+            BeFlagUpdate goldUpdate;
+            goldUpdate.key = kPlayerGoldFlag;
+            goldUpdate.value = price;
+            goldUpdate.mode = 1; // INCREMENT
+            flagUpdateBuffer().push_back(goldUpdate);
+            queueFlagSet(stock.heldFlagKey, held - 1.0);
+            dialogueOverrideScratch() = std::string("Sold 1 share of ") + stock.displayName + " for " +
+                                         std::to_string(static_cast<int>(price)) + "g. You now own " +
+                                         std::to_string(static_cast<int>(held) - 1) + ".";
+        }
+    }
+    frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+}
+
+void applyBankBondSideEffect(BeTileGridFrame* frame, const BankBondTier& tier) {
+    const double gold = readFlag(frame, kPlayerGoldFlag, 0.0);
+    if (gold < tier.fixedAmount) {
+        dialogueOverrideScratch() = std::string("You don't have enough gold in hand to lock in a ") +
+                                     tier.displayName + " (" + std::to_string(static_cast<int>(tier.fixedAmount)) +
+                                     "g).";
+        frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+        return;
+    }
+
+    BeFlagUpdate goldUpdate;
+    goldUpdate.key = kPlayerGoldFlag;
+    goldUpdate.value = -tier.fixedAmount;
+    goldUpdate.mode = 1; // INCREMENT
+    flagUpdateBuffer().push_back(goldUpdate);
+
+    const double counter = readFlag(frame, "bond_counter", 0.0);
+    queueFlagSet("bond_counter", counter + 1.0);
+    const std::string timerKey =
+        std::string("bond_") + tier.id + "_" + std::to_string(static_cast<long long>(counter));
+    queueTimerStart(internString(timerKey), tier.durationSeconds);
+
+    const double payout = std::floor(tier.fixedAmount * (1.0 + tier.rate));
+    dialogueOverrideScratch() = std::string("Locked ") + std::to_string(static_cast<int>(tier.fixedAmount)) +
+                                 "g into a " + tier.displayName + ". Matures in " +
+                                 std::to_string(static_cast<int>(tier.durationSeconds / 60.0)) +
+                                 " min -- you'll receive " + std::to_string(static_cast<int>(payout)) + "g.";
+    frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+}
+
+void applyBankDialogueSideEffects(BeTileGridFrame* frame) {
+    if (frame->activeDialogueTreeName == nullptr || std::strcmp(frame->activeDialogueTreeName, "willa_bank") != 0)
+        return;
+    if (frame->clickedUiActionId == nullptr || frame->clickedUiActionId[0] == '\0') return;
+    if (frame->activeDialogueNodeId == nullptr) return;
+
+    const std::string node(frame->activeDialogueNodeId);
+    for (int i = 0; i < kBankStockCount; ++i) {
+        const BankStock& stock = kBankStocks[i];
+        if (node == std::string(stock.id) + "_buy_result") {
+            applyBankStockSideEffect(frame, stock, /*isBuy=*/true);
+            return;
+        }
+        if (node == std::string(stock.id) + "_sell_result") {
+            applyBankStockSideEffect(frame, stock, /*isBuy=*/false);
+            return;
+        }
+    }
+    for (int i = 0; i < kBankBondTierCount; ++i) {
+        const BankBondTier& tier = kBankBondTiers[i];
+        if (node == std::string("bond_") + tier.id + "_result") {
+            applyBankBondSideEffect(frame, tier);
+            return;
+        }
+    }
+}
+
+// ======= Live dialogue text for the bank's own read-only menu nodes =======
+// Separate from applyBankDialogueSideEffects() above on purpose: the
+// "market"/"<stock>_menu"/"bonds" nodes never fire a side effect (browsing
+// costs nothing), so their own live prices/holdings/gold are read straight
+// from frame->flags with none of the same-frame staleness the result nodes
+// above have to work around -- same split
+// applyAldermastDialogueSideEffects()/overrideAldermastLiveDialogueText()
+// already establish.
+void overrideBankMenuLiveDialogueText(BeTileGridFrame* frame) {
+    if (frame->activeDialogueTreeName == nullptr || std::strcmp(frame->activeDialogueTreeName, "willa_bank") != 0)
+        return;
+    if (frame->activeDialogueNodeId == nullptr) return;
+    // Don't stomp a same-frame transaction message applyBankDialogueSideEffects()
+    // above may have just written -- only fill in text for the browse-only nodes.
+    if (frame->clickedUiActionId != nullptr && frame->clickedUiActionId[0] != '\0') return;
+
+    const std::string node(frame->activeDialogueNodeId);
+    const double gold = readFlag(frame, kPlayerGoldFlag, 0.0);
+
+    if (node == "market") {
+        std::string text = "Gold in hand: " + std::to_string(static_cast<int>(gold)) + "g.\n";
+        for (int i = 0; i < kBankStockCount; ++i) {
+            const BankStock& stock = kBankStocks[i];
+            const double price = readFlag(frame, stock.priceFlagKey, stock.basePrice);
+            text += std::string(stock.displayName) + ": " + std::to_string(static_cast<int>(price)) + "g/share\n";
+        }
+        dialogueOverrideScratch() = text;
+        frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+        return;
+    }
+
+    for (int i = 0; i < kBankStockCount; ++i) {
+        const BankStock& stock = kBankStocks[i];
+        if (node != std::string(stock.id) + "_menu") continue;
+        const double price = readFlag(frame, stock.priceFlagKey, stock.basePrice);
+        const double held = readFlag(frame, stock.heldFlagKey, 0.0);
+        dialogueOverrideScratch() = std::string(stock.displayName) + " is trading at " +
+                                     std::to_string(static_cast<int>(price)) + "g/share. You own " +
+                                     std::to_string(static_cast<int>(held)) + " (worth " +
+                                     std::to_string(static_cast<int>(held * price)) + "g). Gold in hand: " +
+                                     std::to_string(static_cast<int>(gold)) + "g.";
+        frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+        return;
+    }
+
+    if (node == "bonds") {
+        dialogueOverrideScratch() =
+            std::string("Gold in hand: ") + std::to_string(static_cast<int>(gold)) +
+            "g. Bonds lock a fixed sum away and return it with interest -- Short: 100g -> 110g in 5 min; "
+            "Medium: 200g -> 250g in 15 min; Long: 400g -> 600g in 30 min.";
+        frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+    }
+}
+
 } // namespace
 
 void updateGrimstoneRuntime(BeTileGridFrame* frame) {
@@ -1407,6 +1781,11 @@ void updateGrimstoneRuntime(BeTileGridFrame* frame) {
     startAldermastDialogue(frame);
     applyAldermastDialogueSideEffects(frame);
     overrideAldermastLiveDialogueText(frame);
+    updateStockMarket(frame);   // per-frame, not gated on interactPressed
+    handleBondMaturity(frame);  // per-frame, not gated on interactPressed
+    startBankDialogue(frame);
+    applyBankDialogueSideEffects(frame);
+    overrideBankMenuLiveDialogueText(frame);
 
     // Drain the scratch buffers into the frame's own write-back arrays --
     // done last so every system above had a chance to queue into them
