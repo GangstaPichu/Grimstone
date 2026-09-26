@@ -1001,6 +1001,91 @@ struct EnemyCfg {
     int count;
 };
 
+// Real per-species combat/AI tuning for the four enemy kinds this file
+// paints (goblin_spawn/skeleton_spawn/wolf_spawn/zombie) -- ground truth
+// from js/activities.js's own ENEMY_DEFS (line 741-747): `hp` -> maxHealth,
+// `aggroRange` -> sightRadius, `speed` -> speed, `patrolRadius` ->
+// wanderRadius (an authored route always wins per TileAgentSpawn::
+// wanderRadius's own doc comment, but every placement below has no route,
+// so an idle enemy now actually patrols instead of standing frozen).
+//
+// `attackWeaponName` is a judgement call, not a direct field mapping: the
+// JS's own minDmg/maxDmg range has no matching authored weapon in
+// content/weapons.json (every entry there is a `grimstone_fists_tN` PLAYER
+// fist tier), so each species snaps to whichever tier lands closest to its
+// own average roll ((minDmg+maxDmg)/2) -- the SAME "closest bucket"
+// quantization GrimstoneRuntime.cpp's handleCombatAttack() already applies
+// to the player's own swing, not a new approximation this port invents:
+//   goblin_spawn  minDmg3  maxDmg8  avg5.5  -> t2(6),  |6-5.5|=0.5
+//   skeleton_spawn minDmg5 maxDmg12 avg8.5  -> t3(10), |10-8.5|=1.5
+//   wolf_spawn    minDmg4  maxDmg10 avg7.0  -> t2(6),  |6-7|=1.0
+//   zombie        minDmg4  maxDmg11 avg7.5  -> t2(6),  |6-7.5|=1.5 (vs t3's |10-7.5|=2.5)
+struct EnemyAgentTuning {
+    const char* kind; // matches this species' own registerGrimstoneTileKinds() id
+    float maxHealth;
+    float sightRadius;
+    float speed;
+    float wanderRadius;
+    const char* attackWeaponName;
+};
+constexpr EnemyAgentTuning kEnemyAgentTuning[] = {
+    {"goblin_spawn", 18.0f, 5.0f, 1.8f, 4.0f, "grimstone_fists_t2"},
+    {"skeleton_spawn", 28.0f, 6.0f, 1.4f, 3.0f, "grimstone_fists_t3"},
+    {"wolf_spawn", 22.0f, 7.0f, 2.4f, 5.0f, "grimstone_fists_t2"},
+    {"zombie", 35.0f, 4.0f, 0.9f, 3.0f, "grimstone_fists_t2"},
+};
+constexpr int kEnemyAgentTuningCount = sizeof(kEnemyAgentTuning) / sizeof(kEnemyAgentTuning[0]);
+
+const EnemyAgentTuning* findEnemyAgentTuning(const std::string& kind) {
+    for (int i = 0; i < kEnemyAgentTuningCount; ++i)
+        if (kind == kEnemyAgentTuning[i].kind) return &kEnemyAgentTuning[i];
+    return nullptr;
+}
+
+// Builds a real, host-driven TileAgentSpawn for one enemy placement --
+// replacing a purely decorative painted tile (registerGrimstoneTileKinds()'s
+// own "the JS converts these to moving entities on load rather than leaving
+// them as static blocking tiles" comment) with a genuinely killable, chasing
+// agent GrimstoneRuntime.cpp's handleCombatAttack()/handleCombatDeathRewards()
+// can actually resolve a hitbox against (see that file's own doc comment on
+// the "frame->agents is currently EMPTY" gap this closes). `color`/`shape`
+// are copied from the tile kind's own registered descriptor so the agent's
+// live sprite reads as the same enemy the decorative tile used to paint,
+// not TileAgentSpawn's own generic magenta-triangle default.
+//
+// Any `tileId` outside the four species `kEnemyAgentTuning` lists (a future
+// enemy kind added to this file without a matching tuning row, or a caller
+// passing something that isn't an enemy at all) still returns a real,
+// patrol-only spawn with the registry's own color/shape -- ReactionMode
+// stays the struct's own Pause default, attackWeaponName stays empty, and
+// GrimstoneRuntime.cpp's findEnemyDef() simply never matches it, the same
+// permissive-fallback shape idFromName() itself already uses elsewhere in
+// this file, rather than asserting on a case that isn't actually reachable
+// today (the four call sites below only ever pass a resolved enemy id).
+TileAgentSpawn makeEnemyAgentSpawn(const TileKindRegistry& registry, TileKindId tileId, glm::vec2 position) {
+    TileAgentSpawn spawn;
+    spawn.kind = registry.nameFromId(tileId);
+    spawn.name = spawn.kind;
+    spawn.position = position;
+    if (const TileKindDesc* desc = registry.desc(tileId)) {
+        spawn.color = desc->color;
+        spawn.shape = desc->shape;
+        spawn.name = desc->displayName;
+    }
+    if (const EnemyAgentTuning* tuning = findEnemyAgentTuning(spawn.kind)) {
+        spawn.maxHealth = tuning->maxHealth;
+        spawn.sightRadius = tuning->sightRadius;
+        spawn.speed = tuning->speed;
+        spawn.wanderRadius = tuning->wanderRadius;
+        spawn.attackWeaponName = tuning->attackWeaponName;
+        spawn.reactionMode = TileAgentSpawn::ReactionMode::Chase;
+        // Melee reach -- close to GrimstoneRuntime.cpp's own
+        // kMeleeRangeWorldUnits (1.5) used for the player's own attack.
+        spawn.attackRange = 1.2f;
+    }
+    return spawn;
+}
+
 // One biome's generation parameters -- js/world.js's ZONE_CONFIGS, lines
 // 759-816. `req` (a Mining-level gate on an ore, gameplay-only) is
 // deliberately not transcribed -- terrain generation is this pass's whole
@@ -1206,6 +1291,23 @@ TileGrid buildProceduralZone(const TileKindRegistry& registry, int zoneIndex, ui
                t == dungeonStairUp || t == cryptStair;
     };
     constexpr int kPortalClear = 7;
+    // Real agent spawns (2D features: "AI pathing tools"/combat framework)
+    // for every enemy this loop places, replacing the purely decorative
+    // painted tile -- see makeEnemyAgentSpawn()'s own doc comment for why
+    // and registerGrimstoneTileKinds()'s "the JS converts these to moving
+    // entities on load" comment for the ground truth this restores. `tiles`
+    // is still used AS BEFORE for the tooClose/nearPortal spacing checks
+    // below (so placement density is byte-for-byte unchanged), but is
+    // reverted back to each spot's own original terrain right after this
+    // loop -- an enemy is now a real moving agent, not a terrain overwrite,
+    // so later generation stages (spine road, force-clear) see the same
+    // ground they would if no enemy had ever been placed here.
+    struct PlacedEnemySpot {
+        int x, y;
+        TileKindId originalTile;
+        TileKindId enemyTile;
+    };
+    std::vector<PlacedEnemySpot> placedEnemySpots;
     for (const EnemyCfg& en : cfg.enemies) {
         int placed = 0, attempts = 0;
         while (placed < en.count && attempts < 500) {
@@ -1225,9 +1327,14 @@ TileGrid buildProceduralZone(const TileKindRegistry& registry, int zoneIndex, ui
                     const int ny = y + dy, nx = x + dx;
                     if (ny >= 0 && ny < H && nx >= 0 && nx < W && isPortalTile(tiles[ny][nx])) nearPortal = true;
                 }
-            if (!nearPortal) { tiles[y][x] = en.tile; ++placed; }
+            if (!nearPortal) {
+                placedEnemySpots.push_back({x, y, tiles[y][x], en.tile});
+                tiles[y][x] = en.tile;
+                ++placed;
+            }
         }
     }
+    for (const PlacedEnemySpot& spot : placedEnemySpots) tiles[spot.y][spot.x] = spot.originalTile;
 
     // ---- Facility: smelter + cooking fire -- lines 693-699. findOpenArea()
     // always returns a usable position (falls back to grid center), so
@@ -1313,6 +1420,13 @@ TileGrid buildProceduralZone(const TileKindRegistry& registry, int zoneIndex, ui
     TileGrid grid(W, H, 1.0f);
     for (int y = 0; y < H; ++y)
         for (int x = 0; x < W; ++x) grid.setFloor(x, y, tiles[y][x]);
+
+    // ---- Real agent spawns for every enemy placed above (see this
+    // function's own doc comment on the enemy-placement loop). ----
+    for (const PlacedEnemySpot& spot : placedEnemySpots) {
+        grid.agentSpawns.push_back(makeEnemyAgentSpawn(
+            registry, spot.enemyTile, glm::vec2(static_cast<float>(spot.x) + 0.5f, static_cast<float>(spot.y) + 0.5f)));
+    }
 
     // ---- Dungeon entrance -- zones 1-2 only (js/quests.js lines 756-760),
     // placed AFTER the floor snapshot above, so (matching the JS) the
@@ -3060,6 +3174,17 @@ TileGrid buildDungeonMap(const TileKindRegistry& registry, const DungeonGenConfi
     // radius-5 exclusion.
     const std::array<TileKindId, 3> stairTiles = {dungeonStairUp, dungeonStairDown, cryptStair};
     constexpr int kStairClear = 5;
+    // Real agent spawns (see makeEnemyAgentSpawn()'s own doc comment) for
+    // every enemy this loop places -- `tiles` is still written to AS BEFORE
+    // so a later attempt in the same room sees the cell as occupied (the
+    // `tiles[ey][ex] != dungeonFloor` candidate check just above), but is
+    // reverted to plain dungeonFloor right after this block so the
+    // Floor/Overlay diff below never paints a decorative enemy tile.
+    struct PlacedEnemySpot {
+        int x, y;
+        TileKindId enemyTile;
+    };
+    std::vector<PlacedEnemySpot> placedEnemySpots;
     if (rooms.size() > 2) {
         std::vector<DungeonRoom> middle(rooms.begin() + 1, rooms.end() - 1);
         for (const DungeonRoom& r : middle) {
@@ -3089,12 +3214,14 @@ TileGrid buildDungeonMap(const TileKindRegistry& registry, const DungeonGenConfi
                                 : config.enemies[static_cast<size_t>(
                                       std::floor(rng.next() * static_cast<double>(config.enemies.size())))];
                         tiles[ey][ex] = eType;
+                        placedEnemySpots.push_back({ex, ey, eType});
                         break;
                     }
                 }
             }
         }
     }
+    for (const PlacedEnemySpot& spot : placedEnemySpots) tiles[spot.y][spot.x] = dungeonFloor;
 
     // ---- Translate the JS's own two-array tiles/floor split onto this
     // engine's Floor/Overlay layers, the same convention this file's other
@@ -3107,6 +3234,12 @@ TileGrid buildDungeonMap(const TileKindRegistry& registry, const DungeonGenConfi
             grid.setFloor(x, y, floorArr[y][x]);
             if (tiles[y][x] != floorArr[y][x]) grid.setOverlay(x, y, tiles[y][x]);
         }
+    }
+
+    // ---- Real agent spawns for every enemy placed above. ----
+    for (const PlacedEnemySpot& spot : placedEnemySpots) {
+        grid.agentSpawns.push_back(makeEnemyAgentSpawn(
+            registry, spot.enemyTile, glm::vec2(static_cast<float>(spot.x) + 0.5f, static_cast<float>(spot.y) + 0.5f)));
     }
 
     // Stair-up TileMarker -- the one meaningful, reachable portal back to
@@ -3744,11 +3877,21 @@ TileGrid buildAshgroveHollowLevel(const TileKindRegistry& registry) {
     std::uniform_int_distribution<int> yRoll(0, H - 3);
     const int wolfCount = 5 + countRoll(wolfRng);
     int placed = 0, attempts = 0;
+    // Real agent spawns (see makeEnemyAgentSpawn()'s own doc comment) --
+    // `placedWolfCells` stands in for the old "paint the tile, then read it
+    // back" occupancy check (a wolf is no longer a floor write grid.floorAt()
+    // could see), so a re-rolled cell already holding a wolf this pass is
+    // still rejected the same as before.
+    std::vector<std::pair<int, int>> placedWolfCells;
     while (placed < wolfCount && attempts < 600) {
         const int wx = 1 + xRoll(wolfRng);
         const int wy = 1 + yRoll(wolfRng);
-        if (grid.floorAt(wx, wy) == ashGrass && std::abs(wy - pathY) > 3) {
-            grid.setFloor(wx, wy, wolfSpawn);
+        const bool alreadyPlaced =
+            std::find(placedWolfCells.begin(), placedWolfCells.end(), std::pair{wx, wy}) != placedWolfCells.end();
+        if (!alreadyPlaced && grid.floorAt(wx, wy) == ashGrass && std::abs(wy - pathY) > 3) {
+            placedWolfCells.emplace_back(wx, wy);
+            grid.agentSpawns.push_back(
+                makeEnemyAgentSpawn(registry, wolfSpawn, glm::vec2(static_cast<float>(wx) + 0.5f, static_cast<float>(wy) + 0.5f)));
             ++placed;
         }
         ++attempts;
@@ -3892,12 +4035,12 @@ TileGrid buildCaravanZoneLevel(const TileKindRegistry& registry) {
     // this function's own header doc comment), flagged here for a future
     // quest-system pass to find easily.
     placeDecor(grid, 5, 9, chest);
-    // Goblin enemies.
-    grid.setFloor(4, 7, goblin);
-    grid.setFloor(8, 6, goblin);
-    grid.setFloor(6, 13, goblin);
-    grid.setFloor(14, 5, goblin);
-    grid.setFloor(11, 8, goblin);
+    // Goblin enemies -- real agent spawns (see makeEnemyAgentSpawn()'s own
+    // doc comment), not the decorative floor tile this used to paint.
+    for (const auto& xy : {std::pair{4, 7}, std::pair{8, 6}, std::pair{6, 13}, std::pair{14, 5}, std::pair{11, 8}}) {
+        grid.agentSpawns.push_back(makeEnemyAgentSpawn(
+            registry, goblin, glm::vec2(static_cast<float>(xy.first) + 0.5f, static_cast<float>(xy.second) + 0.5f)));
+    }
 
     // ---- MID-ROAD DEBRIS (x=20-32) -- JS lines 2291-2292 ----
     placeDecor(grid, 9, 20, barrel);
@@ -3916,12 +4059,12 @@ TileGrid buildCaravanZoneLevel(const TileKindRegistry& registry) {
     placeDecor(grid, 10, 45, barrel);
 
     // ---- Wolf enemies -- scattered throughout, kept clear of east entry
-    // (x=47) -- JS lines 2299-2300 ----
-    grid.setFloor(22, 3, wolf);
-    grid.setFloor(25, 16, wolf);
-    grid.setFloor(38, 4, wolf);
-    grid.setFloor(41, 15, wolf);
-    grid.setFloor(43, 5, wolf);
+    // (x=47) -- JS lines 2299-2300. Real agent spawns, same as the goblins
+    // above. ----
+    for (const auto& xy : {std::pair{22, 3}, std::pair{25, 16}, std::pair{38, 4}, std::pair{41, 15}, std::pair{43, 5}}) {
+        grid.agentSpawns.push_back(makeEnemyAgentSpawn(
+            registry, wolf, glm::vec2(static_cast<float>(xy.first) + 0.5f, static_cast<float>(xy.second) + 0.5f)));
+    }
 
     // ---- Portal as a TileMarker -- same "paint + marker" convention every
     // other zone builder in this file already uses. This interior's one and
