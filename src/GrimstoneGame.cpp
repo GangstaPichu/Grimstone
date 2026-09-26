@@ -2844,3 +2844,327 @@ TileGrid buildBankInterior(const TileKindRegistry& registry) {
 
     return grid;
 }
+
+// ======= DUNGEON GENERATOR =======
+// Transcribed from js/zones.js's makeDungeonMap() (lines 1513-1664) plus its
+// three named callers makeAshenDungeon()/makeIronPeaksDungeon()/
+// makeCultistCatacombs() (lines 1666-1691) -- see GrimstoneGame.h's own doc
+// comment on buildDungeonMap()/DungeonGenConfig for the config/seed contract
+// and the exitTargetZone/no-forward-stair judgement calls.
+namespace {
+
+struct DungeonRoom {
+    int x = 0, y = 0, w = 0, h = 0, cx = 0, cy = 0;
+};
+
+// Fisher-Yates driven by this file's own ProceduralPrng stream -- NOT a
+// port of the JS's own `.sort(()=>rng()-0.5)` idiom (js/zones.js uses this
+// same "shuffle via a random comparator" trick three times in
+// makeDungeonMap(): the room-connection order and the chest-room pick).
+// That idiom's actual output depends on the host JS engine's own sort
+// algorithm (V8's TimSort), which has no C++ equivalent to reproduce bit-
+// for-bit; a real Fisher-Yates draws from the identical rng stream and
+// gives the same "uniformly shuffled" shape the JS was going for, the
+// same spirit as this file's own ProceduralPrng doc comment on not
+// needing bit-for-bit parity with the JS's noise.
+template <typename T>
+void shuffleWithRng(std::vector<T>& v, ProceduralPrng& rng) {
+    for (size_t i = v.size(); i > 1; --i) {
+        const size_t j = static_cast<size_t>(std::floor(rng.next() * static_cast<double>(i)));
+        std::swap(v[i - 1], v[j]);
+    }
+}
+
+} // namespace
+
+TileGrid buildDungeonMap(const TileKindRegistry& registry, const DungeonGenConfig& config, uint32_t seed) {
+    const TileKindId wall = registry.idFromName("wall");
+    const TileKindId dungeonFloor = registry.idFromName("dungeon_floor");
+    const TileKindId dungeonTorch = registry.idFromName("dungeon_torch");
+    const TileKindId dungeonStairUp = registry.idFromName("dungeon_stair_up");
+    const TileKindId dungeonStairDown = registry.idFromName("dungeon_stair_down");
+    const TileKindId cryptStair = registry.idFromName("crypt_stair");
+    const TileKindId chest = registry.idFromName("chest");
+    const TileKindId skeletonSpawn = registry.idFromName("skeleton_spawn");
+
+    const int W = config.W, H = config.H;
+    ProceduralPrng rng(seed);
+
+    // The JS's own `tiles` array -- what's actually rendered/solid.
+    std::vector<std::vector<TileKindId>> tiles(H, std::vector<TileKindId>(W, wall));
+
+    // ---- BSP room generation -- js/zones.js lines 1523-1550 ----
+    std::vector<DungeonRoom> rooms;
+    std::function<void(int, int, int, int, int)> tryPlaceRoom = [&](int x1, int y1, int x2, int y2, int depth) {
+        const int rw = x2 - x1, rh = y2 - y1;
+        if (rw < 8 || rh < 8 || depth > 6) return;
+        const bool makeRoom = depth >= 3 || rng.next() < 0.35;
+        if (makeRoom) {
+            const int rx = x1 + 1 + static_cast<int>(std::floor(rng.next() * std::max(1, rw - 8)));
+            const int ry = y1 + 1 + static_cast<int>(std::floor(rng.next() * std::max(1, rh - 8)));
+            const int rw2 = 5 + static_cast<int>(std::floor(rng.next() * std::min(8, rw - rx + x1 - 2)));
+            const int rh2 = 4 + static_cast<int>(std::floor(rng.next() * std::min(6, rh - ry + y1 - 2)));
+            if (rx + rw2 < x2 - 1 && ry + rh2 < y2 - 1) {
+                DungeonRoom r;
+                r.x = rx;
+                r.y = ry;
+                r.w = rw2;
+                r.h = rh2;
+                r.cx = static_cast<int>(std::floor(rx + rw2 / 2.0));
+                r.cy = static_cast<int>(std::floor(ry + rh2 / 2.0));
+                rooms.push_back(r);
+            }
+            return;
+        }
+        if (rw > rh) {
+            const int mid = x1 + 4 + static_cast<int>(std::floor(rng.next() * (rw - 8)));
+            tryPlaceRoom(x1, y1, mid, y2, depth + 1);
+            tryPlaceRoom(mid, y1, x2, y2, depth + 1);
+        } else {
+            const int mid = y1 + 4 + static_cast<int>(std::floor(rng.next() * (rh - 8)));
+            tryPlaceRoom(x1, y1, x2, mid, depth + 1);
+            tryPlaceRoom(x1, mid, x2, y2, depth + 1);
+        }
+    };
+    tryPlaceRoom(1, 1, W - 1, H - 1, 0);
+
+    // Cap to maxRooms -- js/zones.js line 1552.
+    while (rooms.size() > static_cast<size_t>(config.maxRooms)) {
+        const size_t idx = static_cast<size_t>(std::floor(rng.next() * static_cast<double>(rooms.size())));
+        rooms.erase(rooms.begin() + static_cast<long>(idx));
+    }
+    // Fallback -- a few rooms placed manually if the BSP pass came up short
+    // (js/zones.js lines 1553-1555). This ADDS to whatever's already
+    // there, exactly like the JS's own rooms.push(...), not a replacement.
+    if (rooms.size() < 2) {
+        rooms.push_back({3, 3, 8, 6, 7, 6});
+        rooms.push_back({20, 5, 7, 6, 23, 8});
+        rooms.push_back({40, 10, 9, 7, 44, 13});
+    }
+
+    // Carve rooms into tiles -- js/zones.js lines 1557-1561.
+    for (const DungeonRoom& r : rooms) {
+        for (int y = r.y; y < r.y + r.h; ++y) {
+            for (int x = r.x; x < r.x + r.w; ++x) {
+                if (x >= 0 && x < W && y >= 0 && y < H) tiles[y][x] = dungeonFloor;
+            }
+        }
+    }
+
+    // Connect rooms with L-shaped corridors -- js/zones.js lines 1563-1573.
+    // See shuffleWithRng()'s own doc comment for why this uses a real
+    // Fisher-Yates on the same rng stream in place of the JS's own
+    // `.sort(()=>rng()-0.5)`.
+    std::vector<DungeonRoom> shuffled = rooms;
+    shuffleWithRng(shuffled, rng);
+    for (size_t i = 0; i + 1 < shuffled.size(); ++i) {
+        const DungeonRoom& a = shuffled[i];
+        const DungeonRoom& b = shuffled[i + 1];
+        const int midX = (rng.next() < 0.5) ? a.cx : b.cx;
+        if (a.cy >= 0 && a.cy < H)
+            for (int x = std::min(a.cx, midX); x <= std::max(a.cx, midX); ++x)
+                if (x >= 0 && x < W) tiles[a.cy][x] = dungeonFloor;
+        if (midX >= 0 && midX < W)
+            for (int y = std::min(a.cy, b.cy); y <= std::max(a.cy, b.cy); ++y)
+                if (y >= 0 && y < H) tiles[y][midX] = dungeonFloor;
+        if (b.cy >= 0 && b.cy < H)
+            for (int x = std::min(midX, b.cx); x <= std::max(midX, b.cx); ++x)
+                if (x >= 0 && x < W) tiles[b.cy][x] = dungeonFloor;
+    }
+
+    // Snapshot floor -- js/zones.js line 1577. floorArr is the JS's own
+    // `floor` array: the walkable terrain answer, as opposed to `tiles`,
+    // which is what's actually rendered (and gains torches/stairs/chests/
+    // enemies below).
+    std::vector<std::vector<TileKindId>> floorArr = tiles;
+
+    // ---- Place features -- js/zones.js lines 1580-1651 ----
+
+    // Torches on walls near rooms.
+    for (const DungeonRoom& r : rooms) {
+        const int pts[4][2] = {{r.y - 1, r.x + 1},
+                                {r.y - 1, r.x + r.w - 2},
+                                {r.y + r.h, r.x + 1},
+                                {r.y + r.h, r.x + r.w - 2}};
+        for (const auto& p : pts) {
+            const int ty = p[0], tx = p[1];
+            if (ty >= 0 && ty < H && tx >= 0 && tx < W && tiles[ty][tx] == wall) {
+                floorArr[ty][tx] = dungeonFloor;
+                tiles[ty][tx] = dungeonTorch;
+            }
+        }
+    }
+
+    // Stair up (entrance) in the first room -- clears the whole room first.
+    const DungeonRoom& entryRoom = rooms.front();
+    for (int y = entryRoom.y; y < entryRoom.y + entryRoom.h; ++y)
+        for (int x = entryRoom.x; x < entryRoom.x + entryRoom.w; ++x)
+            if (x >= 0 && x < W && y >= 0 && y < H) tiles[y][x] = dungeonFloor;
+
+    const int stairUpX = entryRoom.cx, stairUpY = entryRoom.cy;
+    if (stairUpX >= 0 && stairUpX < W && stairUpY >= 0 && stairUpY < H) {
+        tiles[stairUpY][stairUpX] = dungeonStairUp;
+        floorArr[stairUpY][stairUpX] = dungeonFloor;
+    }
+
+    // Spawn point: one tile south of the stair, guaranteed floor.
+    const int spawnX = stairUpX, spawnY = stairUpY + 1;
+    if (spawnX >= 0 && spawnX < W && spawnY >= 0 && spawnY < H) {
+        tiles[spawnY][spawnX] = dungeonFloor;
+        floorArr[spawnY][spawnX] = dungeonFloor;
+    }
+
+    // Also clear the last room fully for the exit stair.
+    const DungeonRoom& exitRoom = rooms.back();
+    for (int y = exitRoom.y; y < exitRoom.y + exitRoom.h; ++y)
+        for (int x = exitRoom.x; x < exitRoom.x + exitRoom.w; ++x)
+            if (x >= 0 && x < W && y >= 0 && y < H) tiles[y][x] = dungeonFloor;
+
+    // Stair down / crypt stair in the last room -- see GrimstoneGame.h's
+    // own doc comment on DungeonGenConfig for why this does NOT get a
+    // matching portal TileMarker.
+    const TileKindId stairTile = config.hasCryptStair ? cryptStair : dungeonStairDown;
+    if (exitRoom.cx >= 0 && exitRoom.cx < W && exitRoom.cy >= 0 && exitRoom.cy < H) {
+        tiles[exitRoom.cy][exitRoom.cx] = stairTile;
+        floorArr[exitRoom.cy][exitRoom.cx] = dungeonFloor;
+    }
+
+    // Chests in 1-3 middle rooms.
+    if (rooms.size() > 2) {
+        std::vector<DungeonRoom> middle(rooms.begin() + 1, rooms.end() - 1);
+        shuffleWithRng(middle, rng);
+        const size_t chestCount = std::min<size_t>(3, middle.size());
+        for (size_t i = 0; i < chestCount; ++i) {
+            const DungeonRoom& r = middle[i];
+            const int cx = r.x + 1 + static_cast<int>(std::floor(rng.next() * (r.w - 2)));
+            const int cy = r.y + 1 + static_cast<int>(std::floor(rng.next() * (r.h - 2)));
+            if (cx >= 0 && cx < W && cy >= 0 && cy < H && tiles[cy][cx] == dungeonFloor) {
+                tiles[cy][cx] = chest;
+                floorArr[cy][cx] = dungeonFloor;
+            }
+        }
+    }
+
+    // Enemies -- skeletons/zombies (or whatever config.enemies resolves to)
+    // scattered across middle rooms, kept clear of every stair by a
+    // radius-5 exclusion.
+    const std::array<TileKindId, 3> stairTiles = {dungeonStairUp, dungeonStairDown, cryptStair};
+    constexpr int kStairClear = 5;
+    if (rooms.size() > 2) {
+        std::vector<DungeonRoom> middle(rooms.begin() + 1, rooms.end() - 1);
+        for (const DungeonRoom& r : middle) {
+            const int count = 1 + static_cast<int>(std::floor(rng.next() * 3));
+            for (int n = 0; n < count; ++n) {
+                for (int att = 0; att < 20; ++att) {
+                    const int ex = r.x + 1 + static_cast<int>(std::floor(rng.next() * (r.w - 2)));
+                    const int ey = r.y + 1 + static_cast<int>(std::floor(rng.next() * (r.h - 2)));
+                    if (ex < 0 || ex >= W || ey < 0 || ey >= H || tiles[ey][ex] != dungeonFloor) continue;
+                    bool nearStair = false;
+                    for (int dy = -kStairClear; dy <= kStairClear && !nearStair; ++dy) {
+                        for (int dx = -kStairClear; dx <= kStairClear && !nearStair; ++dx) {
+                            const int ny = ey + dy, nx = ex + dx;
+                            if (ny < 0 || ny >= H || nx < 0 || nx >= W) continue;
+                            for (TileKindId st : stairTiles) {
+                                if (tiles[ny][nx] == st) {
+                                    nearStair = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (!nearStair) {
+                        const TileKindId eType =
+                            config.enemies.empty()
+                                ? skeletonSpawn
+                                : config.enemies[static_cast<size_t>(
+                                      std::floor(rng.next() * static_cast<double>(config.enemies.size())))];
+                        tiles[ey][ex] = eType;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- Translate the JS's own two-array tiles/floor split onto this
+    // engine's Floor/Overlay layers, the same convention this file's other
+    // zone builders' own doc comments describe: floorArr is the walkable
+    // terrain, tiles is what's actually rendered -- wherever they differ,
+    // that's decor sitting on top, ported as an Overlay paint. ----
+    TileGrid grid(W, H, 1.0f);
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            grid.setFloor(x, y, floorArr[y][x]);
+            if (tiles[y][x] != floorArr[y][x]) grid.setOverlay(x, y, tiles[y][x]);
+        }
+    }
+
+    // Stair-up TileMarker -- the one meaningful, reachable portal back to
+    // the parent zone (see GrimstoneGame.h's own doc comment on
+    // DungeonGenConfig::exitTargetZone for why this needs an explicit
+    // target the JS itself never names).
+    if (stairUpX >= 0 && stairUpX < W && stairUpY >= 0 && stairUpY < H) {
+        TileMarker marker;
+        marker.kind = "portal";
+        marker.name = "Stairs Up";
+        marker.position = glm::vec2(static_cast<float>(stairUpX) + 0.5f, static_cast<float>(stairUpY) + 0.5f);
+        marker.properties["targetZone"] = config.exitTargetZone;
+        grid.markers.push_back(marker);
+    }
+
+    grid.markers.push_back({"player_spawn",
+                             glm::vec2(static_cast<float>(spawnX) + 0.5f, static_cast<float>(spawnY) + 0.5f),
+                             "Player Spawn"});
+
+    return grid;
+}
+
+// ---- Ashen Moor dungeon -------------------------------------------------
+// Mirrors `function makeAshenDungeon(seed)` (js/zones.js, lines 1667-1673).
+TileGrid buildAshenDungeon(const TileKindRegistry& registry, uint32_t seed) {
+    DungeonGenConfig config;
+    config.W = 56;
+    config.H = 38;
+    config.name = "THE ASHEN CRYPTS";
+    config.minRooms = 8;
+    config.maxRooms = 12;
+    config.enemies = {registry.idFromName("skeleton_spawn"), registry.idFromName("zombie")};
+    config.hasCryptStair = false;
+    config.exitTargetZone = "ashen_moor";
+    return buildDungeonMap(registry, config, seed);
+}
+
+// ---- Iron Peaks dungeon -------------------------------------------------
+// Mirrors `function makeIronPeaksDungeon(seed)` (js/zones.js, lines
+// 1675-1681).
+TileGrid buildIronPeaksDungeon(const TileKindRegistry& registry, uint32_t seed) {
+    DungeonGenConfig config;
+    config.W = 60;
+    config.H = 42;
+    config.name = "THE IRON DEPTHS";
+    config.minRooms = 10;
+    config.maxRooms = 14;
+    config.enemies = {registry.idFromName("skeleton_spawn"), registry.idFromName("zombie"),
+                       registry.idFromName("skeleton_spawn")};
+    config.hasCryptStair = false;
+    config.exitTargetZone = "iron_peaks";
+    return buildDungeonMap(registry, config, seed);
+}
+
+// ---- Cultist Catacombs (under the not-yet-ported Forsaken Chapel) ------
+// Mirrors `function makeCultistCatacombs(seed)` (js/zones.js, lines
+// 1683-1690) -- the JS's own `seed: seed||12345` falsy-fallback becomes
+// `seed == 0 ? 12345 : seed`, uint32_t's closest equivalent.
+TileGrid buildCultistCatacombs(const TileKindRegistry& registry, uint32_t seed) {
+    DungeonGenConfig config;
+    config.W = 52;
+    config.H = 36;
+    config.name = "THE CULTIST CATACOMBS";
+    config.minRooms = 9;
+    config.maxRooms = 13;
+    config.enemies = {registry.idFromName("zombie"), registry.idFromName("skeleton_spawn"),
+                       registry.idFromName("zombie")};
+    config.hasCryptStair = false;
+    config.exitTargetZone = "forsaken_chapel";
+    return buildDungeonMap(registry, config, seed == 0 ? 12345u : seed);
+}

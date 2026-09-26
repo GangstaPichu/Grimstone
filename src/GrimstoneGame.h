@@ -261,3 +261,89 @@ TileGrid buildShopInterior(const TileKindRegistry& registry);
 // storage and a waiting area. Willa the teller (NAMED_NPCS's own
 // 'bank:3,6' entry, js/zones.js) is an npc_spawn marker.
 TileGrid buildBankInterior(const TileKindRegistry& registry);
+
+// ---- Procedural dungeon generator (BSP rooms + corridors) -------------
+//
+// Mirrors `function makeDungeonMap(config)` (js/zones.js, lines 1513-1664)
+// plus its three named callers `makeAshenDungeon()`/`makeIronPeaksDungeon()`/
+// `makeCultistCatacombs()` (lines 1666-1691) -- js/zones.js continues past
+// line 1691 into `drawDungeonStair()` (rendering, not terrain), NOT ported
+// here. A real BSP room generator, distinct from both buildAshenveilLevel()'s
+// hand-authored layout and buildProceduralZone()'s noise-based biomes:
+// `tryPlaceRoom()` recursively splits the map (depth capped at 6) into
+// either a leaf room or two children, rooms get capped to `maxRooms`,
+// shuffled and connected pairwise by L-shaped corridors, then decorated
+// with torches, a stair-up back to the parent zone, a stair-down/crypt-
+// stair dead end, 1-3 chests, and a scattering of enemy-spawn tiles kept
+// clear of every stair by a radius-5 exclusion. See GrimstoneGame.cpp's
+// own doc comment on buildDungeonMap() for the tiles/floor -> Floor/
+// Overlay translation and the room-shuffle judgement call.
+//
+// DungeonGenConfig mirrors the JS object literal's own fields one at a
+// time, with two deliberate differences from a literal transcription:
+// `seed` is its own function parameter (matching buildProceduralZone()'s
+// own `seed` argument) rather than a config field, and `enemies` holds
+// already-resolved TileKindIds -- the JS's own lowercase 'skeleton'/
+// 'zombie' strings, resolved once by each caller below via
+// registry.idFromName() -- rather than strings, since a TileKindId is
+// this port's natural currency everywhere else in this file. `minRooms`
+// is carried over for parity with the JS config shape even though
+// makeDungeonMap() itself never reads it (a real dead field in the JS
+// source, not a porting gap -- grep js/zones.js's own function body).
+//
+// `exitTargetZone` is this port's own addition, with no JS equivalent:
+// the JS's own T.DUNGEON_STAIR_UP tile just calls the generic
+// `exitInterior()` (pop whatever's on the "current interior" stack)
+// rather than naming a zone, since the three.js game tracks that via a
+// runtime stack this engine's own portal TileMarkers don't have -- every
+// caller below supplies the one parent zone slug that stair actually
+// needs to target. The exit room's own DUNGEON_STAIR_DOWN/CRYPT_STAIR
+// tile does NOT get a matching portal marker: in the JS, stepping on it
+// re-enters T.DUNGEON_STAIR_DOWN's handler, which (re)generates a
+// dungeon of the SAME type from the SAME deterministic seed formula
+// (`worldSeed + zoneIndex*31337`) -- i.e. it loops back to an identical
+// layout rather than reaching anywhere new, a quirk of the JS's stack-
+// based interior system rather than a meaningful forward link. This port
+// leaves that tile as decor (Overlay paint only), matching the torches/
+// chests around it, rather than manufacturing a destination the original
+// game never actually gave it.
+struct DungeonGenConfig {
+    int W = 60, H = 40;
+    const char* name = "DUNGEON";
+    int minRooms = 8, maxRooms = 14;
+    std::vector<TileKindId> enemies; // resolved skeleton_spawn/zombie ids
+    bool hasCryptStair = false;
+    const char* exitTargetZone = "ashenveil"; // stair-up portal target
+};
+TileGrid buildDungeonMap(const TileKindRegistry& registry, const DungeonGenConfig& config, uint32_t seed);
+
+// The Ashen Moor's own dungeon, "The Ashen Crypts" -- reached via
+// buildProceduralZone()'s own zoneIndex==1 "dungeon_stair_down" marker
+// (see that function's own doc comment; placeDungeonEntrance() places it,
+// but it currently carries no targetZone -- wiring that marker to this
+// function is left for a future pass, see PORTING_PLAN.md). Mirrors
+// `function makeAshenDungeon(seed)` (js/zones.js, lines 1667-1673). Its
+// own stair-up TileMarker targets "ashen_moor" (buildProceduralZone()'s
+// own zoneIndex==1 slug).
+TileGrid buildAshenDungeon(const TileKindRegistry& registry, uint32_t seed);
+
+// The Iron Peaks' own dungeon, "The Iron Depths" -- reached via
+// buildProceduralZone()'s own zoneIndex==2 "dungeon_stair_down" marker,
+// same caveat as buildAshenDungeon() above. Mirrors
+// `function makeIronPeaksDungeon(seed)` (js/zones.js, lines 1675-1681).
+// Its own stair-up TileMarker targets "iron_peaks" (buildProceduralZone()'s
+// own zoneIndex==2 slug).
+TileGrid buildIronPeaksDungeon(const TileKindRegistry& registry, uint32_t seed);
+
+// The Cultist Catacombs, under the not-yet-ported Forsaken Chapel --
+// mirrors `function makeCultistCatacombs(seed)` (js/zones.js, lines
+// 1683-1690), reached via a "crypt_stair" marker the Chapel's own builder
+// would place once ported (the JS's own T.CRYPT_STAIR handler, not the
+// dungeon's own hasCryptStair option, which this dungeon leaves false).
+// Its own stair-up TileMarker targets "forsaken_chapel" -- the same
+// "portal toward a not-yet-ported destination" convention Ashenveil's
+// own CHAPEL_PORTAL and Greenfield's own CARAVAN_PORTAL already establish.
+// The JS's own `seed: seed||12345` fallback (used when the caller's own
+// seed is falsy) is ported as `seed == 0 ? 12345 : seed`, uint32_t's
+// closest equivalent to JS's falsy-number check.
+TileGrid buildCultistCatacombs(const TileKindRegistry& registry, uint32_t seed);
