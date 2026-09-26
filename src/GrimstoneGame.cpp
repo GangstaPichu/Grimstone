@@ -2430,3 +2430,417 @@ TileGrid buildGreenfieldLevel(const TileKindRegistry& registry) {
 
     return grid;
 }
+
+namespace {
+
+// Shared by every interior builder below -- adds a "portal" TileMarker back
+// to Ashenveil (same shape as buildAshenveilLevel()'s own addPortalMarker(),
+// just always targeting "ashenveil" since every one of these interiors
+// exits to that one zone).
+void addExitPortalMarker(TileGrid& grid, float px, float py) {
+    TileMarker marker;
+    marker.kind = "portal";
+    marker.name = "Exit -> Ashenveil";
+    marker.position = glm::vec2(px + 0.5f, py + 0.5f);
+    marker.properties["targetZone"] = "ashenveil";
+    grid.markers.push_back(marker);
+}
+
+// Shared npc_spawn helper, same shape as buildAshenveilLevel()'s own
+// addNpcMarker().
+void addNpcSpawnMarker(TileGrid& grid, const char* name, float px, float py) {
+    TileMarker marker;
+    marker.kind = "npc_spawn";
+    marker.name = name;
+    marker.position = glm::vec2(px + 0.5f, py + 0.5f);
+    marker.properties["name"] = name;
+    grid.markers.push_back(marker);
+}
+
+} // namespace
+
+// Transcribed from `function makeHouseInterior(residentName)` (js/zones.js,
+// lines 1348-1401). See GrimstoneGame.h's own doc comment for which
+// Ashenveil residents this is used for and why no resident npc_spawn
+// marker is added.
+TileGrid buildHouseInterior(const TileKindRegistry& registry, const std::string& residentName) {
+    constexpr int W = 14, H = 11;
+    TileGrid grid(W, H, 1.0f);
+
+    const TileKindId stoneFloor = registry.idFromName("stone_floor");
+    const TileKindId wall = registry.idFromName("wall");
+    const TileKindId fireplace = registry.idFromName("fireplace");
+    const TileKindId smallTable = registry.idFromName("small_table");
+    const TileKindId bookshelf = registry.idFromName("bookshelf");
+    const TileKindId barrel = registry.idFromName("barrel");
+    const TileKindId plant = registry.idFromName("plant");
+    const TileKindId candle = registry.idFromName("candle");
+    const TileKindId bed = registry.idFromName("bed");
+    const TileKindId wardrobe = registry.idFromName("wardrobe");
+    const TileKindId chest = registry.idFromName("chest");
+    const TileKindId cookingFire = registry.idFromName("cooking_fire");
+    const TileKindId workbench = registry.idFromName("workbench");
+    const TileKindId noticeBoard = registry.idFromName("notice_board");
+    const TileKindId exitInterior = registry.idFromName("exit_interior");
+
+    // Whole grid starts stone floor (the JS's own `Array.from(...).fill(T.STONE_FLOOR)`
+    // for both `tiles` and `floor`).
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) grid.setFloor(x, y, stoneFloor);
+
+    // Outer walls
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x)
+            if (y == 0 || y == H - 1 || x == 0 || x == W - 1) grid.setFloor(x, y, wall);
+
+    // Dividing wall -- bedroom vs living area (vertical), with a doorway gap
+    for (int y = 1; y <= H - 2; ++y) grid.setFloor(7, y, wall);
+    grid.setFloor(7, 4, stoneFloor);
+    grid.setFloor(7, 5, stoneFloor);
+
+    // ---- Floor layer is now fully authored (matches the JS's own floor
+    // snapshot before placeDecor() calls). ----
+
+    // ---- Living area (left, x=1..6) ----
+    grid.setOverlay(2, 2, fireplace);
+    grid.setOverlay(2, 4, smallTable);
+    grid.setOverlay(3, 4, smallTable);
+    grid.setOverlay(5, 2, bookshelf);
+    grid.setOverlay(2, 6, barrel);
+    grid.setOverlay(5, 7, plant);
+    grid.setOverlay(1, 1, candle);
+    grid.setOverlay(6, 1, candle);
+
+    // ---- Bedroom (right, x=8..12) ----
+    grid.setOverlay(9, 2, bed);
+    grid.setOverlay(10, 2, bed);
+    grid.setOverlay(12, 4, wardrobe);
+    grid.setOverlay(9, 6, chest);
+    grid.setOverlay(8, 1, candle);
+    grid.setOverlay(12, 1, candle);
+    grid.setOverlay(11, 7, plant);
+
+    // Resident-specific flourish -- matches the JS's own if/else chain
+    // exactly; any other resident name (e.g. "Residence") gets none of
+    // these, just the shared furniture above.
+    if (residentName == "Mira") {
+        grid.setOverlay(4, 6, chest); // her locket might be here...
+        grid.setOverlay(5, 3, candle);
+    } else if (residentName == "Aldric") {
+        grid.setOverlay(3, 3, bookshelf);
+        grid.setOverlay(5, 6, workbench);
+    } else if (residentName == "Elspeth") {
+        grid.setOverlay(4, 6, cookingFire);
+        grid.setOverlay(5, 3, plant);
+    } else if (residentName == "Rowan") {
+        grid.setOverlay(5, 6, barrel);
+        grid.setOverlay(3, 3, noticeBoard);
+    }
+
+    // Exit door in south wall, centre
+    grid.setOverlay(6, H - 1, exitInterior);
+    addExitPortalMarker(grid, 6.0f, static_cast<float>(H - 1));
+
+    // Player spawn -- matches the JS's own `entryX:6, entryY:H-2`, one
+    // tile north of the exit door.
+    grid.markers.push_back({"player_spawn", glm::vec2(6.5f, static_cast<float>(H - 2) + 0.5f), "Player Spawn"});
+
+    return grid;
+}
+
+// Transcribed from `function makeBlacksmithInterior()` (js/zones.js, lines
+// 1404-1448).
+TileGrid buildBlacksmithInterior(const TileKindRegistry& registry) {
+    constexpr int W = 16, H = 12;
+    TileGrid grid(W, H, 1.0f);
+
+    const TileKindId stoneFloor = registry.idFromName("stone_floor");
+    const TileKindId wall = registry.idFromName("wall");
+    const TileKindId smelter = registry.idFromName("smelter");
+    const TileKindId cookingFire = registry.idFromName("cooking_fire");
+    const TileKindId candle = registry.idFromName("candle");
+    const TileKindId barrel = registry.idFromName("barrel");
+    const TileKindId chest = registry.idFromName("chest");
+    const TileKindId anvil = registry.idFromName("anvil");
+    const TileKindId bookshelf = registry.idFromName("bookshelf");
+    const TileKindId plant = registry.idFromName("plant");
+    const TileKindId exitInterior = registry.idFromName("exit_interior");
+
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) grid.setFloor(x, y, stoneFloor);
+
+    // Outer walls
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x)
+            if (y == 0 || y == H - 1 || x == 0 || x == W - 1) grid.setFloor(x, y, wall);
+
+    // Dividing wall -- forge area (left) vs workshop (right), doorway gap
+    for (int y = 1; y <= H - 2; ++y) grid.setFloor(8, y, wall);
+    grid.setFloor(8, 5, stoneFloor);
+    grid.setFloor(8, 6, stoneFloor);
+
+    // ---- Forge side (left, x=1..7) ----
+    grid.setOverlay(2, 2, smelter);
+    grid.setOverlay(5, 2, smelter);
+    grid.setOverlay(2, 4, cookingFire); // secondary fire pit
+    grid.setOverlay(1, 1, candle);
+    grid.setOverlay(6, 1, candle);
+    grid.setOverlay(6, 6, barrel);
+    grid.setOverlay(6, 7, barrel); // fuel barrels
+    grid.setOverlay(2, 8, chest); // ore chest
+    grid.setOverlay(5, 9, barrel);
+
+    // ---- Workshop side (right, x=9..14) ----
+    grid.setOverlay(10, 2, anvil);
+    grid.setOverlay(12, 2, anvil);
+    grid.setOverlay(10, 4, bookshelf); // smithing reference texts
+    grid.setOverlay(13, 4, candle);
+    grid.setOverlay(10, 7, chest); // finished goods chest
+    grid.setOverlay(12, 7, barrel);
+    grid.setOverlay(13, 9, plant); // surprisingly, one green thing
+    grid.setOverlay(14, 1, candle);
+
+    // Grimward the blacksmith (NAMED_NPCS's own 'forge:5,11' entry names the
+    // JS's own tiles[5][11]=T.NPC_GUARD placeholder tile "Grimward" -- ported
+    // directly as a named npc_spawn marker rather than a placeholder tile).
+    addNpcSpawnMarker(grid, "Grimward", 11.0f, 5.0f);
+
+    // Exit door
+    grid.setOverlay(7, H - 1, exitInterior);
+    addExitPortalMarker(grid, 7.0f, static_cast<float>(H - 1));
+
+    // Player spawn -- matches the JS's own `entryX:7, entryY:H-2`.
+    grid.markers.push_back({"player_spawn", glm::vec2(7.5f, static_cast<float>(H - 2) + 0.5f), "Player Spawn"});
+
+    return grid;
+}
+
+// Transcribed from `function makeInnInterior()` (js/zones.js, lines
+// 1451-1508) -- "The Tarnished Flagon". See GrimstoneGame.h's own doc
+// comment for why the player_spawn marker here does NOT sit at the exit
+// door (the JS's own makeInnInterior() returns no entryX/entryY).
+TileGrid buildInnInterior(const TileKindRegistry& registry) {
+    constexpr int W = 20, H = 16;
+    TileGrid grid(W, H, 1.0f);
+
+    const TileKindId stoneFloor = registry.idFromName("stone_floor");
+    const TileKindId wall = registry.idFromName("wall");
+    const TileKindId bed = registry.idFromName("bed");
+    const TileKindId chest = registry.idFromName("chest");
+    const TileKindId candle = registry.idFromName("candle");
+    const TileKindId barrel = registry.idFromName("barrel");
+    const TileKindId bookshelf = registry.idFromName("bookshelf");
+    const TileKindId cookingFire = registry.idFromName("cooking_fire");
+    const TileKindId table = registry.idFromName("table");
+    const TileKindId noticeBoard = registry.idFromName("notice_board");
+    const TileKindId exitInterior = registry.idFromName("exit_interior");
+
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) grid.setFloor(x, y, stoneFloor);
+
+    // Outer walls
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x)
+            if (y == 0 || y == H - 1 || x == 0 || x == W - 1) grid.setFloor(x, y, wall);
+
+    // Dividing wall (common room vs lodging), doorway gap at x=9
+    for (int x = 1; x <= 18; ++x) grid.setFloor(x, 6, wall);
+    grid.setFloor(9, 6, stoneFloor);
+
+    // Room divider
+    for (int y = 1; y <= 5; ++y) grid.setFloor(10, y, wall);
+
+    // Bar counter
+    for (int y = 8; y <= 13; ++y) grid.setFloor(15, y, wall);
+    grid.setFloor(14, 7, wall);
+    grid.setFloor(15, 7, wall);
+    grid.setFloor(16, 7, wall);
+    grid.setFloor(14, 14, wall);
+    grid.setFloor(15, 14, wall);
+    grid.setFloor(15, 11, stoneFloor); // bar opening
+
+    // ---- Floor layer is now fully authored ----
+
+    // Beds
+    grid.setOverlay(3, 2, bed);
+    grid.setOverlay(4, 2, bed);
+    grid.setOverlay(13, 2, bed);
+    grid.setOverlay(14, 2, bed);
+    // Chests
+    grid.setOverlay(3, 4, chest);
+    grid.setOverlay(13, 4, chest);
+    // Room candles
+    grid.setOverlay(2, 1, candle);
+    grid.setOverlay(8, 1, candle);
+    grid.setOverlay(12, 1, candle);
+    grid.setOverlay(18, 1, candle);
+    // Bar barrels
+    grid.setOverlay(2, 7, barrel);
+    grid.setOverlay(3, 7, barrel);
+    grid.setOverlay(17, 7, barrel);
+    grid.setOverlay(18, 7, barrel);
+    // Bookshelves
+    grid.setOverlay(1, 10, bookshelf);
+    grid.setOverlay(1, 11, bookshelf);
+    // Fireplace
+    grid.setOverlay(1, 12, cookingFire);
+    // Tables
+    grid.setOverlay(4, 9, table);
+    grid.setOverlay(5, 9, table);
+    grid.setOverlay(9, 9, table);
+    grid.setOverlay(10, 9, table);
+    grid.setOverlay(4, 12, table);
+    grid.setOverlay(5, 12, table);
+    // Candles on tables
+    grid.setOverlay(4, 8, candle);
+    grid.setOverlay(9, 8, candle);
+    // Notice board
+    grid.setOverlay(11, 13, noticeBoard);
+    // Exit door
+    grid.setOverlay(9, H - 1, exitInterior);
+    addExitPortalMarker(grid, 9.0f, static_cast<float>(H - 1));
+
+    // Bram the innkeeper (NAMED_NPCS's own 'inn:10,17' entry) and two seated
+    // patrons, Oswin ('inn:9,6') and Thessaly ('inn:12,7').
+    addNpcSpawnMarker(grid, "Bram", 17.0f, 10.0f);
+    addNpcSpawnMarker(grid, "Oswin", 6.0f, 9.0f);
+    addNpcSpawnMarker(grid, "Thessaly", 7.0f, 12.0f);
+
+    // Player spawn -- the JS's own makeInnInterior() has no entryX/entryY,
+    // so entering falls back to enterInterior()'s own default:
+    // (Math.floor(W/2), H-3) = (10, 13).
+    grid.markers.push_back({"player_spawn", glm::vec2(10.5f, 13.5f), "Player Spawn"});
+
+    return grid;
+}
+
+// Transcribed from `function makeShopInterior()` (js/zones.js, lines
+// 2126-2173) -- Dorin's Trading Post. See GrimstoneGame.h's own doc comment
+// for why Dorin is always placed here (day/night + quest flags not ported).
+TileGrid buildShopInterior(const TileKindRegistry& registry) {
+    constexpr int W = 14, H = 8;
+    TileGrid grid(W, H, 1.0f);
+
+    const TileKindId stoneFloor = registry.idFromName("stone_floor");
+    const TileKindId wall = registry.idFromName("wall");
+    const TileKindId bookshelf = registry.idFromName("bookshelf");
+    const TileKindId barrel = registry.idFromName("barrel");
+    const TileKindId candle = registry.idFromName("candle");
+    const TileKindId grass = registry.idFromName("grass");
+    const TileKindId exitInterior = registry.idFromName("exit_interior");
+
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) grid.setFloor(x, y, stoneFloor);
+
+    // Outer walls
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x)
+            if (y == 0 || y == H - 1 || x == 0 || x == W - 1) grid.setFloor(x, y, wall);
+
+    // Counter row -- solid barrier separating Dorin's side from customer
+    // floor, gap at x=6 for standing-adjacent interaction
+    for (int x = 1; x <= W - 2; ++x)
+        if (x != 6) grid.setFloor(x, 3, wall);
+
+    // ---- Floor layer is now fully authored ----
+
+    // ---- Behind-counter (Dorin's side, y=1..2) ----
+    grid.setOverlay(1, 1, bookshelf);
+    grid.setOverlay(2, 1, bookshelf); // shelves on west wall
+    grid.setOverlay(11, 1, bookshelf);
+    grid.setOverlay(12, 1, bookshelf); // shelves on east wall
+    grid.setOverlay(1, 2, barrel);
+    grid.setOverlay(2, 2, barrel); // stock barrels west
+    grid.setOverlay(11, 2, barrel);
+    grid.setOverlay(12, 2, barrel); // stock barrels east
+    grid.setOverlay(5, 1, candle);
+    grid.setOverlay(8, 1, candle); // candles on back wall
+
+    // Dorin behind the counter -- always present (see this function's own
+    // header-comment note on day/night + quest flags not being ported).
+    addNpcSpawnMarker(grid, "Dorin", 6.0f, 2.0f);
+
+    // ---- Customer floor (y=4..6) ----
+    grid.setOverlay(2, 5, barrel);
+    grid.setOverlay(12, 5, barrel); // display barrels flanking
+    grid.setOverlay(1, 4, candle);
+    grid.setOverlay(12, 4, candle); // entrance candles
+
+    // Exit -- south wall centre
+    grid.setFloor(6, H - 1, grass); // break wall
+    grid.setOverlay(6, H - 1, exitInterior);
+    addExitPortalMarker(grid, 6.0f, static_cast<float>(H - 1));
+
+    // Player spawn -- matches the JS's own `entryX:6, entryY:5`.
+    grid.markers.push_back({"player_spawn", glm::vec2(6.5f, 5.5f), "Player Spawn"});
+
+    return grid;
+}
+
+// Transcribed from `function makeBankInterior()` (js/zones.js, lines
+// 2306-2354) -- Grimstone Savings Bank.
+TileGrid buildBankInterior(const TileKindRegistry& registry) {
+    constexpr int W = 14, H = 10;
+    TileGrid grid(W, H, 1.0f);
+
+    const TileKindId stoneFloor = registry.idFromName("stone_floor");
+    const TileKindId wall = registry.idFromName("wall");
+    const TileKindId barrel = registry.idFromName("barrel");
+    const TileKindId chest = registry.idFromName("chest");
+    const TileKindId candle = registry.idFromName("candle");
+    const TileKindId table = registry.idFromName("table");
+    const TileKindId bookshelf = registry.idFromName("bookshelf");
+    const TileKindId exitInterior = registry.idFromName("exit_interior");
+
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) grid.setFloor(x, y, stoneFloor);
+
+    // Outer walls
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x)
+            if (y == 0 || y == H - 1 || x == 0 || x == W - 1) grid.setFloor(x, y, wall);
+
+    // Teller counter row -- solid barrier with a window opening at x=6
+    for (int x = 1; x <= 12; ++x)
+        if (x != 6) grid.setFloor(x, 4, wall);
+
+    // ---- Floor layer is now fully authored ----
+
+    // Vault storage (upper-left behind counter)
+    grid.setOverlay(1, 1, barrel);
+    grid.setOverlay(2, 1, barrel);
+    grid.setOverlay(1, 2, chest);
+    grid.setOverlay(2, 2, chest);
+    grid.setOverlay(10, 1, barrel);
+    grid.setOverlay(11, 1, chest);
+
+    // Atmosphere candles
+    grid.setOverlay(5, 1, candle);
+    grid.setOverlay(8, 1, candle);
+    grid.setOverlay(3, 3, candle);
+    grid.setOverlay(9, 3, candle);
+    grid.setOverlay(1, 7, candle);
+    grid.setOverlay(12, 7, candle);
+
+    // Waiting-area tables
+    grid.setOverlay(3, 6, table);
+    grid.setOverlay(4, 6, table);
+    grid.setOverlay(9, 6, table);
+    grid.setOverlay(10, 6, table);
+
+    // Bookshelf (regulations, account ledgers)
+    grid.setOverlay(12, 2, bookshelf);
+    grid.setOverlay(12, 3, bookshelf);
+
+    // Willa the bank teller (NAMED_NPCS's own 'bank:3,6' entry).
+    addNpcSpawnMarker(grid, "Willa", 6.0f, 3.0f);
+
+    // Exit door at bottom centre
+    grid.setOverlay(6, H - 1, exitInterior);
+    addExitPortalMarker(grid, 6.0f, static_cast<float>(H - 1));
+
+    // Player spawn -- matches the JS's own `entryX:6, entryY:7`.
+    grid.markers.push_back({"player_spawn", glm::vec2(6.5f, 7.5f), "Player Spawn"});
+
+    return grid;
+}

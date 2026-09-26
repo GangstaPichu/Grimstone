@@ -4,6 +4,7 @@
 #include "TileKindRegistry.h"
 
 #include <filesystem>
+#include <string>
 
 // Grimstone's single registration entry point -- the "Static Game Module"
 // model this scaffold follows (see games/tinytown/src/TinyTownGame.h in the
@@ -197,3 +198,66 @@ TileGrid buildWhisperwoodLevel(const TileKindRegistry& registry);
 // this function, same "portal toward a not-yet-ported destination"
 // convention Ashenveil's own CHAPEL_PORTAL already establishes).
 TileGrid buildGreenfieldLevel(const TileKindRegistry& registry);
+
+// ---- Ashenveil building interiors --------------------------------------
+//
+// Five small interiors, each entered by stepping on the matching BWALL_DOOR
+// tile in buildAshenveilLevel() (see that function's own door placements)
+// and exited back to the same spot in Ashenveil via a "portal" TileMarker
+// targeting "ashenveil" -- the same targetZone-slug convention every other
+// portal in buildAshenveilLevel() already uses. Transcribed from the
+// "HOUSE INTERIOR MAPS" section of js/zones.js; each function's own doc
+// comment below cites its exact JS line range.
+//
+// Unlike buildAshenveilLevel() (not yet wired into the plugin ABI -- see
+// that function's own doc comment), these are ordinary standalone
+// TileGrid builders with the same caller story: a future dev-only main.cpp,
+// or a one-time BEditor export pass.
+
+// Mirrors `function makeHouseInterior(residentName)` (js/zones.js, lines
+// 1348-1401): a small generic two-room house (living area + bedroom) used
+// for all 6 of Ashenveil's residential houses -- Mira, Aldric, the two
+// unnamed "Residence" houses at (2,46)/(2,53), Elspeth, and Rowan (see
+// buildAshenveilLevel()'s own placeHouse() calls and NPC markers). The JS
+// itself places no NPC/resident tile inside the house -- residents stay
+// outdoors (Ashenveil's own npc_spawn markers) -- so this function adds no
+// npc_spawn marker either, just `residentName`-specific furniture flourish
+// exactly matching the JS's own if/else chain (Mira/Aldric/Elspeth/Rowan;
+// any other name, e.g. "Residence", gets the shared furniture only).
+TileGrid buildHouseInterior(const TileKindRegistry& registry, const std::string& residentName);
+
+// Mirrors `function makeBlacksmithInterior()` (js/zones.js, lines
+// 1404-1448) -- Grimward's forge (west half) and workshop (east half),
+// split by a dividing wall with a doorway gap. Grimward himself is an
+// npc_spawn marker (the JS places T.NPC_GUARD as a placeholder tile at
+// tiles[5][11] with its own comment "re-using guard tile for now, named
+// below" -- NAMED_NPCS's own 'forge:5,11' entry, js/zones.js, is where the
+// real name "Grimward" comes from).
+TileGrid buildBlacksmithInterior(const TileKindRegistry& registry);
+
+// Mirrors `function makeInnInterior()` (js/zones.js, lines 1451-1508) --
+// "The Tarnished Flagon": a common room (tables, bar, fireplace) south of
+// a small lodging wing (two bed alcoves), split by a dividing wall with a
+// doorway gap. Bram the innkeeper and two seated patrons (Oswin, Thessaly
+// -- NAMED_NPCS's own 'inn:10,17'/'inn:9,6'/'inn:12,7' entries, js/
+// zones.js) are npc_spawn markers. Unlike every other interior here, the
+// JS's own makeInnInterior() returns no entryX/entryY -- entering falls
+// back to enterInterior()'s own default (Math.floor(W/2), H-3), so the
+// player_spawn marker below sits at that exact fallback position rather
+// than at the exit door.
+TileGrid buildInnInterior(const TileKindRegistry& registry);
+
+// Mirrors `function makeShopInterior()` (js/zones.js, lines 2126-2173) --
+// Dorin's Trading Post: a small counter-and-stockroom layout, Dorin
+// himself behind the counter. The JS conditionally hides Dorin at night
+// during the "Old Bones" quest and swaps in a hidden chest instead
+// (`dorinAbsent`/`questFlags.old_bones_*`) -- day/night and quest flags
+// aren't ported yet (see PORTING_PLAN.md), so this always places Dorin,
+// matching the JS's own default (daytime, quest not accepted) state.
+TileGrid buildShopInterior(const TileKindRegistry& registry);
+
+// Mirrors `function makeBankInterior()` (js/zones.js, lines 2306-2354) --
+// Grimstone Savings Bank: a teller counter with a window gap, vault
+// storage and a waiting area. Willa the teller (NAMED_NPCS's own
+// 'bank:3,6' entry, js/zones.js) is an npc_spawn marker.
+TileGrid buildBankInterior(const TileKindRegistry& registry);
