@@ -1094,6 +1094,290 @@ void handleHarvesting(BeTileGridFrame* frame) {
     frame->requestedToastText = toastScratch().c_str();
 }
 
+// ======= Aldermast's quest chain: "The Ashen Seal" / "The Void Shards" =======
+// Transcribed from js/zones.js's openWizardDialogue()/openWizardConstellationOffer()
+// (lines 6-246). A real, working proof-of-concept for the quest/dialogue
+// system, not a full port of the whole wizard conversation tree -- see this
+// function group's own doc comments below and PORTING_PLAN.md's own
+// js/quests.js row for exactly which JS branches are covered vs. deferred.
+//
+// State: every JS `questFlags.X` boolean this pass touches becomes a host
+// flag (same "1.0/0.0 for true/false" convention skill XP already uses in
+// this file). `void_shards_found` is transcribed as a NUMBER (0-4), not a
+// boolean, matching the JS's own `questFlags.void_shards_found || 0` usage
+// (js/zones.js line 114) -- nothing in THIS port increments it yet, since no
+// dungeon-chest-loot system exists anywhere in this file/GrimstoneGame.cpp
+// (checked: no "chest"/"loot" handling anywhere in this file) to be the
+// source of truth for "the player found a shard." That's a real, separate
+// gap (same shape as handleFishing()'s own documented zone-read gap above),
+// not something this quest-chain pass invents a workaround for -- the flag
+// exists and is read/displayed correctly the moment something else sets it.
+//
+// Aldermast's own real Grimstone location: js/npcs.js line 670-673 calls
+// openWizardDialogue() for T.NPC_WIZARD, and js/zones.js line 476 places
+// that tile ONLY inside makeWizardTowerInterior() (the "AETHERIC SPIRE"
+// interior reached from Stormcrag Reach) -- NOT Ashenveil. This port's own
+// buildWizardTowerInterior() (GrimstoneGame.cpp) already authors this as an
+// "npc_spawn" TileMarker rather than a painted tile (the same convention
+// buildAshenveilLevel() uses for every named NPC), at a fixed, known world
+// position this file hardcodes below.
+
+// js's own three-skill combat average (js/zones.js line 39/216:
+// `Math.floor((Attack+Defence+Strength)/3)`), reused for the Void Shards
+// offer's own level gate (openWizardConstellationOffer(), line 230).
+int aldermastCombatAvg(const BeTileGridFrame* frame) {
+    const int atk = readSkillLevel(frame, GrimstoneSkill::Attack);
+    const int def = readSkillLevel(frame, GrimstoneSkill::Defence);
+    const int str = readSkillLevel(frame, GrimstoneSkill::Strength);
+    return (atk + def + str) / 3;
+}
+
+// **Real, documented gap**: BeTileMarker (GameModuleApi.h) exposes only
+// `kind`/`worldX`/`worldY` -- no name/id survives from TileMarker::name or
+// TileMarker::properties across the ABI boundary. So this can't ask "is
+// this npc_spawn marker actually Aldermast" by name the way the JS's own
+// dialogue dispatch (keyed off which NPC tile the player clicked) can --
+// there are several OTHER "npc_spawn" markers in this port (guards/Mira/
+// Aldric in Ashenveil, Greta/Aldous/Bertram in Greenfield, GrimstoneGame.cpp
+// addNpcMarker()/addNpcSpawnMarker() call sites), each in ITS OWN separate
+// level. This matches on the EXACT world position
+// buildWizardTowerInterior() places its own marker at (W=22, H=26, mid=11,
+// midDividerY=floor(26*0.45)=11, tf=10, cRow=6 -> marker at
+// (mid+2+0.5, cRow-1+0.5) = (13.5, 5.5), GrimstoneGame.cpp) -- correct as
+// long as no other zone's own npc_spawn marker happens to land on that
+// exact float coordinate (checked every add*NpcMarker() call site in
+// GrimstoneGame.cpp; none do). A real, position-based workaround for a real
+// ABI gap, not a guess -- same "real gap, found while wiring this up, not a
+// simplification this port can paper over" spirit as handleCombatAttack()'s
+// own doc comment above.
+constexpr float kAldermastMarkerWorldX = 13.5f;
+constexpr float kAldermastMarkerWorldY = 5.5f;
+constexpr float kAldermastInteractRadius = 1.5f; // same adjacency spirit as kMeleeRangeWorldUnits
+
+bool playerNearAldermast(const BeTileGridFrame* frame) {
+    bool markerPresent = false;
+    for (int i = 0; i < frame->markerCount; ++i) {
+        const BeTileMarker& m = frame->markers[i];
+        if (m.kind == nullptr || std::strcmp(m.kind, "npc_spawn") != 0) continue;
+        if (std::fabs(m.worldX - kAldermastMarkerWorldX) > 0.01f) continue;
+        if (std::fabs(m.worldY - kAldermastMarkerWorldY) > 0.01f) continue;
+        markerPresent = true;
+        break;
+    }
+    if (!markerPresent) return false; // not currently in the Wizard Tower interior at all
+
+    const float dx = frame->playerWorldX - kAldermastMarkerWorldX;
+    const float dy = frame->playerWorldY - kAldermastMarkerWorldY;
+    return (dx * dx + dy * dy) <= kAldermastInteractRadius * kAldermastInteractRadius;
+}
+
+void queueFlagSet(const char* key, double value) {
+    BeFlagUpdate update;
+    update.key = key;
+    update.value = value;
+    update.mode = 0; // SET
+    flagUpdateBuffer().push_back(update);
+}
+
+// ======= Objectives (Part 2) =======
+// Drained into frame->requestedObjectiveUpdates at the end of
+// updateGrimstoneRuntime(), same array-write-back shape every other system
+// in this file already uses for its own scratch buffer.
+std::vector<BeObjectiveState>& objectiveUpdateBuffer() {
+    static std::vector<BeObjectiveState> buf;
+    return buf;
+}
+void queueObjectiveUpdate(const char* id, const std::string& text, bool complete) {
+    BeObjectiveState obj;
+    obj.id = id;
+    obj.text = internString(text);
+    obj.complete = complete ? 1 : 0;
+    objectiveUpdateBuffer().push_back(obj);
+}
+
+// Live text-override scratch (Part 3's own "requestedDialogueTextOverride-
+// style live state" hook) -- separate from toastScratch() above since a
+// frame that both toasts AND has an active Aldermast dialogue node open
+// would otherwise stomp one buffer with the other.
+std::string& dialogueOverrideScratch() {
+    static std::string buf;
+    return buf;
+}
+
+// Updates the "ashen_seal"/"void_shards" TileGridObjectiveLog entries only
+// when the DERIVED stage/count actually changed since the last frame this
+// function updated them -- same "gate on a real transition, not every
+// frame" discipline handleFarmGrowthTick() already establishes above,
+// tracked via its own small set of "aldermast_obj_*" flags (same store,
+// just used as this function's own scratch instead of player-visible
+// state -- no different from farming's "farmplot_stage_<cell>" flags).
+void updateAldermastObjectives(BeTileGridFrame* frame) {
+    const bool accepted = readFlag(frame, "ashen_seal_accepted", 0.0) != 0.0;
+    const bool found = readFlag(frame, "ashen_seal_found", 0.0) != 0.0;
+    const bool returned = readFlag(frame, "ashen_seal_returned", 0.0) != 0.0;
+
+    int sealStage = 0; // 0 = not tracked yet (quest not accepted)
+    if (returned) sealStage = 3;
+    else if (found) sealStage = 2;
+    else if (accepted) sealStage = 1;
+
+    if (sealStage != 0) {
+        const double storedStage = readFlag(frame, "aldermast_obj_seal_stage", -1.0);
+        if (static_cast<double>(sealStage) != storedStage) {
+            if (sealStage == 1) {
+                queueObjectiveUpdate("ashen_seal", "Retrieve the Ashen Seal from the Catacombs", false);
+            } else if (sealStage == 2) {
+                queueObjectiveUpdate("ashen_seal", "Return the Seal to Aldermast", false);
+            } else {
+                queueObjectiveUpdate("ashen_seal", "The Ashen Seal has been returned to Aldermast.", true);
+            }
+            queueFlagSet("aldermast_obj_seal_stage", static_cast<double>(sealStage));
+        }
+    }
+
+    const bool constellationAccepted = readFlag(frame, "constellation_accepted", 0.0) != 0.0;
+    if (constellationAccepted) {
+        const bool done = readFlag(frame, "constellation_done", 0.0) != 0.0;
+        const int found4 = done ? 4 : static_cast<int>(readFlag(frame, "void_shards_found", 0.0));
+        const double storedCount = readFlag(frame, "aldermast_obj_void_count", -1.0);
+        const double storedDone = readFlag(frame, "aldermast_obj_void_done", 0.0);
+        const bool doneChanged = (done ? 1.0 : 0.0) != storedDone;
+        if (static_cast<double>(found4) != storedCount || doneChanged) {
+            if (done) {
+                queueObjectiveUpdate("void_shards", "The Void Shards have been returned to Aldermast.", true);
+            } else {
+                queueObjectiveUpdate("void_shards", "Find the Void Shards (" + std::to_string(found4) + "/4)", false);
+            }
+            queueFlagSet("aldermast_obj_void_count", static_cast<double>(found4));
+            queueFlagSet("aldermast_obj_void_done", done ? 1.0 : 0.0);
+        }
+    }
+}
+
+// ======= Dialogue start (Part 4 wiring) =======
+// On interactPressed near Aldermast's own marker, with no dialog already
+// showing (activeDialogLayoutName check -- the v24->v25 DIALOGLAYER field,
+// covers ANY dialog source, not just tree-driven ones), pushes exactly the
+// tree that matches the JS's own top-level if-chain in openWizardDialogue()/
+// openWizardConstellationOffer() for the player's CURRENT quest state.
+// Real, hand-authored branch coverage vs. deferred, per PORTING_PLAN.md:
+// covered -- the initial offer (3 choices), the accepted-not-found
+// reminder, the found-it hand-in (grants ring_of_warding), the found-but-
+// lost-it fallback, the Void Shards offer (both the undertrained refusal
+// and the real accept/not-yet offer), and a minimal in-progress reminder.
+// Deferred -- the constellation_done Grimoire hand-off and beyond (JS lines
+// 130-184), the always-available lore options and post-Grimoire idle chat
+// (JS lines 186-208), and the void_shards_found==4-but-not-yet-handed-in
+// "I'm gathering them" branch (JS lines 118-145) -- once constellation_done
+// is set this file has nothing further to offer and simply doesn't open a
+// dialogue at all, rather than silently mis-routing into an unauthored
+// state.
+void startAldermastDialogue(BeTileGridFrame* frame) {
+    if (!frame->interactPressed) return;
+    if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
+    if (!playerNearAldermast(frame)) return;
+
+    if (readFlag(frame, "aldermast_met", 0.0) == 0.0) {
+        queueFlagSet("aldermast_met", 1.0);
+        toastScratch() = "You have met Aldermast, the Aetheric Wizard.";
+        frame->requestedToastText = toastScratch().c_str();
+    }
+
+    const bool sealAccepted = readFlag(frame, "ashen_seal_accepted", 0.0) != 0.0;
+    const bool sealFound = readFlag(frame, "ashen_seal_found", 0.0) != 0.0;
+    const bool sealReturned = readFlag(frame, "ashen_seal_returned", 0.0) != 0.0;
+    const bool constellationAccepted = readFlag(frame, "constellation_accepted", 0.0) != 0.0;
+    const bool constellationDone = readFlag(frame, "constellation_done", 0.0) != 0.0;
+
+    if (!sealAccepted) {
+        frame->requestedPushDialog = "dialogue:aldermast_seal_offer";
+    } else if (!sealFound) {
+        frame->requestedPushDialog = "dialogue:aldermast_seal_reminder";
+    } else if (!sealReturned) {
+        frame->requestedPushDialog =
+            (countInInventory(frame, "ashen_seal") > 0) ? "dialogue:aldermast_seal_handin" : "dialogue:aldermast_seal_missing";
+    } else if (!constellationAccepted) {
+        frame->requestedPushDialog =
+            (aldermastCombatAvg(frame) < 30) ? "dialogue:aldermast_void_offer_undertrained" : "dialogue:aldermast_void_offer";
+    } else if (!constellationDone) {
+        frame->requestedPushDialog = "dialogue:aldermast_void_progress";
+    }
+    // constellation_done: deferred (see this function's own doc comment) --
+    // deliberately opens nothing rather than guessing at an unauthored node.
+}
+
+// ======= Dialogue choice side effects the action vocabulary can't express
+// (Part 3's own "belongs in GrimstoneRuntime.cpp" split) =======
+// tileTriggerActionKinds() (TileGrid.h) has no "set_flag"/"remove_item"
+// action -- give_item can only ADD (TileGridHostRunner.cpp's own
+// fireTriggerAction() calls inventory.addItem() directly for it), and
+// nothing in the vocabulary can touch the flag store at all. Accepting a
+// quest and handing in the Ashen Seal (removing it, marking the quest
+// returned) therefore has to be real GrimstoneRuntime.cpp logic, reacting
+// to the SAME (tree, node, clickedUiActionId) triple TileGridHostRunner.cpp
+// itself uses to resolve a click.
+//
+// **Ordering subtlety this had to be written around**: by the time a
+// plugin's onTileGridUpdate() runs, activeDialogueTreeName/NodeId already
+// reflect the NODE THE CLICK JUST ADVANCED TO, not the node the choice was
+// clicked FROM (TileGridHostRunner.cpp resolves the click -- firing the
+// choice's own `action` and advancing `activeDialogueNode` -- BEFORE
+// copying either field into the plugin frame). So this can't gate on "the
+// player clicked choice 0 while node X was showing" directly; instead it
+// gates on ARRIVING at a specific destination node while clickedUiActionId
+// is non-empty this exact frame (a real click just landed one, as opposed
+// to sitting on that node an idle frame later, when clickedUiActionId is
+// "" again) -- which is why every choice below routes to its OWN named
+// node instead of ending the conversation directly.
+void applyAldermastDialogueSideEffects(BeTileGridFrame* frame) {
+    if (frame->activeDialogueTreeName == nullptr || frame->activeDialogueTreeName[0] == '\0') return;
+    if (frame->clickedUiActionId == nullptr || frame->clickedUiActionId[0] == '\0') return;
+    if (frame->activeDialogueNodeId == nullptr) return;
+
+    if (std::strcmp(frame->activeDialogueTreeName, "aldermast_seal_offer") == 0 &&
+        std::strcmp(frame->activeDialogueNodeId, "accepted_confirm") == 0) {
+        if (readFlag(frame, "ashen_seal_accepted", 0.0) == 0.0) queueFlagSet("ashen_seal_accepted", 1.0);
+    } else if (std::strcmp(frame->activeDialogueTreeName, "aldermast_seal_handin") == 0 &&
+               std::strcmp(frame->activeDialogueNodeId, "handin_thanks") == 0) {
+        if (readFlag(frame, "ashen_seal_returned", 0.0) == 0.0) {
+            queueItemGrant("ashen_seal", -1); // the seal itself is consumed on hand-in, same as the JS's removeFromInventory()
+            queueFlagSet("ashen_seal_returned", 1.0);
+        }
+    } else if (std::strcmp(frame->activeDialogueTreeName, "aldermast_void_offer") == 0 &&
+               std::strcmp(frame->activeDialogueNodeId, "accepted") == 0) {
+        if (readFlag(frame, "constellation_accepted", 0.0) == 0.0) queueFlagSet("constellation_accepted", 1.0);
+    }
+}
+
+// ======= Live dialogue text overrides (Part 3, the requestedDialogueTextOverride
+// mechanism) =======
+// Two of the authored nodes above are deliberately static placeholders in
+// the JSON -- the live NUMBER each one needs (the player's own combat
+// average, the running Void Shards count) is plugin-computed state the
+// engine has no business knowing about (DialogueTree.h's own doc comment:
+// "the engine has no business knowing what a game's live values even
+// ARE"), so this overrides the rendered body text every frame the matching
+// node is showing, exactly the mechanism that field exists for.
+void overrideAldermastLiveDialogueText(BeTileGridFrame* frame) {
+    if (frame->activeDialogueTreeName == nullptr || frame->activeDialogueTreeName[0] == '\0') return;
+
+    if (std::strcmp(frame->activeDialogueTreeName, "aldermast_void_offer_undertrained") == 0) {
+        dialogueOverrideScratch() = "Four Void Shards, scattered across the deepest dungeon chambers. The things "
+                                     "guarding them are not goblins. You need seasoned combat skills -- an average "
+                                     "of level 30 across Attack, Defence, and Strength -- before I'd send you in. "
+                                     "You are currently at " +
+                                     std::to_string(aldermastCombatAvg(frame)) + ". Come back when you're ready.";
+        frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+    } else if (std::strcmp(frame->activeDialogueTreeName, "aldermast_void_progress") == 0) {
+        const int found = static_cast<int>(readFlag(frame, "void_shards_found", 0.0));
+        dialogueOverrideScratch() = "You have found " + std::to_string(found) +
+                                     " of the four Void Shards. Search the deepest chests in every dungeon -- the "
+                                     "Ashwood Crypts, the Iron Depths, and the Cultist Catacombs. The shards are "
+                                     "drawn to darkness.";
+        frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+    }
+}
+
 } // namespace
 
 void updateGrimstoneRuntime(BeTileGridFrame* frame) {
@@ -1104,6 +1388,7 @@ void updateGrimstoneRuntime(BeTileGridFrame* frame) {
     tileEditBuffer().clear();
     timerStartBuffer().clear();
     hitboxBuffer().clear();
+    objectiveUpdateBuffer().clear();
     stringScratch().clear();
 
     syncHitpointsMaxHealth(frame);
@@ -1118,6 +1403,10 @@ void updateGrimstoneRuntime(BeTileGridFrame* frame) {
     handleTilling(frame);
     handlePlanting(frame);
     handleHarvesting(frame);
+    updateAldermastObjectives(frame);  // per-frame, not gated on interactPressed
+    startAldermastDialogue(frame);
+    applyAldermastDialogueSideEffects(frame);
+    overrideAldermastLiveDialogueText(frame);
 
     // Drain the scratch buffers into the frame's own write-back arrays --
     // done last so every system above had a chance to queue into them
@@ -1143,5 +1432,9 @@ void updateGrimstoneRuntime(BeTileGridFrame* frame) {
     if (!hitboxBuffer().empty()) {
         frame->requestedHitboxes = hitboxBuffer().data();
         frame->requestedHitboxCount = static_cast<int>(hitboxBuffer().size());
+    }
+    if (!objectiveUpdateBuffer().empty()) {
+        frame->requestedObjectiveUpdates = objectiveUpdateBuffer().data();
+        frame->requestedObjectiveUpdateCount = static_cast<int>(objectiveUpdateBuffer().size());
     }
 }

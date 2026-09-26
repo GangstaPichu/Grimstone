@@ -1,0 +1,169 @@
+[
+  {
+    "name": "aldermast_seal_offer",
+    "startNodeId": "offer",
+    "nodes": [
+      {
+        "id": "offer",
+        "speaker": "Aldermast",
+        "text": "Hmm. You actually made it up here. Good. I have been watching the Catacombs from the crystal ball -- the cultists have a ritual seal down there. If they complete the binding, whatever they have caged beneath that altar walks free. I need you to bring me the Ashen Seal before that happens.",
+        "choices": [
+          { "text": "I'll retrieve it.", "targetNodeId": "accepted_confirm" },
+          { "text": "Tell me more about the seal.", "targetNodeId": "offer_more" },
+          { "text": "Not right now." }
+        ]
+      },
+      {
+        "id": "offer_more",
+        "speaker": "Aldermast",
+        "text": "A ritual binder -- carved from the same stone as the altar itself. The cultists use it to anchor a summoning. Without the seal the ritual collapses. With it in the wrong hands... well. That is why I need it here, not there.",
+        "choices": [
+          { "text": "I'll retrieve it.", "targetNodeId": "accepted_confirm" },
+          { "text": "Not right now." }
+        ]
+      },
+      {
+        "id": "accepted_confirm",
+        "speaker": "Aldermast",
+        "text": "Good. The seal is deep in the Catacombs -- past the first hall, held in a chest the cultists guard jealously. You'll know it by the red glow. Do not attempt to use it yourself. Bring it directly to me.",
+        "choices": [
+          { "text": "Understood." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "aldermast_seal_reminder",
+    "startNodeId": "reminder",
+    "nodes": [
+      {
+        "id": "reminder",
+        "speaker": "Aldermast",
+        "text": "The Ashen Seal is still in the Catacombs. Find it -- it's guarded deep in the dungeon. Look for a chest with a red glow. Don't dawdle.",
+        "choices": [
+          { "text": "I'm working on it." },
+          { "text": "What does it look like again?", "targetNodeId": "reminder_detail" }
+        ]
+      },
+      {
+        "id": "reminder_detail",
+        "speaker": "Aldermast",
+        "text": "Red. Glowing. About the size of your fist. You will feel the wrongness of it before you see it. The cultists keep it behind their inner sanctum -- clear the hall and search the chests.",
+        "choices": [
+          { "text": "Got it." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "aldermast_seal_handin",
+    "startNodeId": "handin",
+    "nodes": [
+      {
+        "id": "handin",
+        "speaker": "Aldermast",
+        "text": "You have it. I can feel it from here. Hand it over -- quickly, please, before it starts responding to the tower's aetheric field.",
+        "choices": [
+          {
+            "text": "Here, take it.",
+            "targetNodeId": "handin_thanks",
+            "action": "give_item",
+            "actionParam": "ring_of_warding",
+            "actionParam2": "1"
+          },
+          { "text": "Actually, can I hold onto it?", "targetNodeId": "handin_refuse" }
+        ]
+      },
+      {
+        "id": "handin_thanks",
+        "speaker": "Aldermast",
+        "text": "Excellent. I'll seal it in the null-vault tonight. As for your reward -- this ring has been in my collection for two centuries. The warding runes are my own design. It will serve you better than it does a shelf.",
+        "choices": [
+          { "text": "Thank you, Aldermast.", "targetNodeId": "seal_epilogue" }
+        ]
+      },
+      {
+        "id": "seal_epilogue",
+        "speaker": "Aldermast",
+        "text": "One more thing -- since you've proven yourself. Look up at the sky tonight. Count the stars in the Void Constellation. Four are missing. I believe their shards fell somewhere in the depths of this realm. Find them, and I can build something remarkable.",
+        "choices": [
+          { "text": "Tell me more." },
+          { "text": "Perhaps later." }
+        ]
+      },
+      {
+        "id": "handin_refuse",
+        "speaker": "Aldermast",
+        "text": "No. Absolutely not. Bring it here immediately.",
+        "choices": [
+          { "text": "I'll bring it." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "aldermast_seal_missing",
+    "startNodeId": "missing",
+    "nodes": [
+      {
+        "id": "missing",
+        "speaker": "Aldermast",
+        "text": "Where is the seal? You found it -- I could sense it briefly in the crystal -- but now I cannot. Did you lose it? Check your belongings carefully.",
+        "choices": [
+          { "text": "I'll find it again." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "aldermast_void_offer_undertrained",
+    "startNodeId": "undertrained",
+    "nodes": [
+      {
+        "id": "undertrained",
+        "speaker": "Aldermast",
+        "text": "Four Void Shards, scattered across the deepest dungeon chambers. The things guarding them are not goblins. You need seasoned combat skills before I'd send you in. Come back when you're ready.",
+        "choices": [
+          { "text": "I'll train and return." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "aldermast_void_offer",
+    "startNodeId": "offer",
+    "nodes": [
+      {
+        "id": "offer",
+        "speaker": "Aldermast",
+        "text": "Good -- you have the mettle for this. The four Void Shards are hidden in dungeon chests across the realm. The Ashwood Crypts, the Iron Depths, the Cultist Catacombs -- and one last shard in the deepest chest of the Stormcrag mountain caves. Each one will feel distinctly cold. Bring all four and I'll forge something you won't find anywhere else.",
+        "choices": [
+          { "text": "I'll find them.", "targetNodeId": "accepted" },
+          { "text": "Not yet." }
+        ]
+      },
+      {
+        "id": "accepted",
+        "speaker": "Aldermast",
+        "text": "Excellent. Remember -- four shards, all of them. Half a constellation is useless to me.",
+        "choices": [
+          { "text": "Understood." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "aldermast_void_progress",
+    "startNodeId": "progress",
+    "nodes": [
+      {
+        "id": "progress",
+        "speaker": "Aldermast",
+        "text": "Search the deepest chests in every dungeon -- the Ashwood Crypts, the Iron Depths, and the Cultist Catacombs. The shards are drawn to darkness.",
+        "choices": [
+          { "text": "I'll keep searching." }
+        ]
+      }
+    ]
+  }
+]
