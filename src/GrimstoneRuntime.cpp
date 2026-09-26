@@ -1,5 +1,6 @@
 #include "GrimstoneRuntime.h"
 
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -1752,6 +1753,437 @@ void overrideBankMenuLiveDialogueText(BeTileGridFrame* frame) {
     }
 }
 
+// ======= Dev Console (js/devconsole.js) =======
+// Transcribed from js/devconsole.js's runDevCommand() switch (lines 78-238)
+// and its toggle/close wiring (toggleConsole()/the two keydown listeners,
+// lines 62-70, 242-282). Read in full before writing any of this, per this
+// pass's own task framing.
+//
+// **Gate, mirroring the JS's own (real, not invented)**: js/devconsole.js's
+// toggleConsole() (line 63) has exactly ONE gate -- `if(!currentMap) return;`,
+// i.e. "only while a game is actually loaded." It is NOT a dev-only/debug-
+// build flag; the JS ships this exact command console reachable by any
+// player who knows to press backtick, in production, with no further
+// authorization check anywhere in the file (checked: no `DEBUG`/`isDev`/
+// role check anywhere in devconsole.js). Mirrored as-is rather than
+// invented-more-strict here: `updateGrimstoneRuntime()` only ever runs
+// while a TileGrid is actually loaded and live (there is no "no game
+// loaded" state it runs during), so that gate is automatically satisfied
+// every time this file runs at all, and the one thing worth gating on for
+// real is not stealing focus from another dialog already open (Aldermast's/
+// Willa's own conversations, or anything else on the stack) -- the same
+// `activeDialogLayoutName`-empty guard startAldermastDialogue()/
+// startBankDialogue() already use above.
+//
+// **Toggle key, a REAL, documented substitution, not a guess**: the JS
+// toggles on the backtick/tilde key (`e.key === '\`'`, lines 257, 278).
+// This engine's custom-input surface (`BeTileGridFrame::keysDown`,
+// ScriptInputKeys.h) is a deliberately small FIXED 44-key table -- A-Z,
+// 0-9, the four arrows, Space, LeftShift, LeftControl, Escape -- with no
+// backtick/grave/tilde key anywhere in it (checked the real table, not
+// assumed from the header comment alone). There is therefore no way to
+// reproduce the JS's exact keybind through this ABI at all; LeftControl+L
+// is substituted here (documented, not silently different) as the closest
+// available "modifier + letter, not used by movement/interact" combo.
+// Escape, unlike backtick, genuinely IS in the fixed table, so the JS's
+// OWN secondary close-key (`e.key === 'Escape' || e.key === '\`'`, same
+// line 257) is reproduced exactly for closing, even though opening can't
+// use the same key the JS does.
+//
+// **The real, load-bearing gap, same shape as this file's other "found
+// while wiring this up" notes**: PORTING_PLAN.md's own js/quests.js row
+// already documents that no `DialogueTemplate` UILayout has been authored
+// anywhere in `content/` yet, so `requestedPushDialog("dialogue:...")` has
+// nowhere to actually draw a speaker/body/choices. The dev console needs
+// its OWN UILayout for the exact same reason and has the exact same gap:
+// no UILayout named `kDevConsoleLayoutName` ("DevConsoleTemplate") exists
+// anywhere in this repo's content, and Grimstone doesn't author ANY
+// UILayout at all yet (checked: no `hudLayoutName`/UILayout content
+// anywhere in GrimstoneGame.h/.cpp) -- so there is currently no HUD
+// screen, dialog screen, or otherwise, that this port draws through this
+// engine's UILayout system at all. Pushing `kDevConsoleLayoutName` onto
+// the dialog stack is real (`TileGridHostRunner.cpp`'s `pushDialogOrTree()`
+// unconditionally does `dialogStack.push(name)` for any non-"dialogue:"
+// name, confirmed by reading it, not guessed), and it correctly reports
+// back via `activeDialogLayoutName`/suppresses movement exactly like any
+// other pushed dialog -- but with no UILayout of that name authored, the
+// screen has nothing to draw and the player sees nothing (the same "opens
+// a screen with nothing on it" behavior an unauthored `DialogueTemplate`
+// push would already have). This is NOT faked around here: rather than
+// inventing a fallback rendering path this ABI doesn't offer (there is no
+// primitive for a plugin to draw its own text/log surface beyond a single
+// toast line -- checked, `requestedSprites` is world-space shapes only, no
+// text), this ships the REAL toggle/open/close plumbing plus a REAL,
+// fully working command parser/dispatcher below, verified against every
+// helper it reuses (queueXpGrant/queueItemGrant/kPlayerGoldFlag/
+// requestedHealthDelta), and documents exactly what a future UILayout-
+// authoring pass needs to actually put it on screen:
+//   - A UILayout named exactly `kDevConsoleLayoutName` ("DevConsoleTemplate").
+//   - One TextInput element with id exactly `kDevConsoleInputElementId`
+//     ("dev_console_input") -- its live typed value shows up in
+//     `frame->activeTextInputs` (BeUiTextInputState) the moment the player
+//     focuses it, per that struct's own doc comment.
+//   - One submit button (or Enter-bound element) with actionId exactly
+//     `kDevConsoleSubmitActionId` ("dev_console_submit") -- `handleDevConsole()`
+//     below reacts to it showing up in `frame->clickedUiActionId` the SAME
+//     way every other dialog-side-effect handler in this file already does.
+//   - Optionally a Label to show `requestedToastText`'s own last result as
+//     a persistent line instead of a fading toast -- not required for the
+//     command dispatch below to work, since every command already reports
+//     its result via the SAME toast mechanism handleMiningAndWoodcutting()/
+//     etc. already use for lack of a richer UI surface, matching this
+//     file's own established fallback for "no progress-bar/log HUD exists
+//     yet" gaps.
+// Once that layout exists, everything below needs no source change at all
+// to start actually working end to end.
+constexpr const char* kDevConsoleLayoutName = "DevConsoleTemplate";
+constexpr const char* kDevConsoleInputElementId = "dev_console_input";
+constexpr const char* kDevConsoleSubmitActionId = "dev_console_submit";
+constexpr const char* kDevConsoleToggleKey = "L"; // + LeftControl -- see this section's own doc comment
+
+bool isKeyDown(const BeTileGridFrame* frame, const char* name) {
+    if (frame->keysDown == nullptr) return false;
+    for (int i = 0; i < frame->keysDownCount; ++i)
+        if (frame->keysDown[i] != nullptr && std::strcmp(frame->keysDown[i], name) == 0) return true;
+    return false;
+}
+
+bool devConsoleOpen(const BeTileGridFrame* frame) {
+    return frame->activeDialogLayoutName != nullptr && std::strcmp(frame->activeDialogLayoutName, kDevConsoleLayoutName) == 0;
+}
+
+// Edge-detects the LeftControl+L combo (own flag, same "own the
+// accumulator/last-state as a flag since this file keeps no persistent
+// struct of its own" discipline handleFarmGrowthTick() already
+// establishes) so holding the combo down doesn't reopen/reclose the
+// console every single frame.
+void handleDevConsoleToggle(BeTileGridFrame* frame) {
+    const bool comboDown = isKeyDown(frame, "LeftControl") && isKeyDown(frame, kDevConsoleToggleKey);
+    const bool wasDown = readFlag(frame, "dev_console_toggle_key_was_down", 0.0) != 0.0;
+    queueFlagSet("dev_console_toggle_key_was_down", comboDown ? 1.0 : 0.0);
+
+    if (comboDown && !wasDown) {
+        if (devConsoleOpen(frame)) {
+            frame->requestedPopDialog = 1;
+        } else if (frame->activeDialogLayoutName == nullptr || frame->activeDialogLayoutName[0] == '\0') {
+            // Don't steal focus from Aldermast/Willa/anything else already
+            // on the dialog stack -- same guard startAldermastDialogue()/
+            // startBankDialogue() already use above.
+            frame->requestedPushDialog = kDevConsoleLayoutName;
+        }
+        return;
+    }
+
+    // Mirrors the JS's own dual close-key (`Escape` OR backtick, line 257)
+    // -- Escape genuinely is in the fixed keysDown table, unlike backtick.
+    if (devConsoleOpen(frame) && isKeyDown(frame, "Escape")) {
+        frame->requestedPopDialog = 1;
+    }
+}
+
+const char* findTextInputValue(const BeTileGridFrame* frame, const char* elementId) {
+    if (frame->activeTextInputs == nullptr) return nullptr;
+    for (int i = 0; i < frame->activeTextInputCount; ++i) {
+        const BeUiTextInputState& ti = frame->activeTextInputs[i];
+        if (ti.elementId != nullptr && std::strcmp(ti.elementId, elementId) == 0) return ti.text;
+    }
+    return nullptr;
+}
+
+std::string devConsoleToLower(std::string s) {
+    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return s;
+}
+
+// Mirrors runDevCommand()'s own `raw.trim().split(/\s+/)` (line 74).
+std::vector<std::string> devConsoleSplitWhitespace(const std::string& s) {
+    std::vector<std::string> parts;
+    size_t i = 0;
+    while (i < s.size()) {
+        while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i]))) ++i;
+        const size_t start = i;
+        while (i < s.size() && !std::isspace(static_cast<unsigned char>(s[i]))) ++i;
+        if (i > start) parts.push_back(s.substr(start, i - start));
+    }
+    return parts;
+}
+
+// Same display-name order as kSkillXpFlagKeys/GrimstoneSkill above --
+// case-insensitively matched, mirroring the JS's own
+// `charAt(0).toUpperCase()+slice(1).toLowerCase()` capitalization dance
+// (setskill/xp, lines 172, 187) with a plain case-fold instead (this port
+// has no `p.skills` object whose exact-cased keys need matching, just this
+// file's own fixed enum).
+constexpr const char* kSkillDisplayNames[kSkillCount] = {
+    "Mining", "Smithing", "Woodcutting", "Crafting", "Fishing", "Cooking", "Farming",
+    "Attack", "Defence", "Strength", "Hitpoints",
+};
+
+bool findSkillByName(const std::string& name, GrimstoneSkill* outSkill) {
+    const std::string lower = devConsoleToLower(name);
+    for (int i = 0; i < kSkillCount; ++i) {
+        if (devConsoleToLower(kSkillDisplayNames[i]) == lower) {
+            *outSkill = static_cast<GrimstoneSkill>(i);
+            return true;
+        }
+    }
+    return false;
+}
+
+void devConsoleToast(BeTileGridFrame* frame, const std::string& text) {
+    toastScratch() = text;
+    frame->requestedToastText = toastScratch().c_str();
+}
+
+// The parser/dispatcher itself -- js/devconsole.js's own switch(cmd), lines
+// 78-238, one case at a time. Every command reports its result via a toast
+// (this section's own doc comment explains why: no richer on-screen log
+// surface exists yet) instead of devPrint()'s scrolling log pane.
+void runDevConsoleCommand(BeTileGridFrame* frame, const std::string& raw) {
+    const std::vector<std::string> parts = devConsoleSplitWhitespace(raw);
+    if (parts.empty()) return; // mirrors the JS's own `case '': return;`
+
+    const std::string cmd = devConsoleToLower(parts[0]);
+    const std::vector<std::string> args(parts.begin() + 1, parts.end());
+
+    if (cmd == "help") {
+        devConsoleToast(frame,
+                         "give <item> [qty] | gold <amt> | addgold <amt> | heal | tp <0-4> | "
+                         "setskill <skill> <lvl> | xp <skill> <amt> | flag <name> [value] | "
+                         "clearinv | version | clear");
+        return;
+    }
+
+    if (cmd == "give") {
+        if (args.empty()) {
+            devConsoleToast(frame, "Usage: give <item_id> [qty]");
+            return;
+        }
+        // js's own alias map (line 101): sigil->home_sigil, seed->wheat_seed;
+        // wheat->wheat is an identity no-op in the JS, nothing to remap here.
+        std::string itemId = args[0];
+        if (itemId == "sigil") itemId = "home_sigil";
+        else if (itemId == "seed") itemId = "wheat_seed";
+        int qty = 1;
+        if (args.size() > 1) {
+            qty = std::atoi(args[1].c_str());
+            if (qty < 1) qty = 1;
+        }
+        // No item-registry validation exists anywhere in this port to
+        // mirror the JS's own `if(!ITEMS[itemId])` check against (this
+        // whole file already grants arbitrary plugin-authored item id
+        // strings with no such registry, e.g. handleCombatDeathRewards()'s
+        // own unconditional `queueItemGrant("bones", 1)` above) -- an
+        // unknown id here is granted exactly like every other activity's
+        // grants already are, real behavior, not a gap this command
+        // introduces on its own.
+        queueItemGrant(internString(itemId), qty);
+        devConsoleToast(frame, "+ " + std::to_string(qty) + "x " + itemId);
+        return;
+    }
+
+    if (cmd == "gold" || cmd == "addgold") {
+        if (args.empty()) {
+            devConsoleToast(frame, "Usage: " + cmd + " <amount>");
+            return;
+        }
+        char* parseEnd = nullptr;
+        const long amt = std::strtol(args[0].c_str(), &parseEnd, 10);
+        if (parseEnd == args[0].c_str()) {
+            devConsoleToast(frame, "Usage: " + cmd + " <amount>");
+            return;
+        }
+        const double current = readFlag(frame, kPlayerGoldFlag, 0.0);
+        double newGold = (cmd == "gold") ? static_cast<double>(amt) : current + static_cast<double>(amt);
+        if (newGold < 0.0) newGold = 0.0; // js's own `Math.max(0, ...)`, both commands (lines 121, 131)
+        queueFlagSet(kPlayerGoldFlag, newGold);
+        if (cmd == "gold") {
+            devConsoleToast(frame, "Gold set to " + std::to_string(static_cast<long long>(newGold)));
+        } else {
+            devConsoleToast(frame, "Gold: " + std::to_string(static_cast<long long>(newGold)) + " (" +
+                                        (amt >= 0 ? "+" : "") + std::to_string(amt) + ")");
+        }
+        return;
+    }
+
+    if (cmd == "heal") {
+        // js's own `p.hp = p.maxHp` (line 140) -- the host's own
+        // requestedHealthDelta is a signed DELTA, not an absolute set
+        // (GameModuleApi.h's v15->v16 doc comment), so this heals exactly
+        // the gap to full rather than overshooting (already clamped to
+        // [0, playerMaxHealth] host-side regardless).
+        const float delta = frame->playerMaxHealth - frame->playerHealth;
+        if (delta > 0.0f) frame->requestedHealthDelta = delta;
+        devConsoleToast(frame, "HP restored to " + std::to_string(static_cast<int>(frame->playerMaxHealth)));
+        return;
+    }
+
+    if (cmd == "tp") {
+        // **Real, documented gap, not faked**: js's own tp (lines 147-168)
+        // swaps `zoneIndex`/rebuilds `currentMap` in-process because the JS
+        // keeps every zone as one big in-memory generator. This port's
+        // zones are each their own `buildXLevel()` C++ function
+        // (GrimstoneGame.h/.cpp) with NO exported per-zone level JSON file
+        // and no slug/index -> file-path table anywhere in this repo
+        // (checked: no requestedLevelPath call site exists anywhere in
+        // this port yet, and no content/*.json zone export exists either)
+        // -- the same "zone content exists, zone-SWITCHING plumbing does
+        // not" gap handleFishing()'s own doc comment above already
+        // documents from the read side (no way to tell which zone is
+        // active). `requestedLevelPath` (GameModuleApi.h v4) is the real,
+        // working primitive that WOULD drive this the moment that mapping
+        // exists; this command validates its argument for real and says
+        // exactly what's missing rather than swapping to a path that was
+        // never verified to exist.
+        static const char* const kZoneNames[] = {"Ashenveil", "Ashen Moor", "Iron Peaks", "Cursed Marshes",
+                                                   "Obsidian Depths"};
+        if (args.empty()) {
+            devConsoleToast(frame, "Usage: tp <0-4>  (0=Ashenveil, 1=Ashen Moor, 2=Iron Peaks, "
+                                    "3=Cursed Marshes, 4=Obsidian Depths)");
+            return;
+        }
+        const int idx = std::atoi(args[0].c_str());
+        if (idx < 0 || idx > 4) {
+            devConsoleToast(frame, "Usage: tp <0-4>  (0=Ashenveil, 1=Ashen Moor, 2=Iron Peaks, "
+                                    "3=Cursed Marshes, 4=Obsidian Depths)");
+            return;
+        }
+        devConsoleToast(frame, std::string("tp is not wired up yet: no exported level file/zone-index table "
+                                            "exists in this port for '") +
+                                    kZoneNames[idx] + "' -- see PORTING_PLAN.md's devconsole.js row.");
+        return;
+    }
+
+    if (cmd == "setskill") {
+        if (args.size() < 2) {
+            devConsoleToast(frame, "Usage: setskill <skill> <lvl>");
+            return;
+        }
+        GrimstoneSkill skill;
+        if (!findSkillByName(args[0], &skill)) {
+            std::string list;
+            for (int i = 0; i < kSkillCount; ++i) list += (i > 0 ? ", " : "") + std::string(kSkillDisplayNames[i]);
+            devConsoleToast(frame, "Unknown skill. Valid: " + list);
+            return;
+        }
+        int lvl = std::atoi(args[1].c_str());
+        if (lvl < 1) lvl = 1;
+        if (lvl > 99) lvl = 99;
+        // Sets the skill's XP flag to exactly the threshold for `lvl`
+        // (SET, not INCREMENT) -- levelForXp() then reports `lvl` exactly,
+        // mirroring the JS's own direct `p.skills[skillName].lvl = lvl`
+        // (line 178) as closely as a level-derived-from-xp store allows;
+        // syncHitpointsMaxHealth() picks up a Hitpoints change on the very
+        // next frame with no separate call needed here.
+        queueFlagSet(kSkillXpFlagKeys[static_cast<int>(skill)], xpForLevel(lvl));
+        devConsoleToast(frame, std::string(kSkillDisplayNames[static_cast<int>(skill)]) + " set to level " +
+                                    std::to_string(lvl));
+        return;
+    }
+
+    if (cmd == "xp") {
+        if (args.size() < 2) {
+            devConsoleToast(frame, "Usage: xp <skill> <amount>");
+            return;
+        }
+        GrimstoneSkill skill;
+        if (!findSkillByName(args[0], &skill)) {
+            std::string list;
+            for (int i = 0; i < kSkillCount; ++i) list += (i > 0 ? ", " : "") + std::string(kSkillDisplayNames[i]);
+            devConsoleToast(frame, "Unknown skill. Valid: " + list);
+            return;
+        }
+        const double amount = std::atof(args[1].c_str());
+        // Reuses the SAME queueXpGrant() helper every combat/activity
+        // system in this file already grants XP through, per this pass's
+        // own task framing -- not a second, hand-rolled xp write.
+        queueXpGrant(skill, amount);
+        devConsoleToast(frame, "+" + std::to_string(static_cast<long long>(amount)) + " XP -> " +
+                                    kSkillDisplayNames[static_cast<int>(skill)]);
+        return;
+    }
+
+    if (cmd == "flag") {
+        if (args.empty()) {
+            devConsoleToast(frame, "Usage: flag <name> [value]");
+            return;
+        }
+        const std::string& name = args[0];
+        if (args.size() < 2) {
+            // js's own questFlags.X reads back `undefined` for a never-set
+            // flag (line 208) -- this store has no such third state (a
+            // missing key and one explicitly set to 0 are indistinguishable
+            // via readFlag()'s own default-value contract), a real, minor
+            // deviation documented here rather than silently matched.
+            const double v = readFlag(frame, name.c_str(), 0.0);
+            devConsoleToast(frame, name + " = " + std::to_string(v));
+        } else {
+            // js's own true/false/null literal parsing (line 210) -- this
+            // store is numeric-double only (TileGridFlagStore.h), so
+            // "null" has no analog and is treated as an ordinary (failing
+            // to parse as a number) string, landing at 0.0 via atof()'s
+            // own "no valid conversion" contract, same as any other
+            // non-numeric token typed here.
+            double val;
+            if (args[1] == "true") val = 1.0;
+            else if (args[1] == "false") val = 0.0;
+            else val = std::atof(args[1].c_str());
+            queueFlagSet(internString(name), val);
+            devConsoleToast(frame, name + " = " + std::to_string(val));
+        }
+        return;
+    }
+
+    if (cmd == "clearinv") {
+        // No single "empty the whole inventory" primitive exists
+        // (TileGridInventory.h) -- removes every occupied slot's own
+        // count via the SAME BeItemDelta array every other grant/consume
+        // in this file already drains through, one entry per slot.
+        for (int i = 0; i < frame->inventoryCount; ++i) {
+            const BeInventorySlot& slot = frame->inventory[i];
+            if (slot.itemId != nullptr && slot.itemId[0] != '\0' && slot.count > 0) queueItemGrant(slot.itemId, -slot.count);
+        }
+        devConsoleToast(frame, "Inventory cleared.");
+        return;
+    }
+
+    if (cmd == "version") {
+        // js's own GAME_VERSION global (line 228) has no equivalent
+        // anywhere in this C++ port (checked -- no version constant exists
+        // in src/ or project.json) -- reports a fixed identifying string
+        // instead of a number that doesn't exist here, rather than
+        // inventing a version scheme this port doesn't otherwise have.
+        devConsoleToast(frame, "Grimstone (LiminalEngine/BEditor 2D port)");
+        return;
+    }
+
+    if (cmd == "clear") {
+        // No-op: there is no on-screen scrollback log for this to clear
+        // (see this section's own top-of-file doc comment on the missing
+        // DevConsoleTemplate UILayout) -- js's own `clear` (line 232-234)
+        // empties `logEl.innerHTML`, which has no analog here yet.
+        return;
+    }
+
+    devConsoleToast(frame, "Unknown command: " + cmd + ". Type 'help' for a list.");
+}
+
+// Wiring (Part 4, same split every other dialog system in this file uses):
+// toggle open/close every frame, then react to a real submit click the
+// moment the (currently unauthored, see this section's own doc comment)
+// DevConsoleTemplate layout's own submit button fires one.
+void handleDevConsole(BeTileGridFrame* frame) {
+    handleDevConsoleToggle(frame);
+
+    if (!devConsoleOpen(frame)) return;
+    if (frame->clickedUiActionId == nullptr || frame->clickedUiActionId[0] == '\0') return;
+    if (std::strcmp(frame->clickedUiActionId, kDevConsoleSubmitActionId) != 0) return;
+
+    const char* typed = findTextInputValue(frame, kDevConsoleInputElementId);
+    if (typed == nullptr) return;
+    runDevConsoleCommand(frame, typed);
+}
+
 } // namespace
 
 void updateGrimstoneRuntime(BeTileGridFrame* frame) {
@@ -1786,6 +2218,7 @@ void updateGrimstoneRuntime(BeTileGridFrame* frame) {
     startBankDialogue(frame);
     applyBankDialogueSideEffects(frame);
     overrideBankMenuLiveDialogueText(frame);
+    handleDevConsole(frame);
 
     // Drain the scratch buffers into the frame's own write-back arrays --
     // done last so every system above had a chance to queue into them
