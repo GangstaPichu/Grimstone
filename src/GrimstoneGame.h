@@ -125,3 +125,48 @@ TileGrid buildProceduralZone(const TileKindRegistry& registry, int zoneIndex, ui
 // from that gap, and PORTING_PLAN.md for the real fix (threading a real
 // per-playthrough seed through every zone builder that needs one).
 TileGrid buildStormcragLevel(const TileKindRegistry& registry);
+
+// The Aetheric Spire's interior -- the Wizard Tower, transcribed from
+// `function makeWizardTowerInterior()` in `js/zones.js` (lines 383-479 as
+// of this writing). Entered via Stormcrag Reach's own WIZARD_DOOR marker
+// (buildStormcragLevel()'s "Wizard Tower Door" portal, targetZone
+// "aetheric_spire"); this function's own south exit returns to Stormcrag
+// Reach (targetZone "stormcrag_reach") -- interiors re-enter their parent
+// zone, not a forward-only graph, the same convention Ashenveil's
+// CHAPEL_PORTAL implies for its own not-yet-ported destination.
+//
+// Grid size is 22x26 (js/zones.js's own W/H locals for this zone) -- a
+// fixed, hand-authored layout with no PRNG/noise at all, unlike
+// buildStormcragLevel() or buildProceduralZone(). See GrimstoneGame.cpp's
+// own doc comment on this function for the Floor/Overlay judgement call on
+// the handful of cells the JS decorates BEFORE its own floor snapshot.
+TileGrid buildWizardTowerInterior(const TileKindRegistry& registry);
+
+// The Whisperwood -- a dark, dense forest connecting Ashenveil (north) to
+// Stormcrag Reach (south), transcribed from `function makeWhisperwoodMap()`
+// in `js/zones.js` (lines 484-667 as of this writing). `js/zones.js`
+// continues past line 667 into `updateShadowWalker()`/`drawShadowWalker()`
+// (gameplay/rendering, not terrain) and then `harvestCrop()` and the rest of
+// the farm-interaction helpers -- NOT ported here.
+//
+// Grid size is 80x60 (js/zones.js's own W/H locals for this zone), the
+// largest hand-authored zone in this file so far. Like buildAshenveilLevel()
+// and buildStormcragLevel(), this is a fixed layout (given a seed) rather
+// than a live-generated biome -- but leans on the same seeded-noise
+// primitives (this file's own FractalNoise2D) for its tree/water coverage,
+// plus a full BFS connectivity pass (the JS's own flood-fill + nearest-
+// reached-tile corridor carving) to guarantee every passable tile is
+// actually reachable from the main path, a step neither buildStormcragLevel()
+// nor buildProceduralZone() needed. See GrimstoneGame.cpp's own doc comment
+// on this function for the Floor/Overlay judgement call: unlike every prior
+// zone builder here, terrain-shaping writes that the JS happens to place
+// AFTER its own "Snapshot floor" line (the guaranteed-connect approach-dirt
+// clearing near the south exit) are still classified as Floor here, not
+// Overlay, because they're genuine terrain, not decor -- only the actual
+// placeDecor() calls (portal decor, graves, candles) become Overlay.
+//
+// North portal targets "ashenveil" (matching Ashenveil's own south
+// FOREST_PORTAL, which already targets "whisperwood"); south portal targets
+// "stormcrag_reach" (matching Stormcrag Reach's own north FOREST_PORTAL,
+// which already targets "whisperwood").
+TileGrid buildWhisperwoodLevel(const TileKindRegistry& registry);
