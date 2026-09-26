@@ -62,3 +62,29 @@ void registerGrimstoneTileKinds(TileKindRegistry& registry);
 // this once through a real engine build to export ashenveil-level.json/
 // ashenveil-tileset.json for the packaged game. See PORTING_PLAN.md.
 TileGrid buildAshenveilLevel(const TileKindRegistry& registry);
+
+// The 4 procedurally-generated overworld biomes -- transcribed from
+// `makeZoneMap(z)` (js/quests.js, lines 582-763 as of this writing) plus its
+// supporting generator functions in js/world.js (`makePRNG`/`makeNoise`/
+// `makeFractalNoise`/`smoothTerrain`/`placeCluster`/`carvePath`, lines
+// 670-756, and the `ZONE_CONFIGS` table, lines 759-816) and
+// `placeDungeonEntrance()` (js/zones.js, lines 1756-1772). This is a
+// DIFFERENT kind of port than buildAshenveilLevel() above: that function
+// transcribes one fixed, hand-authored layout; this one transcribes an
+// ALGORITHM -- the same seeded value-noise + cellular-automata + cluster/
+// path-carving generator the three.js game runs live, every time a player
+// steps through a portal into one of these zones.
+//
+// `zoneIndex` is 1-4, matching the JS's own zone index `z` (NOT the
+// ZONE_CONFIGS array index, which is `z-1`): 1 = The Ashen Moor, 2 = The
+// Iron Peaks, 3 = The Cursed Marshes, 4 = The Obsidian Depths. zoneIndex 0
+// (Ashenveil) is NOT handled here -- see buildAshenveilLevel() above.
+// `seed` is the JS's own `worldSeed` (a per-playthrough world seed chosen
+// once at new-game time, NOT a per-zone value) -- this function derives the
+// per-zone seed internally exactly as the JS does (`worldSeed + z*7919`).
+//
+// Grid size is MAP_W=60, MAP_H=36 (js/world.js), the same as
+// buildAshenveilLevel(). See GrimstoneGame.cpp's own doc comment on this
+// function for the PRNG/noise porting notes and the judgement calls made
+// on layering (Floor vs. Overlay) and on what became TileMarkers.
+TileGrid buildProceduralZone(const TileKindRegistry& registry, int zoneIndex, uint32_t seed);

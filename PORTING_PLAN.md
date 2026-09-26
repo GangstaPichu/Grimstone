@@ -13,10 +13,22 @@ from scratch" section for the underlying plugin model this project follows
 buildable Game SDK plugin (mirrors `engine/games/tinytown/src/`).
 `registerGrimstoneTileKinds()` registers the full ~90-entry (128 including
 every `T` constant) tile-kind palette from `js/world.js`'s `const T = {...}`,
-and `buildAshenveilLevel()` transcribes the one hand-authored zone
-(`js/zones.js`'s `makeAshenveil()`) into a real `TileGrid` -- see the table
-below for both rows. Every other zone/system is still not ported.
-Build with:
+`buildAshenveilLevel()` transcribes the one hand-authored zone
+(`js/zones.js`'s `makeAshenveil()`) into a real `TileGrid`, and
+`buildProceduralZone()` ports the OTHER kind of zone content this game
+has -- the seeded noise/cellular-automata/cluster-and-path-carving
+generator behind the 4 `ZONE_CONFIGS` biomes (The Ashen Moor/Iron Peaks/
+Cursed Marshes/Obsidian Depths), transcribed from `js/quests.js`'s
+`makeZoneMap()` plus its supporting generator functions in `js/world.js`
+and `placeDungeonEntrance()` in `js/zones.js` -- see the table below for
+all three rows. Every other zone/system is still not ported, and that
+includes a SEPARATE, still entirely unstarted category: the other 5
+hand-authored zones (Greenfield Pastures, Whisperwood, Stormcrag Reach,
+the Forsaken Chapel, the Homestead), each its own `makeXMap()` function in
+`js/zones.js` that would need its own `buildXLevel()` transcription the
+same way `buildAshenveilLevel()` was done -- NOT covered by
+`buildProceduralZone()`, which only ever generates the 4 `ZONE_CONFIGS`
+biomes. Build with:
 
 ```
 cd engine/BEditor && ../tools/update-game-sdk.sh   # after building the engine once
@@ -28,7 +40,7 @@ cd ../.. && cmake -B build && cmake --build build
 | JS file (three.js version) | What it does | C++ engine primitive to port onto | Status |
 |---|---|---|---|
 | `js/world.js` | Zone graph, portals, world map, day/night, weather; also the ~90-entry `const T = {...}` tile-kind palette | `TileGrid` per zone + `requestedLevelPath` zone swap (v4 ABI) for portals; `TileGrid::sunColor/sunIntensity` (v11) can drive day/night tinting; **no weather primitive exists yet**. Tile-kind palette: `TileKindDesc` via `TileKindRegistry` | **Tile-kind palette: done** (`registerGrimstoneTileKinds()`, `src/GrimstoneGame.cpp` -- all 128 `T` constants registered, colors/solid/shape per `js/input.js`'s own `SOLID_TILES` set). Zone graph/day-night/weather: Not started |
-| `js/zones.js` | Per-zone tile/entity layout for all 7 zones | Author each zone as a `TileGrid` in BEditor (TILES tab), painted tile kinds + `TileMarker`s for portals | **Ashenveil (the one hand-authored zone): done** (`buildAshenveilLevel()`, `src/GrimstoneGame.cpp`, transcribed from `makeAshenveil()`, `js/zones.js` lines 817-1213). The other 6 zones (Ashwood Vale, Whisperwood, Greenfield Pastures, the Iron Peaks/Cursed Marshes/Obsidian Depths procedural biomes, etc.) are all **procedurally generated in JS** via `makeZoneMap()`/`ZONE_CONFIGS` (see `js/world.js`'s `ZONE_CONFIGS` array) rather than hand-authored like Ashenveil -- porting them is a separate follow-up (likely a C++ port of the noise/cellular-automata generator, not a second `buildXLevel()` transcription). Not started. |
+| `js/zones.js` | Per-zone tile/entity layout for all 7 zones | Author each zone as a `TileGrid` in BEditor (TILES tab), painted tile kinds + `TileMarker`s for portals | **Ashenveil (the one hand-authored zone): done** (`buildAshenveilLevel()`, `src/GrimstoneGame.cpp`, transcribed from `makeAshenveil()`, `js/zones.js` lines 817-1213). **The 4 `ZONE_CONFIGS` procedural biomes (The Ashen Moor/Iron Peaks/Cursed Marshes/Obsidian Depths): done** (`buildProceduralZone()`, `src/GrimstoneGame.cpp`, transcribed from `makeZoneMap()`, `js/quests.js` lines 582-763, plus `js/world.js`'s `makePRNG`/`makeNoise`/`makeFractalNoise`/`smoothTerrain`/`placeCluster`/`carvePath`/`ZONE_CONFIGS`, lines 670-816, and `js/zones.js`'s `placeDungeonEntrance()`, lines 1756-1772) -- a port of the GENERATOR itself (seeded value noise + cellular-automata water smoothing + rejection-sampled cluster/path placement), not a fixed transcription, since the three.js game runs this live on every zone entry rather than loading a hand-placed layout. The other 5 zones (Greenfield Pastures, Whisperwood, Stormcrag Reach, the Forsaken Chapel, the Homestead) are each their OWN hand-authored `makeXMap()` function in `js/zones.js`, the same kind of work `buildAshenveilLevel()` already did for Ashenveil -- a separate, still entirely **Not started** category of work, distinct from (and not advanced by) the procedural-generator port above. |
 | `js/character.js` | Character creation, classes/origins, appearance, skills (Combat/Gathering/Crafting), XP | Host has no skills/XP primitive -- plugin-owned state via `game.lua`/`onTileGridUpdate`, persisted through `saveState`/`loadState` (v5 ABI) | Not started |
 | `js/activities.js` | Mining/woodcutting/fishing/cooking/smithing/farming action loops | Plugin-owned per-frame logic (`onTileGridUpdate`), tile edits via `requestedTileEdits` (v4) for stateful tiles (crops) | Not started |
 | `js/npcs.js` | NPC definitions, dialogue, schedules, enemy stats | `TileAgentSpawn` (host-owned wander/chase/flee, v6 gives freeze control) for movement; `DialogueTree`/`push_dialog` (v255/DialogueScriptCommands) for conversations; combat framework (`WeaponDef`, `attack_hitbox`) for enemy fights | Not started |

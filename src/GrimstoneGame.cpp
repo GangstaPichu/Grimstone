@@ -1,7 +1,13 @@
 #include "GrimstoneGame.h"
 
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
 #include <initializer_list>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -742,6 +748,615 @@ TileGrid buildAshenveilLevel(const TileKindRegistry& registry) {
     // road/square intersection (well sits at x=18,y=15; the road runs
     // through y=16) ----
     grid.markers.push_back({"player_spawn", glm::vec2(18.5f, 16.5f), "Player Spawn"});
+
+    return grid;
+}
+
+// ======= PROCEDURAL ZONE GENERATOR =======
+// Transcribed from js/world.js's makePRNG/makeNoise/makeFractalNoise/
+// smoothTerrain/placeCluster/carvePath/ZONE_CONFIGS (lines 670-816),
+// js/quests.js's makeZoneMap()/findOpenArea() (lines 582-780), and
+// js/zones.js's placeDungeonEntrance() (lines 1756-1772) -- see
+// GrimstoneGame.h's own doc comment on buildProceduralZone() for how this
+// differs in kind from buildAshenveilLevel() above.
+namespace {
+
+// A plain [0,1) float in the JS's own range/shape, not a bit-for-bit
+// reproduction -- see GrimstoneGame.h's own doc comment on why that's
+// deliberate. uint32_t's defined wraparound-on-overflow reproduces the
+// JS's `|0`/Math.imul int32-truncation semantics closely enough for a
+// procedural generator.
+//
+// JS (js/world.js, lines 670-677):
+//   seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+//   let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+//   t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+//   return ((t ^ t >>> 14) >>> 0) / 4294967296;
+// `+` binds tighter than `^` in JS, so line 3 is `t = (t + imul(...)) ^ t`
+// -- the parenthesization below is a deliberate translation of that
+// precedence, not a simplification.
+class ProceduralPrng {
+public:
+    explicit ProceduralPrng(uint32_t seed) : m_seed(seed) {}
+
+    double next() {
+        m_seed += 0x6D2B79F5u;
+        uint32_t t = (m_seed ^ (m_seed >> 15)) * (m_seed | 1u);
+        const uint32_t u = (t ^ (t >> 7)) * (t | 61u);
+        t = (t + u) ^ t;
+        return static_cast<double>(t ^ (t >> 14)) / 4294967296.0;
+    }
+
+private:
+    uint32_t m_seed;
+};
+
+constexpr double kPi = 3.14159265358979323846;
+
+// Value noise -- js/world.js's makeNoise(), lines 680-696. Builds one
+// coarse 12x8 (GW x GH) low-res random grid at construction time (mirroring
+// the JS's own per-call closure over a freshly-drawn grid), then samples it
+// anywhere in [0,W) x [0,H) tile coordinates via cosine-eased bilinear
+// interpolation.
+class ValueNoise2D {
+public:
+    ValueNoise2D(uint32_t seed, int W, int H) : m_W(W), m_H(H) {
+        ProceduralPrng rng(seed);
+        m_grid.assign(kGH + 1, std::vector<double>(kGW + 1));
+        for (int y = 0; y <= kGH; ++y)
+            for (int x = 0; x <= kGW; ++x) m_grid[y][x] = rng.next();
+    }
+
+    double sample(double x, double y) const {
+        const double gx = (x / m_W) * kGW, gy = (y / m_H) * kGH;
+        const int x0 = static_cast<int>(std::floor(gx)), y0 = static_cast<int>(std::floor(gy));
+        const int x1 = std::min(x0 + 1, kGW), y1 = std::min(y0 + 1, kGH);
+        const double fx = gx - x0, fy = gy - y0;
+        const double top = interp(m_grid[y0][x0], m_grid[y0][x1], fx);
+        const double bottom = interp(m_grid[y1][x0], m_grid[y1][x1], fx);
+        return interp(top, bottom, fy);
+    }
+
+private:
+    static constexpr int kGW = 12, kGH = 8;
+    static double interp(double a, double b, double t) {
+        const double f = (1.0 - std::cos(t * kPi)) * 0.5;
+        return a * (1.0 - f) + b * f;
+    }
+    int m_W, m_H;
+    std::vector<std::vector<double>> m_grid;
+};
+
+// Multi-octave fractal noise -- js/world.js's makeFractalNoise(), lines
+// 699-706. Each octave is its own ValueNoise2D seeded `seed + i*1337`,
+// matching the JS's own per-layer reseed exactly.
+class FractalNoise2D {
+public:
+    FractalNoise2D(uint32_t seed, int W, int H, int octaves) {
+        m_layers.reserve(static_cast<size_t>(octaves));
+        for (int i = 0; i < octaves; ++i)
+            m_layers.emplace_back(seed + static_cast<uint32_t>(i) * 1337u, W, H);
+    }
+
+    double sample(double x, double y) const {
+        double v = 0.0, amp = 1.0, total = 0.0;
+        for (const auto& layer : m_layers) {
+            v += layer.sample(x, y) * amp;
+            total += amp;
+            amp *= 0.5;
+        }
+        return v / total;
+    }
+
+private:
+    std::vector<ValueNoise2D> m_layers;
+};
+
+// Cellular-automata smoothing for water blobs -- js/world.js's
+// smoothTerrain(), lines 709-720. Preserves a deliberate JS quirk rather
+// than fixing it: an isolated `targetTile` cell that erodes falls back to
+// `grassFallback` UNCONDITIONALLY (the JS hardcodes T.GRASS on line 716,
+// not the caller's own biome base tile), so a biome whose baseTile isn't
+// grass (Iron Peaks/Cursed Marshes/Obsidian Depths, all stone/dark-grass/
+// dungeon-floor) can end up with a stray grass patch where isolated water
+// eroded. This is a faithful port of the generator the three.js game
+// actually runs, not a cleanup of it.
+void smoothTerrain(std::vector<std::vector<TileKindId>>& tiles, int W, int H, TileKindId targetTile,
+                    TileKindId grassFallback, int passes) {
+    for (int p = 0; p < passes; ++p) {
+        std::vector<std::vector<TileKindId>> next = tiles;
+        for (int y = 1; y < H - 1; ++y) {
+            for (int x = 1; x < W - 1; ++x) {
+                int count = 0;
+                for (int dy = -1; dy <= 1; ++dy)
+                    for (int dx = -1; dx <= 1; ++dx)
+                        if (tiles[y + dy][x + dx] == targetTile) ++count;
+                if (count >= 5) next[y][x] = targetTile;
+                else if (count <= 2 && tiles[y][x] == targetTile) next[y][x] = grassFallback;
+            }
+        }
+        tiles = std::move(next);
+    }
+}
+
+// Scatters a cluster of `tile` around (cx, cy) -- js/world.js's
+// placeCluster(), lines 723-737.
+void placeCluster(std::vector<std::vector<TileKindId>>& tiles, int W, int H, double cx, double cy,
+                   TileKindId tile, int count, double radius, ProceduralPrng& rng, TileKindId wallTile,
+                   TileKindId waterTile, bool avoidSolid = true) {
+    int placed = 0, attempts = 0;
+    while (placed < count && attempts < 200) {
+        ++attempts;
+        const double angle = rng.next() * 2.0 * kPi;
+        const double r = rng.next() * radius;
+        const int x = static_cast<int>(std::lround(cx + std::cos(angle) * r));
+        const int y = static_cast<int>(std::lround(cy + std::sin(angle) * r));
+        if (x < 1 || x >= W - 1 || y < 1 || y >= H - 1) continue;
+        const TileKindId cur = tiles[y][x];
+        if (avoidSolid && (cur == wallTile || cur == waterTile)) continue;
+        if (cur == tile) continue;
+        tiles[y][x] = tile;
+        ++placed;
+    }
+}
+
+// Carves a winding random-walk path between two points -- js/world.js's
+// carvePath(), lines 740-756.
+void carvePath(std::vector<std::vector<TileKindId>>& tiles, int W, int H, int x0, int y0, int x1, int y1,
+               ProceduralPrng& rng, TileKindId pathTile, TileKindId wallTile, TileKindId waterTile) {
+    int cx = x0, cy = y0;
+    const int steps = std::abs(x1 - x0) + std::abs(y1 - y0) + 20;
+    for (int i = 0; i < steps && (cx != x1 || cy != y1); ++i) {
+        if (cx >= 1 && cx < W - 1 && cy >= 1 && cy < H - 1) {
+            if (tiles[cy][cx] != wallTile && tiles[cy][cx] != waterTile) tiles[cy][cx] = pathTile;
+        }
+        // Step toward target with some jitter -- the JS's own short-circuit
+        // (rng() only drawn a second time when the first roll is < 0.2)
+        // matters for the RNG stream, so the ternary chain below preserves
+        // it exactly rather than always drawing both.
+        const int jx = (rng.next() < 0.2 ? (rng.next() < 0.5 ? -1 : 1) : 0);
+        const int jy = (rng.next() < 0.2 ? (rng.next() < 0.5 ? -1 : 1) : 0);
+        const int dx = x1 - cx, dy = y1 - cy;
+        if (std::abs(dx) > std::abs(dy)) cx += (dx > 0 ? 1 : -1) + jx;
+        else cy += (dy > 0 ? 1 : -1) + jy;
+        cx = std::max(1, std::min(W - 2, cx));
+        cy = std::max(1, std::min(H - 2, cy));
+    }
+}
+
+struct GridPos {
+    int x = 0;
+    int y = 0;
+};
+
+// Spiral search for a 2x2-ish open area -- js/quests.js's findOpenArea(),
+// lines 765-780. Always returns a usable position: the JS itself falls
+// back to the grid center when nothing is found within `radius`, so this
+// never needs an "empty" sentinel the way placeDungeonEntrance() below
+// does.
+GridPos findOpenArea(const std::vector<std::vector<TileKindId>>& tiles, int W, int H, int cx, int cy,
+                      ProceduralPrng& rng, const std::array<TileKindId, 5>& openKinds, int radius = 10) {
+    for (int r = 1; r < radius; ++r) {
+        for (int attempts = 0; attempts < 16; ++attempts) {
+            const double angle = rng.next() * 2.0 * kPi;
+            const int x = static_cast<int>(std::lround(cx + std::cos(angle) * r));
+            const int y = static_cast<int>(std::lround(cy + std::sin(angle) * r));
+            if (x < 2 || x >= W - 3 || y < 2 || y >= H - 2) continue;
+            for (TileKindId kind : openKinds)
+                if (tiles[y][x] == kind) return {x, y};
+        }
+    }
+    return {W / 2, H / 2};
+}
+
+struct StairSpot {
+    int x = -1;
+    int y = -1;
+    bool found = false;
+};
+
+// Finds a clear floor spot away from exits/facilities and paints the
+// dungeon stair tile directly -- js/zones.js's placeDungeonEntrance(),
+// lines 1756-1772. Checks T.GRASS/T.DARK_GRASS/T.DIRT specifically (not
+// cfg.baseTile/altTile), matching the JS exactly -- for a biome whose base
+// isn't one of those three (Iron Peaks/Obsidian Depths), this mostly finds
+// a spot on a dirt path/spine rather than open terrain, same as the JS.
+StairSpot placeDungeonEntrance(std::vector<std::vector<TileKindId>>& tiles, int W, int H, ProceduralPrng& rng,
+                                TileKindId stairTile, TileKindId grassTile, TileKindId darkGrassTile,
+                                TileKindId dirtTile, TileKindId exitTile, TileKindId exitReturnTile,
+                                TileKindId smelterTile, TileKindId shopTile) {
+    for (int att = 0; att < 200; ++att) {
+        const int x = 8 + static_cast<int>(rng.next() * (W - 16));
+        const int y = 8 + static_cast<int>(rng.next() * (H - 16));
+        if (tiles[y][x] != grassTile && tiles[y][x] != darkGrassTile && tiles[y][x] != dirtTile) continue;
+        bool clear = true;
+        for (int dy = -2; dy <= 2 && clear; ++dy) {
+            for (int dx = -2; dx <= 2 && clear; ++dx) {
+                const int ty = y + dy, tx = x + dx;
+                if (ty < 0 || ty >= H || tx < 0 || tx >= W) continue; // JS's `?.` optional read: out of range matches nothing
+                const TileKindId t = tiles[ty][tx];
+                if (t == exitTile || t == exitReturnTile || t == smelterTile || t == shopTile) clear = false;
+            }
+        }
+        if (clear) {
+            tiles[y][x] = stairTile;
+            return {x, y, true};
+        }
+    }
+    return {};
+}
+
+struct OreCfg {
+    TileKindId tile;
+    int count;
+};
+struct TreeCfg {
+    TileKindId tile;
+    int count;
+};
+struct EnemyCfg {
+    TileKindId tile;
+    int count;
+};
+
+// One biome's generation parameters -- js/world.js's ZONE_CONFIGS, lines
+// 759-816. `req` (a Mining-level gate on an ore, gameplay-only) is
+// deliberately not transcribed -- terrain generation is this pass's whole
+// scope, see GrimstoneGame.h's own doc comment.
+struct ZoneGenConfig {
+    const char* slug;
+    TileKindId baseTile;
+    TileKindId altTile;
+    TileKindId borderTile;
+    double waterChance;
+    std::vector<OreCfg> ores;
+    std::vector<TreeCfg> trees;
+    std::vector<EnemyCfg> enemies;
+    int fishSpots;
+    bool hasShop;
+    int pathCount;
+    double altBiomeChance;
+};
+
+} // namespace
+
+// Ports js/quests.js's makeZoneMap(z) (lines 582-763) for z=1..4 (the 4
+// ZONE_CONFIGS biomes) plus placeDungeonEntrance() (js/zones.js, lines
+// 1756-1772) for z=1,2 -- see GrimstoneGame.h's own doc comment for the
+// zoneIndex/seed contract and the design calls made here:
+//
+// Layering: everything the JS paints into `tiles` BEFORE its own floor
+// snapshot (`const floor = tiles.map(row => [...row])`, line 754) --
+// terrain, alt-biome patches, water, fishing spots, ore/tree clusters,
+// enemy spawns, the smelter/cooking-fire facility, the shop, the carved
+// paths/spine, and BOTH portals -- ends up baked into the JS's own floor
+// array too, since nothing restores an underlying tile the way
+// placeDecor() does for any of those. Per this file's own Floor/Overlay
+// convention (buildAshenveilLevel()'s doc comment), that whole set goes on
+// this TileGrid's Floor layer via setFloor(). Only the dungeon stair --
+// placed by a SEPARATE call AFTER that snapshot, so the JS's own floor
+// array still holds the original grass/dark-grass/dirt underneath it --
+// becomes an Overlay paint instead, exactly mirroring how buildAshenveilLevel()
+// splits its own floor-snapshot-then-placeDecor() sequence.
+//
+// Markers: EXIT/EXIT_RETURN get a "portal" TileMarker with a
+// "targetZone" property (same convention buildAshenveilLevel() already
+// uses for its own portals) IN ADDITION to the painted Floor tile -- the
+// JS has no marker concept at all, so the tile alone is what the JS itself
+// relies on for a zone transition, but this port adds the marker too so a
+// future host-level trigger has something structured to read, matching
+// this codebase's own established pattern rather than inventing a new one.
+// The dungeon stair gets a "dungeon_stair_down" marker; a "player_spawn"
+// marker sits at the cleared west entry point (see the force-clear-spawn-
+// area section below).
+TileGrid buildProceduralZone(const TileKindRegistry& registry, int zoneIndex, uint32_t seed) {
+    const TileKindId grass = registry.idFromName("grass");
+    const TileKindId dirt = registry.idFromName("dirt");
+    const TileKindId stoneFloor = registry.idFromName("stone_floor");
+    const TileKindId water = registry.idFromName("water");
+    const TileKindId darkGrass = registry.idFromName("dark_grass");
+    const TileKindId dungeonFloor = registry.idFromName("dungeon_floor");
+    const TileKindId wall = registry.idFromName("wall");
+    const TileKindId copper = registry.idFromName("copper_ore_node");
+    const TileKindId iron = registry.idFromName("iron_ore_node");
+    const TileKindId gold = registry.idFromName("gold_ore_node");
+    const TileKindId mithril = registry.idFromName("mithril_ore_node");
+    const TileKindId coal = registry.idFromName("coal_node");
+    const TileKindId oak = registry.idFromName("oak_tree");
+    const TileKindId willow = registry.idFromName("willow_tree");
+    const TileKindId normalTree = registry.idFromName("normal_tree");
+    const TileKindId fishing = registry.idFromName("fishing_spot");
+    const TileKindId fishing2 = registry.idFromName("fishing_spot_2");
+    const TileKindId goblin = registry.idFromName("goblin_spawn");
+    const TileKindId skeleton = registry.idFromName("skeleton_spawn");
+    const TileKindId wolf = registry.idFromName("wolf_spawn");
+    const TileKindId smelter = registry.idFromName("smelter");
+    const TileKindId cookingFire = registry.idFromName("cooking_fire");
+    const TileKindId shop = registry.idFromName("shop");
+    const TileKindId exit = registry.idFromName("exit");
+    const TileKindId exitReturn = registry.idFromName("exit_return");
+    const TileKindId dungeonStairDown = registry.idFromName("dungeon_stair_down");
+    // Only used by the enemy-placement PORTAL_TILES exclusion check below.
+    const TileKindId chapelPortal = registry.idFromName("chapel_portal");
+    const TileKindId innDoor = registry.idFromName("inn_door");
+    const TileKindId dungeonStairUp = registry.idFromName("dungeon_stair_up");
+    const TileKindId cryptStair = registry.idFromName("crypt_stair");
+
+    // ---- ZONE_CONFIGS -- js/world.js lines 759-816 ----
+    const ZoneGenConfig kZoneConfigs[] = {
+        { // zoneIndex 1: The Ashen Moor -- grassy moorland
+            "ashen_moor", grass, darkGrass, stoneFloor, 0.18,
+            {{copper, 14}},
+            {{normalTree, 18}, {oak, 10}},
+            {{goblin, 8}},
+            4, true, 3, 0.25,
+        },
+        { // zoneIndex 2: The Iron Peaks -- rocky highland
+            "iron_peaks", stoneFloor, dirt, wall, 0.08,
+            {{iron, 16}, {coal, 12}, {gold, 12}},
+            {{willow, 8}, {oak, 6}},
+            {{skeleton, 9}, {wolf, 6}},
+            2, true, 2, 0.3,
+        },
+        { // zoneIndex 3: The Cursed Marshes -- wet dark land
+            "cursed_marshes", darkGrass, grass, wall, 0.30,
+            {{mithril, 14}, {iron, 10}, {coal, 8}},
+            {{willow, 20}, {normalTree, 6}},
+            {{skeleton, 10}, {goblin, 8}, {wolf, 5}},
+            6, false, 2, 0.15,
+        },
+        { // zoneIndex 4: The Obsidian Depths -- dark dungeon
+            "obsidian_depths", dungeonFloor, stoneFloor, wall, 0.10,
+            {{mithril, 10}, {gold, 8}, {coal, 10}},
+            {},
+            {{skeleton, 14}, {wolf, 8}},
+            3, false, 1, 0.2,
+        },
+    };
+    constexpr int kZoneConfigCount = 4;
+    const int cfgIndex = (zoneIndex >= 1 && zoneIndex <= kZoneConfigCount) ? zoneIndex - 1 : 0;
+    const ZoneGenConfig& cfg = kZoneConfigs[cfgIndex];
+
+    const int W = kMapW, H = kMapH;
+    const uint32_t zoneSeed = seed + static_cast<uint32_t>(zoneIndex) * 7919u;
+    ProceduralPrng rng(zoneSeed);
+
+    // ---- Fill base + hard border -- js/quests.js lines 592-597 ----
+    std::vector<std::vector<TileKindId>> tiles(H, std::vector<TileKindId>(W, cfg.baseTile));
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x)
+            if (y == 0 || y == H - 1 || x == 0 || x == W - 1) tiles[y][x] = cfg.borderTile;
+
+    // ---- Alt-biome patches via fractal noise -- lines 599-603 ----
+    FractalNoise2D biomeNoise(zoneSeed + 111u, W, H, 3);
+    for (int y = 1; y < H - 1; ++y)
+        for (int x = 1; x < W - 1; ++x)
+            if (biomeNoise.sample(x, y) > (1.0 - cfg.altBiomeChance)) tiles[y][x] = cfg.altTile;
+
+    // ---- Water via noise + cellular-automata smoothing -- lines 605-623 ----
+    FractalNoise2D waterNoise(zoneSeed + 333u, W, H, 4);
+    const double waterThreshold = 1.0 - cfg.waterChance;
+    for (int y = 2; y < H - 2; ++y)
+        for (int x = 2; x < W - 2; ++x)
+            if (waterNoise.sample(x, y) > waterThreshold && tiles[y][x] != cfg.borderTile) tiles[y][x] = water;
+    smoothTerrain(tiles, W, H, water, grass, 3);
+    for (int y = 1; y < H - 1; ++y) {
+        for (int x = 1; x < W - 1; ++x) {
+            if (tiles[y][x] != water) continue;
+            int adj = 0;
+            for (int dy = -1; dy <= 1; ++dy)
+                for (int dx = -1; dx <= 1; ++dx)
+                    if (tiles[y + dy][x + dx] == water) ++adj;
+            if (adj <= 1) tiles[y][x] = cfg.baseTile;
+        }
+    }
+
+    // ---- Fishing spots on water edges -- lines 625-640 ----
+    int fishPlaced = 0;
+    for (int y = 2; y < H - 2 && fishPlaced < cfg.fishSpots; ++y) {
+        for (int x = 2; x < W - 2 && fishPlaced < cfg.fishSpots; ++x) {
+            if (tiles[y][x] != water) continue;
+            bool hasLand = false;
+            for (const auto& d : {std::pair{-1, 0}, std::pair{1, 0}, std::pair{0, -1}, std::pair{0, 1}}) {
+                const TileKindId t = tiles[y + d.first][x + d.second];
+                if (t != water && t != wall) { hasLand = true; break; }
+            }
+            if (hasLand && rng.next() < 0.12) {
+                tiles[y][x] = (zoneIndex >= 2) ? fishing2 : fishing;
+                ++fishPlaced;
+            }
+        }
+    }
+
+    // ---- Ore clusters, in rough thirds of the map -- lines 642-653 ----
+    for (const OreCfg& ore : cfg.ores) {
+        const int cx = static_cast<int>(std::floor(W * 0.15 + rng.next() * (W * 0.7)));
+        const int cy = static_cast<int>(std::floor(H * 0.15 + rng.next() * (H * 0.7)));
+        placeCluster(tiles, W, H, cx, cy, ore.tile, ore.count, 4.0 + rng.next() * 3.0, rng, wall, water);
+        if (ore.count > 8) {
+            const int cx2 = static_cast<int>(std::floor(W * 0.2 + rng.next() * (W * 0.6)));
+            const int cy2 = static_cast<int>(std::floor(H * 0.2 + rng.next() * (H * 0.6)));
+            placeCluster(tiles, W, H, cx2, cy2, ore.tile, static_cast<int>(std::floor(ore.count * 0.6)),
+                         3.0 + rng.next() * 2.0, rng, wall, water);
+        }
+    }
+
+    // ---- Trees -- lines 655-663 ----
+    for (const TreeCfg& tree : cfg.trees) {
+        const int numClusters = static_cast<int>(std::ceil(tree.count / 5.0));
+        for (int c = 0; c < numClusters; ++c) {
+            const int cx = static_cast<int>(std::floor(2 + rng.next() * (W - 4)));
+            const int cy = static_cast<int>(std::floor(2 + rng.next() * (H - 4)));
+            placeCluster(tiles, W, H, cx, cy, tree.tile,
+                         static_cast<int>(std::ceil(static_cast<double>(tree.count) / numClusters)),
+                         3.0 + rng.next() * 4.0, rng, wall, water);
+        }
+    }
+
+    // ---- Enemy spawns, avoiding resources/water/portals -- lines 665-691.
+    // The PORTAL_TILES exclusion is ported faithfully even though it's dead
+    // code for this generator: at this point in generation order none of
+    // EXIT/EXIT_RETURN/the dungeon stairs have been painted yet (they're
+    // all placed later, below), so this check never actually excludes
+    // anything here, exactly as in the JS. ----
+    const auto isPortalTile = [&](TileKindId t) {
+        return t == exit || t == exitReturn || t == chapelPortal || t == innDoor || t == dungeonStairDown ||
+               t == dungeonStairUp || t == cryptStair;
+    };
+    constexpr int kPortalClear = 7;
+    for (const EnemyCfg& en : cfg.enemies) {
+        int placed = 0, attempts = 0;
+        while (placed < en.count && attempts < 500) {
+            ++attempts;
+            const int x = static_cast<int>(std::floor(2 + rng.next() * (W - 4)));
+            const int y = static_cast<int>(std::floor(2 + rng.next() * (H - 4)));
+            if (tiles[y][x] != cfg.baseTile && tiles[y][x] != cfg.altTile) continue;
+            bool tooClose = false;
+            for (const auto& d : {std::pair{-2, 0}, std::pair{2, 0}, std::pair{0, -2}, std::pair{0, 2}}) {
+                const int ny = y + d.first, nx = x + d.second;
+                if (ny >= 0 && ny < H && nx >= 0 && nx < W && tiles[ny][nx] == en.tile) { tooClose = true; break; }
+            }
+            if (tooClose) continue;
+            bool nearPortal = false;
+            for (int dy = -kPortalClear; dy <= kPortalClear && !nearPortal; ++dy)
+                for (int dx = -kPortalClear; dx <= kPortalClear && !nearPortal; ++dx) {
+                    const int ny = y + dy, nx = x + dx;
+                    if (ny >= 0 && ny < H && nx >= 0 && nx < W && isPortalTile(tiles[ny][nx])) nearPortal = true;
+                }
+            if (!nearPortal) { tiles[y][x] = en.tile; ++placed; }
+        }
+    }
+
+    // ---- Facility: smelter + cooking fire -- lines 693-699. findOpenArea()
+    // always returns a usable position (falls back to grid center), so
+    // this placement is unconditional, matching the JS's own always-truthy
+    // `if(facilityZone)`. ----
+    const std::array<TileKindId, 5> openKinds = {grass, stoneFloor, darkGrass, dungeonFloor, dirt};
+    const GridPos facilitySpot = findOpenArea(tiles, W, H, W / 2, H / 2, rng, openKinds);
+    tiles[facilitySpot.y][facilitySpot.x] = smelter;
+    if (facilitySpot.x + 1 < W - 1) tiles[facilitySpot.y][facilitySpot.x + 1] = cookingFire;
+
+    // ---- Shop in corner -- lines 701-705 ----
+    if (cfg.hasShop) tiles[2][W - 3] = shop;
+
+    // ---- Dirt paths connecting key points -- lines 707-715 ----
+    std::vector<std::pair<int, int>> pathPoints = {{W / 2, H / 2},
+                                                     {facilitySpot.x, facilitySpot.y},
+                                                     {4, 4},
+                                                     {W - 4, H - 4},
+                                                     {4, H - 4},
+                                                     {W - 4, 4}};
+    for (int p = 0; p < cfg.pathCount; ++p) {
+        const auto& a = pathPoints[p % pathPoints.size()];
+        const auto& b = pathPoints[(p + 1) % pathPoints.size()];
+        carvePath(tiles, W, H, a.first, a.second, b.first, b.second, rng, dirt, wall, water);
+    }
+
+    // ---- Horizontal spine road -- lines 716-721 ----
+    const int exitY = H / 2;
+    for (int x = 2; x < W - 1; ++x)
+        if (tiles[exitY][x] == cfg.baseTile || tiles[exitY][x] == cfg.altTile || tiles[exitY][x] == cfg.borderTile)
+            tiles[exitY][x] = dirt;
+
+    // ---- EXIT portal at the east edge, unless this is the last zone --
+    // lines 722-733. `zoneIndex < kZoneConfigCount` mirrors the JS's own
+    // `zoneIndex < ZONES.length - 1` (ZONES has 5 entries -- Ashenveil plus
+    // these 4 -- so ZONES.length-1 == kZoneConfigCount == 4). ----
+    const bool isLastZone = (zoneIndex >= kZoneConfigCount);
+    if (!isLastZone) {
+        tiles[exitY][W - 1] = exit;
+        for (int dx = 1; dx <= 3; ++dx) {
+            const int ex = W - 1 - dx;
+            if (ex >= 1 && tiles[exitY][ex] != exit) tiles[exitY][ex] = dirt;
+        }
+    } else {
+        tiles[exitY][W - 1] = dirt;
+    }
+
+    // ---- EXIT_RETURN portal at the west edge, always present -- lines
+    // 735-741 ----
+    tiles[exitY][0] = exitReturn;
+    for (int dx = 1; dx <= 3; ++dx)
+        if (tiles[exitY][dx] != exitReturn) tiles[exitY][dx] = dirt;
+
+    // ---- Force-clear spawn area around (5, exitY) -- lines 743-751.
+    // SOLID_TILES_GEN (js/quests.js lines 555-564) is a hardcoded numeric-
+    // id set covering every tile kind ANY of the game's generators can
+    // paint; only the subset that can actually appear in THIS generator's
+    // own output is relevant here (ores/trees/the facility/the shop --
+    // enemy-spawn tiles are deliberately NOT included, matching
+    // registerGrimstoneTileKinds()'s own convention that they aren't
+    // blocking). ----
+    const std::array<TileKindId, 11> solidGenTiles = {copper,     iron,        gold,   mithril, coal, oak,
+                                                        willow,     normalTree,  smelter, cookingFire, shop};
+    const auto isSolidGen = [&](TileKindId t) {
+        for (TileKindId s : solidGenTiles)
+            if (t == s) return true;
+        return false;
+    };
+    for (int dy = -2; dy <= 2; ++dy) {
+        for (int dx = -2; dx <= 2; ++dx) {
+            const int x = 5 + dx, y = exitY + dy;
+            if (x >= 1 && x < W - 1 && y >= 1 && y < H - 1) {
+                const TileKindId t = tiles[y][x];
+                if (t == water || t == wall || isSolidGen(t)) tiles[y][x] = cfg.baseTile;
+            }
+        }
+    }
+
+    // ---- Floor layer is now fully authored -- js's own
+    // `floor = tiles.map(row=>[...row])` snapshot (line 754). See this
+    // function's own doc comment for why everything above this point goes
+    // on Floor and only the dungeon stair below becomes an Overlay. ----
+    TileGrid grid(W, H, 1.0f);
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) grid.setFloor(x, y, tiles[y][x]);
+
+    // ---- Dungeon entrance -- zones 1-2 only (js/quests.js lines 756-760),
+    // placed AFTER the floor snapshot above, so (matching the JS) the
+    // floor tile underneath is left untouched -- ported as an Overlay
+    // paint + a "dungeon_stair_down" TileMarker, per this function's own
+    // doc comment. ----
+    if (zoneIndex == 1 || zoneIndex == 2) {
+        const StairSpot stair = placeDungeonEntrance(tiles, W, H, rng, dungeonStairDown, grass, darkGrass, dirt,
+                                                       exit, exitReturn, smelter, shop);
+        if (stair.found) {
+            grid.setOverlay(stair.x, stair.y, dungeonStairDown);
+            TileMarker marker;
+            marker.kind = "dungeon_stair_down";
+            marker.name = "Dungeon Entrance";
+            marker.position = glm::vec2(stair.x + 0.5f, stair.y + 0.5f);
+            grid.markers.push_back(marker);
+        }
+    }
+
+    // ---- Portals as TileMarkers, in addition to the painted Floor tiles
+    // above -- same "paint + marker" convention buildAshenveilLevel()
+    // already uses for its own portals (see that function's own doc
+    // comment). Zone-name slugs match this function's own header comment.
+    // ----
+    static constexpr const char* kZoneSlugs[kZoneConfigCount] = {"ashen_moor", "iron_peaks", "cursed_marshes",
+                                                                   "obsidian_depths"};
+    auto addPortalMarker = [&](const char* name, float px, float py, const char* targetZone) {
+        TileMarker marker;
+        marker.kind = "portal";
+        marker.name = name;
+        marker.position = glm::vec2(px + 0.5f, py + 0.5f);
+        marker.properties["targetZone"] = targetZone;
+        grid.markers.push_back(marker);
+    };
+    if (!isLastZone) {
+        // Next zone's slug: kZoneSlugs is 0-indexed by (zoneIndex+1)-1, i.e. kZoneSlugs[zoneIndex].
+        addPortalMarker("Exit", static_cast<float>(W - 1), static_cast<float>(exitY), kZoneSlugs[zoneIndex]);
+    }
+    // Previous zone's slug: zoneIndex 1 returns to Ashenveil (zone 0, which
+    // has no ZONE_CONFIGS entry of its own); otherwise kZoneSlugs[zoneIndex-2].
+    const char* returnTarget = (zoneIndex == 1) ? "ashenveil" : kZoneSlugs[zoneIndex - 2];
+    addPortalMarker("Return", 0.0f, static_cast<float>(exitY), returnTarget);
+
+    // ---- Player spawn -- inside the force-cleared area above ----
+    grid.markers.push_back(
+        {"player_spawn", glm::vec2(5.5f, static_cast<float>(exitY) + 0.5f), "Player Spawn"});
 
     return grid;
 }
