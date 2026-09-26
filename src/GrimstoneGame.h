@@ -170,3 +170,30 @@ TileGrid buildWizardTowerInterior(const TileKindRegistry& registry);
 // "stormcrag_reach" (matching Stormcrag Reach's own north FOREST_PORTAL,
 // which already targets "whisperwood").
 TileGrid buildWhisperwoodLevel(const TileKindRegistry& registry);
+
+// Greenfield Pastures -- a hand-authored farming zone (windmill, barn,
+// farmhouse, wheat/turnip fields, a fenced animal pasture) reached from
+// Ashenveil's own west FARM_PORTAL, transcribed from
+// `function makeGreenfieldMap()` in `js/zones.js` (lines 1216-1344 as of
+// this writing). `js/zones.js` continues past line 1344 into
+// makeHouseInterior() and the rest of the still-unported interior/other-
+// zone functions -- NOT ported here, see PORTING_PLAN.md. Old Bertram's own
+// homestead quest line ("A Place to Call Home"/"A Farmer's Ledger",
+// js/quests.js) is set here -- Bertram is one of this zone's own
+// `namedNpcs`, ported as an npc_spawn TileMarker like the other two
+// (Greta/Aldous). See GrimstoneGame.cpp's own doc comment on this function
+// for the Floor/Overlay judgement call (this zone's JS has no bulk
+// floor-snapshot line at all, unlike every procedurally-shaped zone builder
+// above) and the NPC/portal-slug derivations.
+//
+// Grid size is 70x44 (js/zones.js's own W/H locals for this zone) -- a
+// fixed, hand-authored layout with no PRNG/noise at all, like
+// buildAshenveilLevel() and buildWizardTowerInterior().
+//
+// East FARM_PORTAL targets "ashenveil" (matching Ashenveil's own west
+// FARM_PORTAL, which already targets "greenfield_pastures"); west
+// CARAVAN_PORTAL targets "western_pass" (js/zones.js's own
+// makeCaravanZoneMap(), returned name "THE WESTERN PASS" -- NOT ported by
+// this function, same "portal toward a not-yet-ported destination"
+// convention Ashenveil's own CHAPEL_PORTAL already establishes).
+TileGrid buildGreenfieldLevel(const TileKindRegistry& registry);

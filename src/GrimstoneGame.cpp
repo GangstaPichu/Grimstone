@@ -2112,3 +2112,321 @@ TileGrid buildWhisperwoodLevel(const TileKindRegistry& registry) {
 
     return grid;
 }
+
+// ======= GREENFIELD PASTURES =======
+// Transcribed from `function makeGreenfieldMap()` in js/zones.js (lines
+// 1216-1344 as of this writing). js/zones.js continues past line 1344 into
+// makeHouseInterior() and the rest of the still-unported interior/other-zone
+// functions -- NOT ported here, see PORTING_PLAN.md.
+namespace {
+
+// Stands in for a raw JS `tiles[y][x]` read (the MERGED view a decor tile on
+// top of its floor produces) wherever makeGreenfieldMap() branches on the
+// CURRENT tile -- every one of this zone's own `===T.GRASS` guards, before
+// painting a crop/flower/tree. Cross-checked against every pd()/setFloor()
+// call this function makes: no guarded cell is ever painted by an earlier
+// call in this zone (unlike buildWhisperwoodLevel()'s scatter loops, which
+// really do need to read back earlier placements), so in practice this
+// currently always agrees with a plain floorAt() read here -- but it's the
+// technically-correct translation of the JS's own semantics rather than one
+// that happens to work by coincidence of this zone's specific layout, so a
+// future edit to this function that DOES paint over an earlier guarded cell
+// stays correct without needing to notice and switch helpers.
+// Safe to read Overlay-then-Floor here because this zone builder always
+// setFloor()s a cell's terrain before any later placeDecor() call that
+// might read it back, exactly mirroring the JS's own call order.
+TileKindId currentAt(const TileGrid& grid, int x, int y) {
+    const TileKindId overlay = grid.overlayAt(x, y);
+    return overlay != kInvalidTileKind ? overlay : grid.floorAt(x, y);
+}
+
+} // namespace
+
+// A hand-authored farming zone (windmill, barn, farmhouse, wheat/turnip
+// fields, a fenced animal pasture) reached from Ashenveil's own west
+// FARM_PORTAL ("greenfield_pastures") -- Old Bertram's own homestead quest
+// line ("A Place to Call Home"/"A Farmer's Ledger", js/quests.js) is set
+// here, per this file's own header doc comment on buildGreenfieldLevel().
+// Grid size is 70x44 (js/zones.js's own W/H locals for this zone). Like
+// buildAshenveilLevel(), a fixed hand-authored layout with no PRNG/noise at
+// all -- built by direct sequential grid authoring (setFloor()/placeDecor()
+// calls in JS call order) rather than the local-vector-then-snapshot shape
+// buildStormcragLevel()/buildWhisperwoodLevel() use, since (see below) this
+// zone's own JS has no bulk floor-snapshot line for a local vector to mirror
+// in the first place.
+//
+// Layering: unlike every OTHER zone builder in this file, the JS's own
+// `floor` array here is NEVER snapshotted in bulk -- there is no
+// `const floor = tiles.map(row => [...row])` line anywhere in
+// makeGreenfieldMap(). Every floor value it ever holds comes from
+// placeDecor()'s own per-call `floor[y][x] = tiles[y][x]` (js/world.js),
+// recording whatever `tiles[y][x]` held at THAT exact call, in call order --
+// so this port reads the JS the same way buildAshenveilLevel() already does
+// (a zone with no snapshot line at all, just direct progressive authoring):
+// every direct `tiles[y][x] = X` assignment (terrain -- border walls, the
+// lane/branch dirt, building floors/walls/doors, crop-row soil paths) becomes
+// a Floor write via setFloor(); every `pd(y,x,tile)` call (the JS's own local
+// placeDecor() wrapper -- furnishings, crops, fences, animals, portals)
+// becomes an Overlay write via this file's own placeDecor(grid,...) helper
+// (buildAshenveilLevel()'s own, reused here), in the SAME relative order the
+// JS calls them, so a floor write always lands before any later decor paint
+// that might read it back -- see currentAt()'s own doc comment above.
+//
+// NPCs: js/zones.js's own `namedNpcs` array gives exact positions for all
+// three of this zone's NPCs (Greta, Aldous, Bertram) -- and two of them,
+// Greta (35, laneY-2) and Aldous (25, 9), sit at the EXACT same cells the
+// JS's own `pd(laneY-2,35,T.NPC_FARMER)`/`pd(9,25,T.NPC_FARMER)` calls paint,
+// confirming those two painted tiles ARE Greta and Aldous rather than
+// separate anonymous farmers. Per this file's own "NPC spawn tiles become
+// TileMarkers, not painted overlay tiles" convention (buildAshenveilLevel()'s
+// own doc comment), this port uses `namedNpcs` directly for all three and
+// does NOT also transcribe the two NPC_FARMER paints -- doing both would
+// double-marker the same two cells. Old Bertram (7, 17) has no painted tile
+// at all in the JS -- only a `namedNpcs` entry -- matching the quest text's
+// own "find him outside the barn" (the barn's own footprint ends at y=15,
+// door at y=15 x=10-11; Bertram sits just south-east of it).
+//
+// Portals: the east FARM_PORTAL returns to Ashenveil -- targetZone
+// "ashenveil", matching Ashenveil's own west FARM_PORTAL, which already
+// targets "greenfield_pastures" (buildAshenveilLevel()). The west
+// CARAVAN_PORTAL leads into `makeCaravanZoneMap()`'s own zone (js/zones.js),
+// named "THE WESTERN PASS" in its own returned `name` field even though the
+// code comment beside its portal calls the corridor "The Abandoned Road" --
+// NOT ported by this function. targetZone "western_pass" follows this
+// port's own established "snake_case the destination zone's real `name`"
+// convention (buildAshenveilLevel()'s own CHAPEL_PORTAL -> "forsaken_chapel"
+// for "THE FORSAKEN CHAPEL" is the precedent) for a not-yet-ported
+// destination, same as that marker's own precedent.
+TileGrid buildGreenfieldLevel(const TileKindRegistry& registry) {
+    const TileKindId grass = registry.idFromName("grass");
+    const TileKindId dirt = registry.idFromName("dirt");
+    const TileKindId wall = registry.idFromName("wall");
+    const TileKindId stoneFloor = registry.idFromName("stone_floor");
+    const TileKindId normalTree = registry.idFromName("normal_tree");
+    const TileKindId bed = registry.idFromName("bed");
+    const TileKindId table = registry.idFromName("table");
+    const TileKindId barrel = registry.idFromName("barrel");
+    const TileKindId bookshelf = registry.idFromName("bookshelf");
+    const TileKindId cookingFire = registry.idFromName("cooking_fire");
+    const TileKindId candle = registry.idFromName("candle");
+    const TileKindId hayBale = registry.idFromName("hay_bale");
+    const TileKindId waterTrough = registry.idFromName("water_trough");
+    const TileKindId animalCow = registry.idFromName("animal_cow");
+    const TileKindId animalChicken = registry.idFromName("animal_chicken");
+    const TileKindId animalPig = registry.idFromName("animal_pig");
+    const TileKindId butterChurn = registry.idFromName("butter_churn");
+    const TileKindId windmill = registry.idFromName("windmill");
+    const TileKindId cropWheat = registry.idFromName("crop_wheat");
+    const TileKindId cropTurnip = registry.idFromName("crop_turnip");
+    const TileKindId fence = registry.idFromName("fence");
+    const TileKindId fencePost = registry.idFromName("fence_post");
+    const TileKindId scarecrow = registry.idFromName("scarecrow");
+    const TileKindId townWell = registry.idFromName("town_well");
+    const TileKindId flower = registry.idFromName("flower");
+    const TileKindId farmPortal = registry.idFromName("farm_portal");
+    const TileKindId caravanPortal = registry.idFromName("caravan_portal");
+
+    const int W = 70, H = 44; // js/zones.js's own W/H locals for this zone
+    TileGrid grid(W, H, 1.0f);
+
+    // ---- Init to grass -- JS lines 1218-1219 (both `tiles` and `floor`
+    // start as an all-GRASS fill; see this function's own doc comment above
+    // for why there's no separate snapshot step to mirror). ----
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) grid.setFloor(x, y, grass);
+
+    // ---- Border walls -- JS lines 1224-1225 ----
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x)
+            if (y == 0 || y == H - 1 || x == 0 || x == W - 1) grid.setFloor(x, y, wall);
+
+    // ---- MAIN DIRT LANE + north-south branch -- JS lines 1227-1231 ----
+    const int laneY = 22;
+    for (int x = 1; x < W - 1; ++x) grid.setFloor(x, laneY, dirt);
+    for (int y = 1; y < H - 1; ++y) grid.setFloor(35, y, dirt);
+
+    // ---- FARMHOUSE (east side, x=50-61, y=6-13) -- JS lines 1233-1245 ----
+    for (int y = 6; y <= 13; ++y)
+        for (int x = 50; x <= 61; ++x) grid.setFloor(x, y, stoneFloor);
+    for (int x = 50; x <= 61; ++x) {
+        grid.setFloor(x, 6, wall);
+        grid.setFloor(x, 13, wall);
+    }
+    for (int y = 6; y <= 13; ++y) {
+        grid.setFloor(50, y, wall);
+        grid.setFloor(61, y, wall);
+    }
+    grid.setFloor(55, 13, stoneFloor); // door
+    grid.setFloor(56, 13, stoneFloor);
+    placeDecor(grid, 8, 52, bed);
+    placeDecor(grid, 8, 54, table);
+    placeDecor(grid, 8, 57, barrel);
+    placeDecor(grid, 10, 52, bookshelf);
+    placeDecor(grid, 10, 59, cookingFire);
+    placeDecor(grid, 7, 58, candle);
+    placeDecor(grid, 7, 52, candle);
+    for (int y = 14; y <= laneY; ++y) grid.setFloor(55, y, dirt); // path to door
+
+    // ---- BARN (west side, x=5-18, y=6-15) -- JS lines 1247-1259 ----
+    for (int y = 6; y <= 15; ++y)
+        for (int x = 5; x <= 18; ++x) grid.setFloor(x, y, stoneFloor);
+    for (int x = 5; x <= 18; ++x) {
+        grid.setFloor(x, 6, wall);
+        grid.setFloor(x, 15, wall);
+    }
+    for (int y = 6; y <= 15; ++y) {
+        grid.setFloor(5, y, wall);
+        grid.setFloor(18, y, wall);
+    }
+    grid.setFloor(10, 15, stoneFloor); // barn door
+    grid.setFloor(11, 15, stoneFloor);
+    placeDecor(grid, 8, 7, hayBale);
+    placeDecor(grid, 8, 9, hayBale);
+    placeDecor(grid, 8, 14, hayBale);
+    placeDecor(grid, 8, 16, hayBale);
+    placeDecor(grid, 12, 7, waterTrough);
+    placeDecor(grid, 12, 13, waterTrough);
+    placeDecor(grid, 10, 7, animalCow);
+    placeDecor(grid, 10, 14, animalChicken);
+    placeDecor(grid, 13, 10, barrel);
+    placeDecor(grid, 9, 16, candle);
+    placeDecor(grid, 9, 7, candle);
+    placeDecor(grid, 12, 16, butterChurn); // south-east corner of barn
+    for (int y = 16; y <= laneY; ++y) grid.setFloor(11, y, dirt); // path barn->lane
+
+    // ---- WINDMILL (north-centre, x=32-38, y=5-10) -- JS lines 1261-1267 ----
+    for (int y = 5; y <= 10; ++y)
+        for (int x = 32; x <= 38; ++x) grid.setFloor(x, y, stoneFloor);
+    for (int x = 32; x <= 38; ++x) {
+        grid.setFloor(x, 5, wall);
+        grid.setFloor(x, 10, wall);
+    }
+    for (int y = 5; y <= 10; ++y) {
+        grid.setFloor(32, y, wall);
+        grid.setFloor(38, y, wall);
+    }
+    grid.setFloor(34, 10, stoneFloor); // door (on lane branch)
+    grid.setFloor(35, 10, stoneFloor);
+    placeDecor(grid, 7, 35, windmill);
+
+    // ---- WHEAT FIELDS (north of lane, x=20-28, y=2-18) -- JS lines
+    // 1269-1280. Row crops with soil paths between. ----
+    for (int row = 0; row < 4; ++row) {
+        const int fy = 3 + row * 4;
+        for (int x = 20; x <= 28; ++x) placeDecor(grid, fy, x, cropWheat);
+        for (int x = 20; x <= 28; ++x) placeDecor(grid, fy + 1, x, cropWheat);
+    }
+    for (int row = 0; row < 3; ++row) {
+        const int py = 5 + row * 4;
+        for (int x = 20; x <= 28; ++x)
+            if (currentAt(grid, x, py) == grass) grid.setFloor(x, py, dirt);
+    }
+
+    // ---- TURNIP PATCH (south of lane, x=5-25, y=26-36) -- JS lines
+    // 1282-1289 ----
+    for (int ry = 26; ry <= 36; ry += 3) {
+        for (int x = 5; x <= 25; x += 2)
+            if (currentAt(grid, x, ry) == grass) placeDecor(grid, ry, x, cropTurnip);
+        if (ry + 1 <= 36)
+            for (int x = 5; x <= 25; ++x)
+                if (currentAt(grid, x, ry + 1) == grass) grid.setFloor(x, ry + 1, dirt);
+    }
+
+    // ---- ANIMAL PASTURE (south-east, fenced, x=42-66, y=26-40) -- JS lines
+    // 1291-1303. Continuous fence rails top/bottom (unconditional pd(), no
+    // grass guard -- the pasture's own x range starts at 42, clear of the
+    // north-south dirt branch at x=35, so this never actually overwrites
+    // it), posts on side columns, a 2-tile gate gap at x=53,54. ----
+    for (int x = 42; x <= 66; ++x)
+        if (x != 53 && x != 54) placeDecor(grid, 26, x, fence);
+    for (int x = 42; x <= 66; ++x) placeDecor(grid, 40, x, fence);
+    for (int y = 27; y <= 39; ++y) {
+        placeDecor(grid, y, 42, fencePost);
+        placeDecor(grid, y, 66, fencePost);
+    }
+    placeDecor(grid, 30, 48, animalPig);
+    placeDecor(grid, 34, 55, animalCow);
+    placeDecor(grid, 28, 60, animalChicken);
+    placeDecor(grid, 37, 50, animalPig);
+    placeDecor(grid, 32, 63, animalChicken);
+    placeDecor(grid, 33, 46, waterTrough);
+
+    // ---- SCARECROWS dotted through fields -- JS line 1306 ----
+    placeDecor(grid, 7, 22, scarecrow);
+    placeDecor(grid, 14, 25, scarecrow);
+    placeDecor(grid, 29, 15, scarecrow);
+
+    // ---- WELL near farmhouse -- JS line 1309 ----
+    placeDecor(grid, 17, 55, townWell);
+
+    // ---- FLOWERS & SCATTER -- JS lines 1312-1313 ----
+    for (const auto& fyx : {std::pair{3, 30}, std::pair{3, 40}, std::pair{20, 3}, std::pair{20, 40},
+                            std::pair{38, 5}, std::pair{38, 25}, std::pair{40, 35}, std::pair{41, 20}}) {
+        const int fy = fyx.first, fx = fyx.second;
+        if (currentAt(grid, fx, fy) == grass) placeDecor(grid, fy, fx, flower);
+    }
+
+    // ---- Trees lining north and east borders -- JS lines 1316-1317 ----
+    for (int x = 2; x <= 68; x += 5)
+        if (currentAt(grid, x, 1) == grass) grid.setFloor(x, 1, normalTree);
+    for (int y = 2; y <= 40; y += 4)
+        if (currentAt(grid, 68, y) == grass) grid.setFloor(68, y, normalTree);
+
+    // ---- FARMER NPCs -- JS lines 1320-1321: `pd(laneY-2,35,T.NPC_FARMER)`
+    // and `pd(9,25,T.NPC_FARMER)` are NOT transcribed as painted overlay
+    // tiles here -- see this function's own doc comment above for why (they
+    // are Greta and Aldous, added as TileMarkers below instead). ----
+
+    // ---- FARM PORTAL (east wall, y=laneY) -> back to Ashenveil -- JS lines
+    // 1323-1327 ----
+    grid.setFloor(W - 1, laneY, grass);
+    grid.setFloor(W - 1, laneY - 1, grass);
+    grid.setFloor(W - 1, laneY + 1, grass);
+    placeDecor(grid, laneY, W - 1, farmPortal);
+
+    // ---- CARAVAN PORTAL (west wall, y=laneY) -> The Western Pass -- JS
+    // lines 1329-1333 ----
+    grid.setFloor(0, laneY, grass);
+    grid.setFloor(0, laneY - 1, grass);
+    grid.setFloor(0, laneY + 1, grass);
+    placeDecor(grid, laneY, 0, caravanPortal);
+
+    // ---- Portals as TileMarkers, in addition to the painted tiles above --
+    // same "paint + marker" convention every other zone builder in this file
+    // already uses. ----
+    auto addPortalMarker = [&](const char* name, float px, float py, const char* targetZone) {
+        TileMarker marker;
+        marker.kind = "portal";
+        marker.name = name;
+        marker.position = glm::vec2(px + 0.5f, py + 0.5f);
+        marker.properties["targetZone"] = targetZone;
+        grid.markers.push_back(marker);
+    };
+    addPortalMarker("Farm Portal -> Ashenveil", static_cast<float>(W - 1), static_cast<float>(laneY), "ashenveil");
+    // "THE WESTERN PASS" (js/zones.js's makeCaravanZoneMap(), NOT ported by
+    // this function) -- see this function's own header doc comment for the
+    // "western_pass" slug's derivation.
+    addPortalMarker("Caravan Portal -> The Western Pass", 0.0f, static_cast<float>(laneY), "western_pass");
+
+    // ---- NPC spawn markers (kind="npc_spawn") -- js/zones.js's own
+    // `namedNpcs` array (JS lines 1336-1340), used directly per this
+    // function's own doc comment above. ----
+    auto addNpcMarker = [&](const char* name, float px, float py) {
+        TileMarker marker;
+        marker.kind = "npc_spawn";
+        marker.name = name;
+        marker.position = glm::vec2(px + 0.5f, py + 0.5f);
+        marker.properties["name"] = name;
+        grid.markers.push_back(marker);
+    };
+    addNpcMarker("Greta", 35.0f, static_cast<float>(laneY - 2)); // near crossroads
+    addNpcMarker("Aldous", 25.0f, 9.0f);                          // in the wheat fields
+    addNpcMarker("Bertram", 7.0f, 17.0f); // Old Bertram, outside the barn -- homestead quest giver
+
+    // ---- Player spawn -- js's own returned entryX:W-2, entryY:laneY (the
+    // arrival point coming from Ashenveil's own west FARM_PORTAL). ----
+    grid.markers.push_back(
+        {"player_spawn", glm::vec2(static_cast<float>(W - 2) + 0.5f, static_cast<float>(laneY) + 0.5f), "Player Spawn"});
+
+    return grid;
+}
