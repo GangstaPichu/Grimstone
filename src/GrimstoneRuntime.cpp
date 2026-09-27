@@ -764,14 +764,53 @@ glm::vec2 zoneSpawnPosition(const TileGrid& grid) {
     return glm::vec2(1.5f, 1.5f);
 }
 
+// Co-op guard (item N5-COOPGUARD, GameModuleApi.h v37 -> v38): before this,
+// requestZoneSwap() would happily write the destination TileGrid to disk,
+// point requestedLevelPath/requestedWarp at it, and -- critically --
+// mutate THIS plugin's own zone-tracking state (activeZoneIdRef(), the
+// persisted "active_zone_id" string, cooldownFrames()) as if the swap had
+// actually happened, even while a co-op session was active. Per
+// requestedLevelPath's own doc comment, the host's drain site
+// (TileGridHostRunner.cpp) now checks BOTH netHost/netClient and silently
+// DROPS any requestedLevelPath write-back while either is set -- host or
+// client side, no distinction between the two roles. So without this
+// guard the plugin's own idea of "which zone am I in" would have
+// desynced from the host's real, unchanged one the moment a peer was
+// connected: activeZoneIdRef() would say the new zone, the persisted
+// save string would say the new zone, but the host never actually
+// swapped anything and the player is still standing in the old one.
+//
+// The fix mirrors the host's own real behavior exactly rather than
+// guessing at a "safe" policy of its own: BE_NET_ROLE_NONE is the only
+// role this ever proceeds for. A connected HOST is refused exactly like a
+// connected CLIENT -- the host's own guard makes no host/client
+// distinction (an `enter_instance`/zone-link co-op refusal from
+// main.cpp's own enterInstance() this file's doc comments already cite
+// as precedent), so this plugin doesn't invent one either. Returns false
+// (with an honest toast naming co-op as the reason, not "no such zone")
+// and touches NONE of the zone-tracking state above -- the plugin's own
+// idea of the active zone stays exactly what it was, matching "the
+// current zone simply continues exactly as if nothing had been
+// requested."
+bool coopZoneSwapBlocked(BeTileGridFrame* frame) {
+    if (frame->netRole == BE_NET_ROLE_NONE) return false;
+    toastScratch() = "Zone travel is unavailable during co-op.";
+    frame->requestedToastText = toastScratch().c_str();
+    return true;
+}
+
 // The real mechanism, shared by both callers below (a portal the player
 // stepped on, and the dev console's "tp"): build/cache the destination
 // zone, save it to a real file in loadTileGrid()'s own schema, and point
 // requestedLevelPath/requestedWarp at it -- see this section's own doc
 // comment for why a file on disk is the real, non-optional shape this
-// takes. Returns false (and toasts why) on a genuinely unknown slug or a
-// file-write failure; true on success.
+// takes. Returns false (and toasts why) on a genuinely unknown slug, a
+// file-write failure, or -- checked FIRST, before either of those -- an
+// active co-op session (see coopZoneSwapBlocked()'s own doc comment
+// immediately above); true on success.
 bool requestZoneSwap(BeTileGridFrame* frame, const std::string& targetZone) {
+    if (coopZoneSwapBlocked(frame)) return false;
+
     const TileGrid* dest = cachedZone(targetZone);
     if (dest == nullptr) {
         toastScratch() = "No such zone: '" + targetZone + "'.";
