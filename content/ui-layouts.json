@@ -155,5 +155,35 @@
         "actionId": "rcm_cancel"
       }
     ]
+  },
+  {
+    "name": "PlayerHUD",
+    "elements": [
+      {
+        "kind": "panel",
+        "id": "hud_panel",
+        "position": [0.02, 0.02],
+        "size": [0.22, 0.085],
+        "color": [0.06, 0.06, 0.09],
+        "alpha": 0.75,
+        "cornerRadius": 0.015
+      },
+      {
+        "kind": "label",
+        "id": "hud_gold_text",
+        "position": [0.035, 0.032],
+        "scale": 0.032,
+        "color": [1.0, 0.85, 0.35],
+        "text": "Gold: 0"
+      },
+      {
+        "kind": "label",
+        "id": "hud_combat_text",
+        "position": [0.035, 0.068],
+        "scale": 0.028,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Combat Lv 1"
+      }
+    ]
   }
 ]

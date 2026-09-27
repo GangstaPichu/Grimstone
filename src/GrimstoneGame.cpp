@@ -4271,13 +4271,27 @@ TileGrid buildHomeCabinInterior(const TileKindRegistry& registry) {
     return grid;
 }
 
+// The PlayerHUD overlay (content/ui-layouts.json, item N4-UIWRITE) --
+// TileGrid::hudLayoutName (TileGrid.h) is a plain per-instance field, not a
+// registry-wide default, so it has to be assigned onto every TileGrid this
+// game ever hands back rather than authored once anywhere. zoneSlugToTileGrid()
+// below is the one function every real zone build (ashenveil/stormcrag/the
+// procedural biomes/the dungeons/etc.) already funnels through on its way out
+// -- see its own doc comment -- so setting it there, once, covers every zone
+// uniformly instead of touching each buildXLevel() individually.
+constexpr const char* kPlayerHudLayoutName = "PlayerHUD";
+
 // See GrimstoneGame.h's own doc comment for the full contract. One
 // if/else chain, slug by slug -- deliberately not a std::unordered_map of
 // std::function, since several zones need extra arguments (a resident
 // name, a seed) that a uniform (registry)-only signature can't carry, and
 // a chain reads exactly like the doc comment's own gap list (every zone
-// covered, every zone NOT covered named explicitly).
+// covered, every zone NOT covered named explicitly). Wrapped in an
+// immediately-invoked lambda purely so the PlayerHUD assignment below can
+// run once, after any successful branch, without editing every individual
+// `return true;` above it.
 bool zoneSlugToTileGrid(const TileKindRegistry& registry, const std::string& slug, uint32_t seed, TileGrid& outGrid) {
+    const bool built = [&]() {
     if (slug == "ashenveil") {
         outGrid = buildAshenveilLevel(registry);
         return true;
@@ -4352,4 +4366,7 @@ bool zoneSlugToTileGrid(const TileKindRegistry& registry, const std::string& slu
         return true;
     }
     return false;
+    }();
+    if (built) outGrid.hudLayoutName = kPlayerHudLayoutName;
+    return built;
 }

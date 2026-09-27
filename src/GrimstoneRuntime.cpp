@@ -3013,6 +3013,87 @@ void handleRightClickMenu(BeTileGridFrame* frame) {
     frame->requestedPushDialog = kRightClickMenuLayoutName;
 }
 
+// ======= Player HUD (js/ui.js's updateHUD(), item N4-UIWRITE) =======
+// PORTING_PLAN.md's own js/ui.js row named this exact gap: js/ui.js's
+// updateHUD() (line 342) keeps a persistent gold-hud/combat-lvl-hud display
+// live every frame with no dialogue/menu open at all, and before item
+// N4-UIWRITE there was no way for a plugin to write a live value onto a
+// UILayout element outside dialogue's hardcoded speaker/body/choice
+// bindings -- the health bar (already real/host-drawn per that
+// investigation) was the one exception, since it never went through
+// UILayoutOverrides at all. This closes the gold+combat-level half with the
+// SAME BeUiElementOverride mechanism handleRightClickMenu() above already
+// established, appended into the identical uiOverrideBuffer() rather than a
+// second buffer -- see that function's own doc comment and
+// GameModuleApi.h's BeUiElementOverride doc comment for why several entries
+// (each touching a different elementId) coexist in one array with no
+// conflict.
+//
+// **Coexistence with handleRightClickMenu() specifically**: that function
+// calls uiOverrideBuffer().clear() itself, but only on the branch where the
+// right-click menu is already open -- so this function must run AFTER
+// handleRightClickMenu() in updateGrimstoneRuntime()'s dispatch (it does,
+// see that function's own call order) and must APPEND rather than clear, or
+// a frame with the menu open would have its rcm_action override wiped by
+// this function's own entries instead of gaining them. Re-deriving
+// frame->requestedUiElementOverrides/Count from the buffer's OWN current
+// data()/size() (rather than trusting whatever handleRightClickMenu() set)
+// is required too: appending to a std::vector can reallocate, which would
+// leave frame->requestedUiElementOverrides dangling if it still pointed at
+// the pre-append buffer.
+//
+// **Scope, first pass**: gold (kPlayerGoldFlag, the bank system's own flag)
+// plus one derived "Combat Lv" summary line, mirroring js/ui.js's own real
+// `cb = Math.floor((atk+def+str+hpLvl)/4)` formula exactly (updateHUD(),
+// line 345) rather than inventing a new "active skill" concept this port
+// has no other use for -- js/ui.js's own production HUD already treats
+// combat level as ITS summary line, not a per-skill XP readout, so this
+// reuses that same real precedent instead of guessing at a new one. The
+// full per-skill XP-bar list (js/ui.js's separate, toggleable skills-panel,
+// updateSkillDisplay() etc.) is a substantially larger, separately-scoped
+// UI surface and is explicitly left for a future pass.
+int playerHudCombatLevel(const BeTileGridFrame* frame) {
+    const int atk = readSkillLevel(frame, GrimstoneSkill::Attack);
+    const int def = readSkillLevel(frame, GrimstoneSkill::Defence);
+    const int str = readSkillLevel(frame, GrimstoneSkill::Strength);
+    const int hpLvl = readSkillLevel(frame, GrimstoneSkill::Hitpoints);
+    return (atk + def + str + hpLvl) / 4;
+}
+
+constexpr const char* kHudGoldElementId = "hud_gold_text";
+constexpr const char* kHudCombatElementId = "hud_combat_text";
+
+std::string& hudGoldTextScratch() {
+    static std::string text;
+    return text;
+}
+std::string& hudCombatTextScratch() {
+    static std::string text;
+    return text;
+}
+
+void updatePlayerHud(BeTileGridFrame* frame) {
+    const double gold = readFlag(frame, kPlayerGoldFlag, 0.0);
+    hudGoldTextScratch() = "Gold: " + std::to_string(static_cast<int>(gold));
+    hudCombatTextScratch() = "Combat Lv " + std::to_string(playerHudCombatLevel(frame));
+
+    BeUiElementOverride goldOv{};
+    goldOv.elementId = kHudGoldElementId;
+    goldOv.text = hudGoldTextScratch().c_str();
+    uiOverrideBuffer().push_back(goldOv);
+
+    BeUiElementOverride combatOv{};
+    combatOv.elementId = kHudCombatElementId;
+    combatOv.text = hudCombatTextScratch().c_str();
+    uiOverrideBuffer().push_back(combatOv);
+
+    // Re-derive from the buffer's own current state rather than
+    // incrementing whatever handleRightClickMenu() already set -- see this
+    // section's own doc comment above for why (a push_back may reallocate).
+    frame->requestedUiElementOverrides = uiOverrideBuffer().data();
+    frame->requestedUiElementOverrideCount = static_cast<int>(uiOverrideBuffer().size());
+}
+
 // ======= Dev Console (js/devconsole.js) =======
 // Transcribed from js/devconsole.js's runDevCommand() switch (lines 78-238)
 // and its toggle/close wiring (toggleConsole()/the two keydown listeners,
@@ -3542,6 +3623,7 @@ void updateGrimstoneRuntime(BeTileGridFrame* frame) {
     overrideDorinLiveDialogueText(frame);
     handleRightClickMenu(frame);
     handleDevConsole(frame);
+    updatePlayerHud(frame); // after handleRightClickMenu() -- see that function's own coexistence note above
 
     // Drain the scratch buffers into the frame's own write-back arrays --
     // done last so every system above had a chance to queue into them
