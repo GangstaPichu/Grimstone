@@ -2498,6 +2498,45 @@ constexpr const char* kDevConsoleInputElementId = "dev_console_input";
 constexpr const char* kDevConsoleSubmitActionId = "dev_console_submit";
 constexpr const char* kDevConsoleToggleKey = "L"; // + LeftControl -- see this section's own doc comment
 
+// Transcribed verbatim from js/version.js's own `GAME_VERSION` global and
+// its changelog comment block (lines 1-19) -- the only version constant
+// that exists anywhere in the reference JS. This port previously had NO
+// equivalent constant anywhere in src/ or project.json (the `version`
+// command below reported a fixed placeholder string instead); this is
+// that constant, finally given a real home. js/version.js's own update-
+// checker/Service-Worker-banner machinery (checkForUpdate()/
+// showUpdateBanner()/applyUpdate(), lines 21-71) has no analog here and
+// isn't ported -- there is no engine-side "fetch a raw file from GitHub
+// and compare semver" primitive, and, per this item's own task framing
+// (a small, `version`-command-only pass), inventing one for a cosmetic
+// "new version available" banner is real over-scope, not this pass's job.
+constexpr const char* kGameVersion = "0.6.4";
+
+// One entry per js/version.js changelog line (its own comment block,
+// lines 8-18), oldest last exactly as the JS lists them. A judgement
+// call, not a default: this could instead be its own DialogueTemplate
+// node (content/ui-layouts.json already has the schema, per this
+// section's own doc comment above) with one choice per changelog entry,
+// but that's a real multi-node dialogue tree built for what is, at
+// bottom, still just a version string with some history attached --
+// exactly the "don't over-build a dialogue tree for a version number"
+// case this pass's own task framing calls out. A single toast, the same
+// surface every other dev-console command already reports through, is
+// the right size for this: see the "version"/"versionlog" commands below.
+constexpr const char* kVersionChangelog[] = {
+    "0.6.4 -- Homestead cabin interior with movable bed; door now enterable",
+    "0.6.3 -- Homestead sigil usable without quest flag (auto-grants on use)",
+    "0.6.2 -- Ground bags: dropped items appear as bags; right-click to pick up",
+    "0.6.1 -- Dev console (` key): give/gold/heal/tp/setskill/xp/flag commands",
+    "0.6.0 -- Save migration system; Service Worker offline support + auto-update banner",
+    "0.5.0 -- PeerJS P2P co-op (up to 4 players), in-game session start/stop",
+    "0.4.0 -- Homestead feature: Old Bertram quest, farming, crop rendering",
+    "0.3.0 -- World map (M key), crop respawn, dungeon loot, inn sleep restriction",
+    "0.2.0 -- Monolithic HTML split into organised file structure; bug fixes",
+    "0.1.0 -- Initial release",
+};
+constexpr int kVersionChangelogCount = sizeof(kVersionChangelog) / sizeof(kVersionChangelog[0]);
+
 bool isKeyDown(const BeTileGridFrame* frame, const char* name) {
     if (frame->keysDown == nullptr) return false;
     for (int i = 0; i < frame->keysDownCount; ++i)
@@ -2607,7 +2646,7 @@ void runDevConsoleCommand(BeTileGridFrame* frame, const std::string& raw) {
         devConsoleToast(frame,
                          "give <item> [qty] | gold <amt> | addgold <amt> | heal | tp <0-4> | "
                          "setskill <skill> <lvl> | xp <skill> <amt> | flag <name> [value] | "
-                         "clearinv | version | clear");
+                         "clearinv | version | versionlog | clear");
         return;
     }
 
@@ -2799,12 +2838,34 @@ void runDevConsoleCommand(BeTileGridFrame* frame, const std::string& raw) {
     }
 
     if (cmd == "version") {
-        // js's own GAME_VERSION global (line 228) has no equivalent
-        // anywhere in this C++ port (checked -- no version constant exists
-        // in src/ or project.json) -- reports a fixed identifying string
-        // instead of a number that doesn't exist here, rather than
-        // inventing a version scheme this port doesn't otherwise have.
-        devConsoleToast(frame, "Grimstone (LiminalEngine/BEditor 2D port)");
+        // js's own GAME_VERSION global (js/version.js line 19) DOES have a
+        // real equivalent now (kGameVersion above, transcribed from that
+        // same file) -- reports the real transcribed version instead of
+        // the fixed placeholder string this used to report, plus the
+        // single most recent changelog line (kVersionChangelog[0], same
+        // "newest first" order js/version.js's own comment block uses) so
+        // this single toast still carries "what changed most recently"
+        // without dumping the whole history js's own version.js has no
+        // in-game display for either (that lives in a source comment
+        // there, not any on-screen UI) -- see "versionlog" below for the
+        // full list.
+        devConsoleToast(frame, "Grimstone v" + std::string(kGameVersion) +
+                                    " (LiminalEngine/BEditor 2D port) -- " + kVersionChangelog[0]);
+        return;
+    }
+
+    if (cmd == "versionlog") {
+        // The full js/version.js changelog (kVersionChangelog above), one
+        // toast, newest first -- same "one long piped string" shape this
+        // file's own "help" command above already uses for a multi-item
+        // report, rather than a new UI surface (see kVersionChangelog's
+        // own doc comment on why this isn't a DialogueTemplate node).
+        std::string log = "Grimstone changelog: ";
+        for (int i = 0; i < kVersionChangelogCount; ++i) {
+            if (i > 0) log += " | ";
+            log += kVersionChangelog[i];
+        }
+        devConsoleToast(frame, log);
         return;
     }
 
