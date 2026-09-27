@@ -1216,6 +1216,79 @@ void updateColorGrade(BeTileGridFrame* frame) {
     frame->requestedGradeSaturation = static_cast<float>(saturation);
 }
 
+// ======= Night overlay (real screen-space darkening + light cutouts) =======
+// GameModuleApi.h v39 -> v40 (item N7-NIGHT2D) added the real primitive
+// updateColorGrade()'s own doc comment above says this ABI was missing:
+// BeTileGridFrame::hasRequestedNightOverlayStrength/
+// requestedNightOverlayStrength -- a live, sticky strength knob that
+// drives TileGrid::nightOverlayColor's flat screen-space blend, with
+// per-TileGrid::pointLights cutouts fading it back to zero near an
+// authored light (see NightOverlay.h's own doc comment for the exact
+// mix()/cutout math). This is the sibling of updateColorGrade() above,
+// not a replacement -- that pass still approximates the night TINT via
+// the grade ABI (temperature/tint/saturation), and now this pass adds
+// the actual DARKENING js/render.js's own night treatment always paired
+// with it.
+//
+// js/render.js lines ~2739-2754 ("Day/Night lighting with proper light
+// source cutouts"): `nightA = getNightAlpha()` (this file's own
+// nightAlpha(), confirmed transcribed exactly above), then
+// `lx.fillStyle = rgba(5,8,28, nightA*0.82)` filled over the whole
+// canvas before the light-source cutouts are punched in via
+// destination-out. NightOverlay.h's own apply() is exactly
+// `mix(color, nightColor, strength * mask)` -- i.e. `strength` IS the
+// fill's own alpha -- so reproducing the JS exactly means driving
+// `requestedNightOverlayStrength` as `nightAlpha(t) * 0.82`, matching
+// the JS's own literal constant, and authoring TileGrid::nightOverlayColor
+// as (5,8,28)/255 once per zone (see zoneSlugToTileGrid() in
+// GrimstoneGame.cpp, the same central funnel point PlayerHUD's own
+// hudLayoutName already uses).
+//
+// Two deliberate judgement calls, stated so a future pass can find them
+// rather than re-deriving them:
+//
+// 1. Weather is NOT folded into the overlay strength here, unlike
+//    updateColorGrade()'s own kFogSaturationDrop term just above. Read
+//    js/render.js's whole night block (and js/effects.js's own fog/haze
+//    layer) end to end first: the JS's nightA is driven ONLY by
+//    getNightAlpha() (plus a dungeon-always-dark override and a
+//    "brighterNights" accessibility toggle, neither reproduced here --
+//    see judgement call 2 below) -- fog is a SEPARATE screen-space haze
+//    layer with no relationship to the night overlay's own alpha at
+//    all. updateColorGrade()'s fog desaturation exists specifically
+//    because THAT pass has no haze primitive to approximate fog with,
+//    so it borrows the saturation knob instead; this pass has the real
+//    darkening primitive already, and mixing weather into it would not
+//    be replicating anything the JS actually does -- it would be a new,
+//    invented behavior. Left out on purpose, not overlooked.
+// 2. js's own isDungeon override (nightA = 0.92 flat, ignoring time of
+//    day entirely, for a zone named THE ASHWOOD CRYPTS/THE IRON
+//    DEPTHS/THE CULTIST CATACOMBS) is NOT reproduced this pass. Checked
+//    before deferring, not assumed: of those three, only
+//    buildCultistCatacombs() ("THE CULTIST CATACOMBS") is reachable via
+//    zoneSlugToTileGrid() at all today -- buildAshenDungeon()/
+//    buildIronPeaksDungeon() carry no slug in that table yet (see its
+//    own doc comment on why). Reusing this file's own isIndoorZone()
+//    would be wrong: that set (forsaken_library/hidden_vault/
+//    cultist_catacombs/forsaken_chapel) is this port's OWN "interior"
+//    substitute for a different JS check (INN/CATACOMB/DEPTHS keyword
+//    match on the zone's display name) and includes two zones
+//    (forsaken_library, forsaken_chapel) the JS's own isDungeon test
+//    does NOT flag. A real fixed-darkness override for
+//    cultist_catacombs alone would need its own new, single-zone
+//    special case for one reachable slug -- deferred as a documented
+//    future authoring pass rather than added speculatively here; every
+//    zone (including cultist_catacombs) gets the time-driven
+//    nightAlpha() strength this v1.
+constexpr float kNightOverlayJsAlphaScale = 0.82f;
+
+void updateNightOverlay(BeTileGridFrame* frame) {
+    const double alpha = nightAlpha(currentGameTime(frame));
+
+    frame->hasRequestedNightOverlayStrength = 1;
+    frame->requestedNightOverlayStrength = static_cast<float>(alpha) * kNightOverlayJsAlphaScale;
+}
+
 } // namespace daynight
 
 // Walks the player's own live ABI position against the CURRENT zone's real
@@ -3708,6 +3781,7 @@ void updateGrimstoneRuntime(BeTileGridFrame* frame) {
     daynight::updateWeather(frame);       // per-frame, not gated on interactPressed -- reads activeZoneId(), so after handleZoneTransition()
     daynight::fireWeatherParticles(frame); // per-frame, not gated on interactPressed
     daynight::updateColorGrade(frame);     // per-frame, not gated on interactPressed -- reads currentGameTime()/currentWeather(), so after the two calls above
+    daynight::updateNightOverlay(frame);   // per-frame, not gated on interactPressed -- reads currentGameTime(), the same input updateColorGrade() reads
     handleMiningAndWoodcutting(frame);
     handleCombatAttack(frame);
     handleCombatDeathRewards(frame); // per-frame, not gated on interactPressed

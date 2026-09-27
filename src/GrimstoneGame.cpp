@@ -756,6 +756,18 @@ TileGrid buildAshenveilLevel(const TileKindRegistry& registry) {
     // through y=16) ----
     grid.markers.push_back({"player_spawn", glm::vec2(18.5f, 16.5f), "Player Spawn"});
 
+    // ---- Real point light (Workstream N7-NIGHT2D) -- a first, minimal
+    // proof of TileGrid::pointLights on real content, not an exhaustive
+    // lighting pass over every lamppost/candle this zone already places
+    // (see this function's own caller, zoneSlugToTileGrid(), and
+    // GrimstoneRuntime.cpp's daynight::updateNightOverlay() for the full
+    // design). The Inn's own front door -- "BWALL_DOOR at col 8" above,
+    // world tile (8,8) -- is picked as the obviously-lit spot: a warm,
+    // window-lined tavern front on the town square. Every other
+    // lamppost/candle placed above stays unlit for now, a deliberate,
+    // documented future-authoring-pass gap, not an oversight.
+    grid.pointLights.push_back({glm::vec2(8.5f, 8.5f), 6.0f, glm::vec3(1.0f, 0.82f, 0.55f), 4.0f, "Inn light"});
+
     return grid;
 }
 
@@ -3264,6 +3276,33 @@ TileGrid buildDungeonMap(const TileKindRegistry& registry, const DungeonGenConfi
                              glm::vec2(static_cast<float>(spawnX) + 0.5f, static_cast<float>(spawnY) + 0.5f),
                              "Player Spawn"});
 
+    // ---- Real point lights (Workstream N7-NIGHT2D) -- a first, minimal
+    // proof of TileGrid::pointLights for procedural dungeon content, not
+    // an exhaustive pass over every dungeonTorch tile the loop above
+    // placed near EVERY room. Only the entrance room's own torches (the
+    // "torch-lit dungeon entrance" the workstream's own task explicitly
+    // names) get a real light here; every other room's torches remain
+    // visual-only for now -- a deliberate, documented future-authoring-
+    // pass gap, matching buildAshenveilLevel()'s own single-inn-light
+    // scope decision right above it in this file. Reuses the SAME 4
+    // candidate wall positions the "Torches on walls near rooms" loop
+    // above already computed for entryRoom, checking which of them
+    // actually became a dungeonTorch tile (a room can be too close to
+    // the map edge for a given candidate to land in bounds).
+    {
+        const int entryPts[4][2] = {{entryRoom.y - 1, entryRoom.x + 1},
+                                     {entryRoom.y - 1, entryRoom.x + entryRoom.w - 2},
+                                     {entryRoom.y + entryRoom.h, entryRoom.x + 1},
+                                     {entryRoom.y + entryRoom.h, entryRoom.x + entryRoom.w - 2}};
+        for (const auto& p : entryPts) {
+            const int ty = p[0], tx = p[1];
+            if (ty >= 0 && ty < H && tx >= 0 && tx < W && tiles[ty][tx] == dungeonTorch) {
+                grid.pointLights.push_back({glm::vec2(static_cast<float>(tx) + 0.5f, static_cast<float>(ty) + 0.5f),
+                                             4.0f, glm::vec3(0.95f, 0.55f, 0.20f), 3.5f, "Entrance torch"});
+            }
+        }
+    }
+
     return grid;
 }
 
@@ -4367,6 +4406,19 @@ bool zoneSlugToTileGrid(const TileKindRegistry& registry, const std::string& slu
     }
     return false;
     }();
-    if (built) outGrid.hudLayoutName = kPlayerHudLayoutName;
+    if (built) {
+        outGrid.hudLayoutName = kPlayerHudLayoutName;
+        // Night overlay color (Workstream N7-NIGHT2D) -- js/render.js's own
+        // `rgba(5,8,28, nightA*0.82)` night fill (see this function's own
+        // doc comment above for why this is the one central funnel every
+        // real zone build goes through, the same reasoning
+        // kPlayerHudLayoutName's own assignment right above uses). The
+        // 0.82 alpha scale itself is NOT baked in here -- it lives in
+        // GrimstoneRuntime.cpp's daynight::updateNightOverlay(), which
+        // drives TileGrid::nightOverlayStrength; this field is JUST the
+        // flat color the JS blends toward, normalized from 8-bit to the
+        // engine's own 0..1 glm::vec3 color convention.
+        outGrid.nightOverlayColor = glm::vec3(5.0f / 255.0f, 8.0f / 255.0f, 28.0f / 255.0f);
+    }
     return built;
 }
