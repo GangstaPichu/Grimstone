@@ -329,8 +329,8 @@ std::string& toastScratch() {
     return buf;
 }
 
-void handleMiningAndWoodcutting(BeTileGridFrame* frame) {
-    if (!frame->interactPressed) return;
+void handleMiningAndWoodcutting(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
     if (frame->queryTileKindId == nullptr || frame->worldToCell == nullptr) return;
 
     int px, py;
@@ -488,8 +488,8 @@ const EnemyDef* findEnemyDef(const char* kind) {
 // Fires one BeHitboxRequest against the nearest living enemy agent within
 // melee range -- one attack per interact press, matching every other
 // activity's own "one grant per press" rule.
-void handleCombatAttack(BeTileGridFrame* frame) {
-    if (!frame->interactPressed) return;
+void handleCombatAttack(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
     if (frame->agents == nullptr) return;
 
     int targetIdx = -1;
@@ -1265,8 +1265,8 @@ int currentFishZoneMask() {
 
 const char* const kFishingSpotKinds[] = {"fishing_spot", "fishing_spot_2"};
 
-void handleFishing(BeTileGridFrame* frame) {
-    if (!frame->interactPressed) return;
+void handleFishing(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
     if (!findAdjacentTileOfKind(frame, kFishingSpotKinds, 2, nullptr, nullptr, nullptr)) return;
 
     // Tackle: the JS shows a 3-option context menu (Fish (Bait)/(Fly)/
@@ -1361,8 +1361,8 @@ void handleFishing(BeTileGridFrame* frame) {
 
 // ======= Cooking =======
 // Transcribed from js/activities.js's openCooker() (lines 2396-2452).
-void handleCooking(BeTileGridFrame* frame) {
-    if (!frame->interactPressed) return;
+void handleCooking(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
     const char* const kCookingFireKinds[] = {"cooking_fire"};
     if (!findAdjacentTileOfKind(frame, kCookingFireKinds, 1, nullptr, nullptr, nullptr)) return;
 
@@ -1458,8 +1458,8 @@ constexpr SmeltRecipe kSmeltRecipes[] = {
 };
 constexpr int kSmeltRecipeCount = sizeof(kSmeltRecipes) / sizeof(kSmeltRecipes[0]);
 
-void handleSmelting(BeTileGridFrame* frame) {
-    if (!frame->interactPressed) return;
+void handleSmelting(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
     const char* const kSmelterKinds[] = {"smelter"};
     if (!findAdjacentTileOfKind(frame, kSmelterKinds, 1, nullptr, nullptr, nullptr)) return;
 
@@ -1528,8 +1528,8 @@ constexpr ForgeRecipe kForgeRecipes[] = {
 };
 constexpr int kForgeRecipeCount = sizeof(kForgeRecipes) / sizeof(kForgeRecipes[0]);
 
-void handleForging(BeTileGridFrame* frame) {
-    if (!frame->interactPressed) return;
+void handleForging(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
     const char* const kAnvilKinds[] = {"anvil"};
     if (!findAdjacentTileOfKind(frame, kAnvilKinds, 1, nullptr, nullptr, nullptr)) return;
 
@@ -1598,8 +1598,8 @@ std::string farmCellKey(int cellX, int cellY) {
     return std::to_string(cellX) + "_" + std::to_string(cellY);
 }
 
-void handleTilling(BeTileGridFrame* frame) {
-    if (!frame->interactPressed) return;
+void handleTilling(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
     // js's own tillTile() (line 2055): currentMap.name === 'YOUR HOMESTEAD'.
     // Real fix, not a simplification any more -- activeZoneId() (see the
     // "======= Zone transitions =======" section above) is a real read of
@@ -1623,8 +1623,8 @@ void handleTilling(BeTileGridFrame* frame) {
     frame->requestedToastText = toastScratch().c_str();
 }
 
-void handlePlanting(BeTileGridFrame* frame) {
-    if (!frame->interactPressed) return;
+void handlePlanting(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
     int cx, cy;
     const char* const kTilledSoilKinds[] = {"tilled_soil"};
     if (!findAdjacentTileOfKind(frame, kTilledSoilKinds, 1, &cx, &cy, nullptr)) return;
@@ -1728,8 +1728,8 @@ void handleFarmGrowthTick(BeTileGridFrame* frame) {
     }
 }
 
-void handleHarvesting(BeTileGridFrame* frame) {
-    if (!frame->interactPressed) return;
+void handleHarvesting(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
     int cx, cy;
     const char* matchedKind = nullptr;
     const char* const kHomeCropKinds[] = {"home_wheat", "home_turnip", "home_carrot", "home_potato",
@@ -1941,8 +1941,8 @@ void updateAldermastObjectives(BeTileGridFrame* frame) {
 // is set this file has nothing further to offer and simply doesn't open a
 // dialogue at all, rather than silently mis-routing into an unauthored
 // state.
-void startAldermastDialogue(BeTileGridFrame* frame) {
-    if (!frame->interactPressed) return;
+void startAldermastDialogue(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
     if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
     if (!playerNearAldermast(frame)) return;
 
@@ -2242,8 +2242,8 @@ bool playerNearWilla(const BeTileGridFrame* frame) {
     return (dx * dx + dy * dy) <= kWillaInteractRadius * kWillaInteractRadius;
 }
 
-void startBankDialogue(BeTileGridFrame* frame) {
-    if (!frame->interactPressed) return;
+void startBankDialogue(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
     if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
     if (!playerNearWilla(frame)) return;
     frame->requestedPushDialog = "dialogue:willa_bank";
@@ -2525,8 +2525,8 @@ bool playerNearMarkerAt(const BeTileGridFrame* frame, float markerX, float marke
 constexpr float kGrimwardMarkerWorldX = 11.5f;
 constexpr float kGrimwardMarkerWorldY = 5.5f;
 bool playerNearGrimward(const BeTileGridFrame* frame) { return playerNearMarkerAt(frame, kGrimwardMarkerWorldX, kGrimwardMarkerWorldY); }
-void startGrimwardDialogue(BeTileGridFrame* frame) {
-    if (!frame->interactPressed) return;
+void startGrimwardDialogue(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
     if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
     if (!playerNearGrimward(frame)) return;
     frame->requestedPushDialog = "dialogue:grimward_greeting";
@@ -2536,8 +2536,8 @@ void startGrimwardDialogue(BeTileGridFrame* frame) {
 constexpr float kBramMarkerWorldX = 17.5f;
 constexpr float kBramMarkerWorldY = 10.5f;
 bool playerNearBram(const BeTileGridFrame* frame) { return playerNearMarkerAt(frame, kBramMarkerWorldX, kBramMarkerWorldY); }
-void startBramDialogue(BeTileGridFrame* frame) {
-    if (!frame->interactPressed) return;
+void startBramDialogue(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
     if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
     if (!playerNearBram(frame)) return;
     frame->requestedPushDialog = "dialogue:bram_greeting";
@@ -2562,8 +2562,8 @@ void overrideBramLiveDialogueText(BeTileGridFrame* frame) {
 constexpr float kOswinMarkerWorldX = 6.5f;
 constexpr float kOswinMarkerWorldY = 9.5f;
 bool playerNearOswin(const BeTileGridFrame* frame) { return playerNearMarkerAt(frame, kOswinMarkerWorldX, kOswinMarkerWorldY); }
-void startOswinDialogue(BeTileGridFrame* frame) {
-    if (!frame->interactPressed) return;
+void startOswinDialogue(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
     if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
     if (!playerNearOswin(frame)) return;
     frame->requestedPushDialog = "dialogue:oswin_greeting";
@@ -2584,8 +2584,8 @@ void overrideOswinLiveDialogueText(BeTileGridFrame* frame) {
 constexpr float kThessalyMarkerWorldX = 7.5f;
 constexpr float kThessalyMarkerWorldY = 12.5f;
 bool playerNearThessaly(const BeTileGridFrame* frame) { return playerNearMarkerAt(frame, kThessalyMarkerWorldX, kThessalyMarkerWorldY); }
-void startThessalyDialogue(BeTileGridFrame* frame) {
-    if (!frame->interactPressed) return;
+void startThessalyDialogue(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
     if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
     if (!playerNearThessaly(frame)) return;
     frame->requestedPushDialog = "dialogue:thessaly_greeting";
@@ -2599,8 +2599,8 @@ void startThessalyDialogue(BeTileGridFrame* frame) {
 constexpr float kDorinMarkerWorldX = 6.5f;
 constexpr float kDorinMarkerWorldY = 2.5f;
 bool playerNearDorin(const BeTileGridFrame* frame) { return playerNearMarkerAt(frame, kDorinMarkerWorldX, kDorinMarkerWorldY); }
-void startDorinDialogue(BeTileGridFrame* frame) {
-    if (!frame->interactPressed) return;
+void startDorinDialogue(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
     if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
     if (!playerNearDorin(frame)) return;
     frame->requestedPushDialog = "dialogue:dorin_greeting";
@@ -2719,6 +2719,298 @@ void applyDorinDialogueSideEffects(BeTileGridFrame* frame) {
             return;
         }
     }
+}
+
+// ======= Right-click context menu (js/input.js) =======
+// PORTING_PLAN.md's own js/input.js row previously said this was
+// "structurally impossible" -- true against the ABI at the time (a full
+// grep of GameModuleApi.h found zero mouse/click fields at all). Item
+// N6-MOUSE2D (v38->v39) closed that specific gap by adding
+// BeTileGridFrame::mouseX/mouseY (float, normalized [0,1] SCREEN position,
+// top-left origin, Y-down -- the exact convention the host's own internal
+// HUD hit-testing already uses) and mouseRightPressed (int, edge-detected
+// exactly like interactPressed -- nonzero only the single frame the button
+// was first pressed). Both read directly from that field's own doc
+// comment in GameModuleApi.h, not guessed.
+//
+// **What the bump does NOT close, checked rather than assumed**: there is
+// still no way to turn mouseX/mouseY into a WORLD position. Grepped the
+// whole header again for "camera"/"zoom"/"viewport"/"screenWidth" -- the
+// 2D host's Camera2D exists (TileGridHostRunner.cpp reads real cursor
+// state every frame for its own HUD hit-testing) but its position/zoom/
+// viewport size never crosses the ABI boundary at all; every camera field
+// on this struct is write-only "juice" (shake/zoom-punch/pan), nothing a
+// plugin can read back. worldToCell takes a WORLD position, and there is
+// no primitive anywhere that projects a normalized screen point into one.
+// So a true cursor-precise "what's under the pointer" picker -- the thing
+// js/input.js's own contextmenu handler actually does -- is still not
+// buildable against this ABI version, bump or no bump.
+//
+// **What IS built instead**: right-click opens a small choice menu over
+// whatever is already adjacent to the PLAYER -- the exact same
+// "adjacency, not facing/pointing" interaction model this whole file
+// already uses for interactPressed (handleMiningAndWoodcutting()'s own
+// doc comment). It reuses the JS's own real priority order (NPC -> enemy
+// -> a real tile action; ground-bag pickup is the JS's own FIRST branch
+// and is skipped -- no groundBags-equivalent state exists anywhere in this
+// file, grepped, zero hits, unchanged since PORTING_PLAN.md's own prior
+// investigation), and every menu choice fires the exact SAME handler
+// direct interact already calls -- each relevant handle*()/start*Dialogue()
+// function above now takes an additional `forced` parameter (default
+// false) that bypasses its own `!frame->interactPressed` gate while
+// leaving every other real gate (level/zone/inventory/adjacency check)
+// untouched -- matching walkThenDo()'s own "every menu action just calls
+// the real handler" shape exactly, not a second copy of any grant logic.
+//
+// **No separate "Trade" entry, even for Bram/Dorin (both `hasTrade:
+// true`)** -- a real ABI limit, not scope discipline. requestedPushDialog's
+// own "dialogue:<name>" convention (TileGridHostRunner.cpp's
+// pushDialogOrTree()) always starts a tree at its OWN startNodeId; there
+// is no way to jump straight to an interior node like Dorin's own
+// "dorin_trade_menu". A second top-level choice that could only ever land
+// on the identical "greet" node "Talk" already opens would be a fake
+// choice, not a real one -- Dorin's/Bram's own "Let's trade"/"What's on
+// the menu?" line is already one click past "Talk" either way, so the
+// menu's own action label just says so ("Talk to Dorin (trade
+// available)") instead of pretending to offer two destinations that are
+// actually one.
+//
+// **A menu choice can go stale**: the player is free to walk away while
+// the menu is showing (nothing pins them in place), so the forced handler
+// re-checks adjacency itself and can legitimately find nothing there any
+// more -- it just silently does nothing that frame, the same as an
+// ordinary interactPressed press thrown at empty air would.
+enum class RightClickAction {
+    None,
+    TalkAldermast,
+    TalkWilla,
+    TalkGrimward,
+    TalkBram,
+    TalkOswin,
+    TalkThessaly,
+    TalkDorin,
+    Attack,
+    MineOrChop,
+    Fish,
+    Cook,
+    Smelt,
+    Forge,
+    Till,
+    Harvest,
+};
+
+constexpr const char* kRightClickMenuLayoutName = "RightClickMenu";
+constexpr const char* kRightClickActionElementId = "rcm_action";
+constexpr const char* kRightClickCancelActionId = "rcm_cancel";
+
+RightClickAction& pendingRightClickAction() {
+    static RightClickAction action = RightClickAction::None;
+    return action;
+}
+std::string& rightClickActionLabel() {
+    static std::string label;
+    return label;
+}
+std::vector<BeUiElementOverride>& uiOverrideBuffer() {
+    static std::vector<BeUiElementOverride> buf;
+    return buf;
+}
+
+bool rightClickMenuOpen(const BeTileGridFrame* frame) {
+    return frame->activeDialogLayoutName != nullptr &&
+           std::strcmp(frame->activeDialogLayoutName, kRightClickMenuLayoutName) == 0;
+}
+
+// Read-only mirror of handleCombatAttack()'s own nearest-living-enemy scan
+// (same kMeleeRangeWorldUnits/findEnemyDef()) -- no side effects, purely
+// "is there a real target," so building the menu never fires a hitbox.
+bool nearestLivingEnemyInRange(const BeTileGridFrame* frame) {
+    if (frame->agents == nullptr) return false;
+    for (int i = 0; i < frame->agentCount; ++i) {
+        const BeAgentState& agent = frame->agents[i];
+        if (agent.health <= 0.0f) continue;
+        if (findEnemyDef(agent.kind) == nullptr) continue;
+        const float dx = agent.worldX - frame->playerWorldX;
+        const float dy = agent.worldY - frame->playerWorldY;
+        if (dx * dx + dy * dy <= kMeleeRangeWorldUnits * kMeleeRangeWorldUnits) return true;
+    }
+    return false;
+}
+
+// Read-only mirror of handleMiningAndWoodcutting()'s own player-cell-plus-4-
+// neighbors, layer-0-only scan -- returns the first matching MinableResource
+// so the menu can show its real verb ("Mine"/"Chop"), or nullptr.
+const MinableResource* findAdjacentMinableResource(BeTileGridFrame* frame) {
+    if (frame->queryTileKindId == nullptr || frame->worldToCell == nullptr) return nullptr;
+    int px, py;
+    frame->worldToCell(frame->playerWorldX, frame->playerWorldY, &px, &py);
+    constexpr int kDx[] = {0, 0, 0, -1, 1};
+    constexpr int kDy[] = {0, -1, 1, 0, 0};
+    for (int dir = 0; dir < 5; ++dir) {
+        const char* kindId = frame->queryTileKindId(0, px + kDx[dir], py + kDy[dir]);
+        if (kindId == nullptr || kindId[0] == '\0') continue;
+        for (int i = 0; i < kMinableResourceCount; ++i) {
+            if (std::strcmp(kindId, kMinableResources[i].tileKindId) == 0) return &kMinableResources[i];
+        }
+    }
+    return nullptr;
+}
+
+// ---- Tile-kind-id lists for the remaining tile actions, mirroring each
+// handler's own local array (handleFishing()'s kFishingSpotKinds is
+// already file-scope and reused directly below; handleCooking()/
+// handleSmelting()/handleForging()/handleTilling()/handleHarvesting()'s
+// own kCookingFireKinds/kSmelterKinds/kAnvilKinds/kDirtKinds/kHomeCropKinds
+// are each local to their own function, so the literal is duplicated here
+// rather than touching five existing functions for a cosmetic hoist only
+// this read-only resolver needs). ----
+constexpr const char* const kRcmCookingFireKinds[] = {"cooking_fire"};
+constexpr const char* const kRcmSmelterKinds[] = {"smelter"};
+constexpr const char* const kRcmAnvilKinds[] = {"anvil"};
+constexpr const char* const kRcmDirtKinds[] = {"dirt"};
+constexpr const char* const kRcmHomeCropKinds[] = {"home_wheat", "home_turnip", "home_carrot", "home_potato",
+                                                     "home_onion"};
+
+// The real resolver: js/input.js's own priority order (ground bag -> NPC ->
+// enemy -> mystery NPC -> getTileActions(tile)), minus the ground-bag
+// branch (nothing to resolve it against, see this section's own doc
+// comment) and the mystery-NPC branch (js/npcs.js's own mystery quest
+// chain was never ported, same PORTING_PLAN.md finding startThessalyDialogue()
+// already cites). Returns RightClickAction::None (and an empty label) when
+// nothing real is adjacent.
+RightClickAction resolveRightClickAction(BeTileGridFrame* frame, std::string* outLabel) {
+    if (playerNearAldermast(frame)) {
+        *outLabel = "Talk to Aldermast";
+        return RightClickAction::TalkAldermast;
+    }
+    if (playerNearWilla(frame)) {
+        *outLabel = "Talk to Willa";
+        return RightClickAction::TalkWilla;
+    }
+    if (playerNearGrimward(frame)) {
+        *outLabel = "Talk to Grimward";
+        return RightClickAction::TalkGrimward;
+    }
+    if (playerNearBram(frame)) {
+        *outLabel = "Talk to Bram (trade available)";
+        return RightClickAction::TalkBram;
+    }
+    if (playerNearOswin(frame)) {
+        *outLabel = "Talk to Oswin";
+        return RightClickAction::TalkOswin;
+    }
+    if (playerNearThessaly(frame)) {
+        *outLabel = "Talk to Thessaly";
+        return RightClickAction::TalkThessaly;
+    }
+    if (playerNearDorin(frame)) {
+        *outLabel = "Talk to Dorin (trade available)";
+        return RightClickAction::TalkDorin;
+    }
+    if (nearestLivingEnemyInRange(frame)) {
+        *outLabel = "Attack";
+        return RightClickAction::Attack;
+    }
+    if (const MinableResource* res = findAdjacentMinableResource(frame)) {
+        *outLabel = std::string(1, static_cast<char>(std::toupper(static_cast<unsigned char>(res->toastVerb[0])))) +
+                    (res->toastVerb + 1);
+        return RightClickAction::MineOrChop;
+    }
+    if (findAdjacentTileOfKind(frame, kFishingSpotKinds, 2, nullptr, nullptr, nullptr)) {
+        *outLabel = "Fish";
+        return RightClickAction::Fish;
+    }
+    if (findAdjacentTileOfKind(frame, kRcmCookingFireKinds, 1, nullptr, nullptr, nullptr)) {
+        *outLabel = "Cook";
+        return RightClickAction::Cook;
+    }
+    if (findAdjacentTileOfKind(frame, kRcmSmelterKinds, 1, nullptr, nullptr, nullptr)) {
+        *outLabel = "Smelt";
+        return RightClickAction::Smelt;
+    }
+    if (findAdjacentTileOfKind(frame, kRcmAnvilKinds, 1, nullptr, nullptr, nullptr)) {
+        *outLabel = "Forge";
+        return RightClickAction::Forge;
+    }
+    if (activeZoneId() == "homestead" && findAdjacentTileOfKind(frame, kRcmDirtKinds, 1, nullptr, nullptr, nullptr)) {
+        *outLabel = "Till the soil";
+        return RightClickAction::Till;
+    }
+    if (findAdjacentTileOfKind(frame, kRcmHomeCropKinds, 5, nullptr, nullptr, nullptr)) {
+        *outLabel = "Harvest";
+        return RightClickAction::Harvest;
+    }
+    return RightClickAction::None;
+}
+
+// Fires the SAME handler direct interact already calls for the chosen
+// action, with `forced = true` so it runs regardless of this frame's
+// interactPressed state -- see this section's own doc comment above for
+// why this is not a second copy of any grant/dialogue logic.
+void executeRightClickAction(BeTileGridFrame* frame, RightClickAction action) {
+    switch (action) {
+        case RightClickAction::TalkAldermast: startAldermastDialogue(frame, /*forced=*/true); return;
+        case RightClickAction::TalkWilla: startBankDialogue(frame, /*forced=*/true); return;
+        case RightClickAction::TalkGrimward: startGrimwardDialogue(frame, /*forced=*/true); return;
+        case RightClickAction::TalkBram: startBramDialogue(frame, /*forced=*/true); return;
+        case RightClickAction::TalkOswin: startOswinDialogue(frame, /*forced=*/true); return;
+        case RightClickAction::TalkThessaly: startThessalyDialogue(frame, /*forced=*/true); return;
+        case RightClickAction::TalkDorin: startDorinDialogue(frame, /*forced=*/true); return;
+        case RightClickAction::Attack: handleCombatAttack(frame, /*forced=*/true); return;
+        case RightClickAction::MineOrChop: handleMiningAndWoodcutting(frame, /*forced=*/true); return;
+        case RightClickAction::Fish: handleFishing(frame, /*forced=*/true); return;
+        case RightClickAction::Cook: handleCooking(frame, /*forced=*/true); return;
+        case RightClickAction::Smelt: handleSmelting(frame, /*forced=*/true); return;
+        case RightClickAction::Forge: handleForging(frame, /*forced=*/true); return;
+        case RightClickAction::Till: handleTilling(frame, /*forced=*/true); return;
+        case RightClickAction::Harvest: handleHarvesting(frame, /*forced=*/true); return;
+        case RightClickAction::None: return;
+    }
+}
+
+// Wiring: on the right-click edge, resolve+open (or toast "nothing to do"
+// and open nothing); while open, keep the action label live and react to
+// a real click on either choice. Guarded on activeDialogLayoutName being
+// empty before opening -- same "don't steal focus from anything already
+// on the dialog stack" convention every start*Dialogue()/
+// handleDevConsoleToggle() above already uses.
+void handleRightClickMenu(BeTileGridFrame* frame) {
+    if (rightClickMenuOpen(frame)) {
+        uiOverrideBuffer().clear();
+        BeUiElementOverride ov{};
+        ov.elementId = kRightClickActionElementId;
+        ov.text = rightClickActionLabel().c_str();
+        uiOverrideBuffer().push_back(ov);
+        frame->requestedUiElementOverrides = uiOverrideBuffer().data();
+        frame->requestedUiElementOverrideCount = static_cast<int>(uiOverrideBuffer().size());
+
+        if (frame->clickedUiActionId != nullptr && frame->clickedUiActionId[0] != '\0') {
+            if (std::strcmp(frame->clickedUiActionId, kRightClickActionElementId) == 0) {
+                frame->requestedPopDialog = 1;
+                executeRightClickAction(frame, pendingRightClickAction());
+                pendingRightClickAction() = RightClickAction::None;
+            } else if (std::strcmp(frame->clickedUiActionId, kRightClickCancelActionId) == 0) {
+                frame->requestedPopDialog = 1;
+                pendingRightClickAction() = RightClickAction::None;
+            }
+        }
+        return;
+    }
+
+    if (!frame->mouseRightPressed) return;
+    if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
+
+    std::string label;
+    const RightClickAction action = resolveRightClickAction(frame, &label);
+    if (action == RightClickAction::None) {
+        toastScratch() = "Nothing to do here.";
+        frame->requestedToastText = toastScratch().c_str();
+        return;
+    }
+
+    pendingRightClickAction() = action;
+    rightClickActionLabel() = label;
+    frame->requestedPushDialog = kRightClickMenuLayoutName;
 }
 
 // ======= Dev Console (js/devconsole.js) =======
@@ -3211,6 +3503,7 @@ void updateGrimstoneRuntime(BeTileGridFrame* frame) {
     objectiveUpdateBuffer().clear();
     stringUpdateBuffer().clear();
     stringScratch().clear();
+    uiOverrideBuffer().clear();
 
     syncHitpointsMaxHealth(frame);
     handleZoneTransition(frame); // before every other system -- see its own doc comment above
@@ -3247,6 +3540,7 @@ void updateGrimstoneRuntime(BeTileGridFrame* frame) {
     startDorinDialogue(frame);
     applyDorinDialogueSideEffects(frame);
     overrideDorinLiveDialogueText(frame);
+    handleRightClickMenu(frame);
     handleDevConsole(frame);
 
     // Drain the scratch buffers into the frame's own write-back arrays --

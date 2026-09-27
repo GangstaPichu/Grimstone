@@ -111,5 +111,49 @@
         "actionId": "dev_console_submit"
       }
     ]
+  },
+  {
+    "name": "RightClickMenu",
+    "elements": [
+      {
+        "kind": "panel",
+        "id": "rcm_panel",
+        "position": [0.32, 0.42],
+        "size": [0.36, 0.16],
+        "color": [0.06, 0.06, 0.09],
+        "alpha": 0.9,
+        "cornerRadius": 0.02
+      },
+      {
+        "kind": "label",
+        "id": "rcm_title",
+        "position": [0.35, 0.45],
+        "scale": 0.036,
+        "color": [1.0, 0.85, 0.35],
+        "text": "What now?"
+      },
+      {
+        "kind": "label",
+        "id": "rcm_action",
+        "position": [0.35, 0.5],
+        "size": [0.3, 0.04],
+        "scale": 0.034,
+        "color": [0.8, 0.9, 1.0],
+        "text": "",
+        "interactive": true,
+        "actionId": "rcm_action"
+      },
+      {
+        "kind": "label",
+        "id": "rcm_cancel",
+        "position": [0.35, 0.545],
+        "size": [0.3, 0.04],
+        "scale": 0.034,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Never mind",
+        "interactive": true,
+        "actionId": "rcm_cancel"
+      }
+    ]
   }
 ]
