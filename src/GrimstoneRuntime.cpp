@@ -78,6 +78,18 @@ double readFlag(const BeTileGridFrame* frame, const char* key, double defaultVal
     return defaultValue;
 }
 
+// String-store twin of readFlag() above (BeTileGridFrame::strings,
+// TileGridStringStore.h) -- returns nullptr (not "", which would be
+// indistinguishable from a real empty stored value) when `key` was never
+// set. Used by zonetransition::resumeActiveZoneFromSaveIfNeeded() below to
+// read back the active zone id a previous session's requestZoneSwap()
+// wrote via queueStringSet().
+const char* readString(const BeTileGridFrame* frame, const char* key) {
+    for (int i = 0; i < frame->stringCount; ++i)
+        if (std::strcmp(key, frame->strings[i].key) == 0) return frame->strings[i].value;
+    return nullptr;
+}
+
 double readSkillXp(const BeTileGridFrame* frame, GrimstoneSkill skill) {
     const int idx = static_cast<int>(skill);
     return readFlag(frame, kSkillXpFlagKeys[idx], kSkillDefaultXp[idx]);
@@ -100,6 +112,22 @@ std::vector<BeFlagUpdate>& flagUpdateBuffer() {
 std::vector<BeItemDelta>& itemUpdateBuffer() {
     static std::vector<BeItemDelta> buf;
     return buf;
+}
+// Milestone <2d-save-slots> investigation (PORTING_PLAN.md's js/save-load.js
+// row): the host's string store (TileGridStringStore.h) persists through a
+// save/resume exactly like the flag store already does (TileGridSaveGame.h's
+// stringStates), so it's the natural place for the one piece of this
+// plugin's own in-memory state that used to be lost across a process
+// restart -- see zonetransition::resumeActiveZoneFromSaveIfNeeded() below.
+std::vector<BeStringUpdate>& stringUpdateBuffer() {
+    static std::vector<BeStringUpdate> buf;
+    return buf;
+}
+void queueStringSet(const char* key, const char* value) {
+    BeStringUpdate update;
+    update.key = key;
+    update.value = value;
+    stringUpdateBuffer().push_back(update);
 }
 
 void queueXpGrant(GrimstoneSkill skill, double amount) {
@@ -605,13 +633,23 @@ void handleCombatDeathRewards(BeTileGridFrame* frame) {
 // initial `--level` is Ashenveil's own exported level.json (there is no
 // ABI field to confirm this, or any other zone, is what actually loaded
 // before this plugin's first frame) -- if a packaged build is ever
-// launched with a different starting `--level`, portal detection in that
-// starting zone will silently look at the wrong marker set until the
-// first real transition corrects it. A future pass adding a real
-// "confirm which level actually loaded" ABI field (the same gap
-// handleFishing()'s own doc comment below names from the read side) would
-// close this for good; there is no way to close it from the plugin side
-// alone.
+// launched with a different starting `--level` THIS PLUGIN NEVER ITSELF
+// SAVED, portal detection in that starting zone will silently look at the
+// wrong marker set until the first real transition corrects it. A future
+// pass adding a real "confirm which level actually loaded" ABI field (the
+// same gap handleFishing()'s own doc comment below names from the read
+// side) would close this for good; there is no way to close it from the
+// plugin side alone.
+//
+// UPDATE (save/load investigation, PORTING_PLAN.md's js/save-load.js row):
+// the ONE case above that IS closeable from the plugin side alone -- the
+// host resuming THIS plugin's own prior save (TileGridSaveGame.h's
+// "continue where I left off," the default with no `--level` argument at
+// all) -- now is closed, via resumeActiveZoneFromSaveIfNeeded() below and
+// requestZoneSwap()'s own kActiveZoneStringKey write. The paragraph above
+// remains true and unchanged for the OTHER case it names (an explicit,
+// non-Ashenveil `--level` argument on a fresh launch); that one still has
+// no ABI field to detect at all.
 namespace zonetransition {
 
 // There is still no persisted per-playthrough world seed anywhere in this
@@ -678,6 +716,42 @@ const TileGrid* cachedZone(const std::string& slug) {
     return &cache.emplace(slug, std::move(built)).first->second;
 }
 
+// Save/resume investigation (PORTING_PLAN.md's js/save-load.js row): the
+// key requestZoneSwap() below writes activeZoneIdRef() to, via the host's
+// generic string store (BeStringUpdate/TileGridStringStore.h) -- persisted
+// through a save/resume exactly like flagStates/inventoryItems already are
+// (TileGridSaveGame.h's stringStates), with zero new save-file format.
+constexpr const char* kActiveZoneStringKey = "active_zone_id";
+
+bool& resumedActiveZoneFromSave() {
+    static bool resumed = false;
+    return resumed;
+}
+
+// Restores activeZoneIdRef() from a resumed save's string store, exactly
+// once, on this plugin's first frame -- called from handleZoneTransition()
+// below before anything else reads activeZoneIdRef(). This closes the
+// RESUME half of this section's own doc comment above ("activeZoneId()
+// below defaults to 'ashenveil' at process start"): the common real case
+// of the host resuming THIS plugin's own prior save (TileGridSaveGame.h's
+// "continue where I left off," on by default with no `--level` argument)
+// now restores the actual last-active zone instead of silently assuming
+// Ashenveil. The OTHER case that same doc comment names -- a packaged
+// build launched with an explicit, non-Ashenveil `--level` this plugin
+// never itself saved -- has no ABI field to detect at all (still true,
+// unchanged by this) and is NOT what this closes: a saved string with an
+// unrecognized/empty value (no prior save, or one written by an older
+// build with no such key) leaves activeZoneIdRef() at its "ashenveil"
+// default, the same as before this existed.
+void resumeActiveZoneFromSaveIfNeeded(const BeTileGridFrame* frame) {
+    if (resumedActiveZoneFromSave()) return;
+    resumedActiveZoneFromSave() = true;
+    const char* saved = readString(frame, kActiveZoneStringKey);
+    if (saved == nullptr || saved[0] == '\0') return;
+    const std::string savedZone = saved;
+    if (cachedZone(savedZone) != nullptr) activeZoneIdRef() = savedZone;
+}
+
 // The first "player_spawn" marker in `grid`, or a small fallback near the
 // origin (documented, not silently wrong) if a destination zone somehow
 // has none -- every buildXLevel()/buildXInterior() function in
@@ -723,6 +797,13 @@ bool requestZoneSwap(BeTileGridFrame* frame, const std::string& targetZone) {
     frame->requestedWarpY = spawn.y;
 
     activeZoneIdRef() = targetZone;
+    // Persist it too -- see kActiveZoneStringKey's own doc comment above.
+    // activeZoneIdRef() (not the `targetZone` parameter) is the value
+    // handed to queueStringSet(), since it's the function-static string
+    // whose storage genuinely outlives this frame -- the same lifetime
+    // reasoning every other queue*() helper in this file already relies on
+    // for its own arguments.
+    queueStringSet(kActiveZoneStringKey, activeZoneIdRef().c_str());
     cooldownFrames() = kPostTransitionCooldownFrames;
     return true;
 }
@@ -1028,6 +1109,8 @@ void fireWeatherParticles(BeTileGridFrame* frame) {
 // the full mechanism.
 void handleZoneTransition(BeTileGridFrame* frame) {
     using namespace zonetransition;
+
+    resumeActiveZoneFromSaveIfNeeded(frame); // first frame only -- see its own doc comment above
 
     if (cooldownFrames() > 0) {
         --cooldownFrames();
@@ -2765,6 +2848,7 @@ void updateGrimstoneRuntime(BeTileGridFrame* frame) {
     timerStartBuffer().clear();
     hitboxBuffer().clear();
     objectiveUpdateBuffer().clear();
+    stringUpdateBuffer().clear();
     stringScratch().clear();
 
     syncHitpointsMaxHealth(frame);
@@ -2822,5 +2906,9 @@ void updateGrimstoneRuntime(BeTileGridFrame* frame) {
     if (!objectiveUpdateBuffer().empty()) {
         frame->requestedObjectiveUpdates = objectiveUpdateBuffer().data();
         frame->requestedObjectiveUpdateCount = static_cast<int>(objectiveUpdateBuffer().size());
+    }
+    if (!stringUpdateBuffer().empty()) {
+        frame->requestedStringUpdates = stringUpdateBuffer().data();
+        frame->requestedStringUpdateCount = static_cast<int>(stringUpdateBuffer().size());
     }
 }
