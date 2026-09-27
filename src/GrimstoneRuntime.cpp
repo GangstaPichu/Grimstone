@@ -117,6 +117,12 @@ void queueItemGrant(const char* itemId, int count) {
     itemUpdateBuffer().push_back(delta);
 }
 
+// Forward-declared here (defined below, near the other Aldermast/bank
+// dialogue write-back helpers) so the day/night + weather section --
+// which sits earlier in the file, right after zone transitions -- can
+// use it too instead of duplicating a second "SET a flag" helper.
+void queueFlagSet(const char* key, double value);
+
 // ======= More per-frame write-back scratch buffers (Fishing/Cooking/
 // Smithing/Farming) =======
 // Same lifetime rule as flagUpdateBuffer()/itemUpdateBuffer() above.
@@ -732,6 +738,289 @@ bool requestZoneSwap(BeTileGridFrame* frame, const std::string& targetZone) {
 // requests it.
 const std::string& activeZoneId() { return zonetransition::activeZoneIdRef(); }
 
+// ======= Day/Night cycle + Weather =======
+// Transcribed from js/world.js's day/night tracking (lines 1-96) and
+// js/effects.js's Weather module (lines 608-888). Both are pure
+// HOST-side-flag state, following this file's own "everything
+// persistent is a flag" convention (syncHitpointsMaxHealth()'s doc
+// comment, updateStockMarket()'s own real-time accumulator) -- there is
+// no persistent-state struct anywhere else in this plugin, and this
+// doesn't add one either.
+namespace daynight {
+
+// js/world.js line 5: "DAY_DURATION_MS = 15*60*1000" -- 15 REAL minutes
+// per in-game day. BeTileGridFrame::dt is real seconds (not ms), so this
+// is that same constant in seconds, matching tickDayNight()'s own
+// `dt = (now - lastFrameTime) / DAY_DURATION_MS` division exactly, just
+// with frame->dt standing in for a wall-clock delta the same way
+// updateStockMarket()'s own doc comment already establishes for a 2D
+// plugin with no wall-clock of its own.
+constexpr double kDayDurationSeconds = 15.0 * 60.0;
+// js/world.js line 6: `let gameTime = 0.22; // start just after dawn`.
+constexpr double kDefaultGameTime = 0.22;
+constexpr double kDefaultGameDay = 1.0;
+
+constexpr const char* kTimeFlag = "daynight_game_time";
+constexpr const char* kDayFlag = "daynight_game_day";
+
+// js/activities.js's startFish() (lines 457-459) -- the ONLY place in
+// the JS that actually classifies a gameTime value as day/night for
+// gameplay purposes (getPeriodLabel()'s own dawn/dusk boundaries, lines
+// 58-64, are a display-only distinction fishing never reads). Both
+// windows deliberately leave a "neither" band (0.2-0.25, 0.75-0.8,
+// matching dawn/dusk in the JS's own comment) where a fish that
+// requires EITHER 'day' or 'night' bites at neither -- a real JS quirk
+// (checked, not smoothed over): timeOfDay:'day'/'night' fish already
+// have a real minLvl/rarity gate too, so this narrow non-biting window
+// is exactly as intentional there as it is here.
+bool isNight(double t) { return t > 0.8 || t < 0.2; }
+bool isDay(double t) { return t >= 0.25 && t <= 0.75; }
+
+double currentGameTime(const BeTileGridFrame* frame) { return readFlag(frame, kTimeFlag, kDefaultGameTime); }
+double currentGameDay(const BeTileGridFrame* frame) { return readFlag(frame, kDayFlag, kDefaultGameDay); }
+
+// js/world.js's tickDayNight() (lines 23-37): advance gameTime by
+// dt/DAY_DURATION_MS, wrapping at 1.0, and bump gameDay on a midnight
+// rollover (prev near 1.0, new value wrapped back near 0.0). Sleep's own
+// fast-forward (sleepUntilMorning(), lines 68-96) isn't ported --
+// there's no sleep/bed-interact activity anywhere else in this port
+// either (checked: no "sleep"/isSleeping-shaped flag exists), so the
+// clock always advances at the plain real-time rate, never
+// fast-forwarded.
+void updateDayNightCycle(BeTileGridFrame* frame) {
+    const double prev = currentGameTime(frame);
+    double day = currentGameDay(frame);
+
+    double next = prev + static_cast<double>(frame->dt) / kDayDurationSeconds;
+    next = next - std::floor(next); // wrap to [0,1), matching JS's `% 1.0`
+
+    if (prev > 0.95 && next < 0.05) day += 1.0;
+
+    queueFlagSet(kTimeFlag, next);
+    queueFlagSet(kDayFlag, day);
+}
+
+// ======= Weather =======
+// js/effects.js's Weather module constants (line 611).
+enum WeatherKind { kClear = 0, kRain = 1, kHeavyRain = 2, kFog = 3, kSnow = 4, kSnowstorm = 5 };
+
+constexpr const char* kCurrentFlag = "weather_current";
+constexpr const char* kTargetFlag = "weather_target";
+constexpr const char* kAlphaFlag = "weather_alpha";
+constexpr const char* kLastDayFlag = "weather_last_day";
+
+// js/effects.js's own seededRand() (lines 625-631) -- a plain xorshift32.
+// JS's `s >> 7` is a SIGNED 32-bit right shift (every JS bitwise op
+// ToInt32-converts its operand first) while `<<`/the final `>>> 0` are
+// unsigned -- reproduced bit-for-bit via an explicit int32_t reinterpret
+// for exactly that one operation, everything else in uint32_t.
+double seededRand(uint32_t seed) {
+    uint32_t s = seed;
+    s = s ^ (s << 13);
+    const int32_t signedS = static_cast<int32_t>(s);
+    s = static_cast<uint32_t>(signedS ^ (signedS >> 7));
+    s = s ^ (s << 17);
+    return static_cast<double>(s) / 4294967295.0;
+}
+
+// There is still no persisted per-playthrough world seed anywhere in
+// this port (zonetransition::kPlaceholderWorldSeed's own doc comment
+// names the same gap) -- reusing that exact constant here, rather than
+// inventing a second placeholder, matches js's own `worldSeed` global
+// this formula reads (js/effects.js line 634).
+constexpr uint32_t kPlaceholderWorldSeed = zonetransition::kPlaceholderWorldSeed;
+
+// js/effects.js's own isIndoor test inside Weather.tick() (lines 681-683):
+// `currentMap.isInterior && (zoneName.includes('CRYPT') ||
+// zoneName.includes('CATACOMB') || zoneName.includes('INN') ||
+// zoneName.includes('IRON DEPTHS'))`. This engine's 2D TileGrid has no
+// `isInterior` field at all (checked TileGrid.h -- no such member), so
+// there is no ABI-level way to ask "is the CURRENT zone an interior."
+// The real, judgement-call substitute: the exact zone slugs this port's
+// own zoneSlugToTileGrid() (GrimstoneGame.cpp) builds as a fully-interior
+// space -- forsaken_library/hidden_vault/cultist_catacombs (dungeon-shaped,
+// matching js's own CRYPT/CATACOMB keyword test) plus forsaken_chapel,
+// which buildForsakenChapelLevel()'s own doc comment says the JS flags
+// `isInterior:true` even though it "reads as outdoor" -- the one
+// explicit exception this file's own comments already document, so it's
+// used here rather than re-guessed.
+bool isIndoorZone(const std::string& slug) {
+    return slug == "forsaken_library" || slug == "hidden_vault" || slug == "cultist_catacombs" ||
+           slug == "forsaken_chapel";
+}
+
+// js/effects.js's pickWeatherForDay() (lines 633-663), transcribed
+// branch-for-branch. The JS keys this off `currentMap.name` (a display
+// string, e.g. "STORMCRAG REACH") -- this port's own activeZoneId()
+// only ever returns a SLUG ("stormcrag_reach"), so each JS zone-name
+// branch below is matched by the slug this port's own
+// zoneSlugToTileGrid() builds for that same zone (checked directly
+// against GrimstoneGame.cpp's own kZoneSlugs/zoneSlugToTileGrid(), not
+// guessed from the name alone). js's own `r2` local (line 636) is
+// computed but never actually read anywhere in pickWeatherForDay() --
+// confirmed by reading the whole function -- so it's dropped here
+// rather than reproducing dead code.
+int pickWeatherForDay(double day, const std::string& zoneSlug) {
+    const uint32_t seed = kPlaceholderWorldSeed * 31u + static_cast<uint32_t>(day) * 1337u;
+    const double r = seededRand(seed);
+
+    if (zoneSlug == "stormcrag_reach" || zoneSlug == "aetheric_spire") {
+        if (r < 0.25) return kSnowstorm;
+        if (r < 0.55) return kSnow;
+        if (r < 0.70) return kHeavyRain;
+        return kClear;
+    }
+    if (zoneSlug == "whisperwood") {
+        if (r < 0.30) return kFog;
+        if (r < 0.50) return kRain;
+        if (r < 0.60) return kHeavyRain;
+        return kClear;
+    }
+    if (zoneSlug == "cursed_marshes" || zoneSlug == "obsidian_depths") {
+        if (r < 0.20) return kFog;
+        if (r < 0.45) return kHeavyRain;
+        if (r < 0.60) return kRain;
+        return kClear;
+    }
+    // Default zones (ashenveil, ashen_moor, iron_peaks, greenfield_pastures,
+    // ashgrove_hollow, western_pass, homestead, and any dungeon-ish slug
+    // not already caught by isIndoorZone() above) -- js's own comment,
+    // "Ashenveil, Ashwood Vale, Iron Peaks, dungeons".
+    if (r < 0.18) return kHeavyRain;
+    if (r < 0.40) return kRain;
+    return kClear;
+}
+
+// js/effects.js's Weather.tick() (lines 678-702): recompute the target
+// once per in-game DAY (or on a zone change, via weather_last_day being
+// reset to -1 below), then blend `weatherAlpha` toward it by a fixed
+// +0.008 every tick -- js's own tick() runs once per requestAnimationFrame,
+// exactly like updateGrimstoneRuntime() runs once per engine frame, so
+// this increments once per call with no dt scaling, matching the JS's
+// own per-RENDER-FRAME (not per-real-second) blend rate exactly.
+void updateWeather(BeTileGridFrame* frame) {
+    const double day = currentGameDay(frame);
+    const std::string& zoneSlug = activeZoneId();
+    const bool isIndoor = isIndoorZone(zoneSlug);
+
+    double current = readFlag(frame, kCurrentFlag, static_cast<double>(kClear));
+    double target = readFlag(frame, kTargetFlag, static_cast<double>(kClear));
+    double alpha = readFlag(frame, kAlphaFlag, 0.0);
+    const double lastDay = readFlag(frame, kLastDayFlag, -1.0);
+
+    if (day != lastDay) {
+        target = isIndoor ? static_cast<double>(kClear) : static_cast<double>(pickWeatherForDay(day, zoneSlug));
+        alpha = 0.0;
+    }
+
+    if (current != target) {
+        alpha += 0.008;
+        if (alpha >= 1.0) {
+            current = target;
+            alpha = 1.0;
+        }
+    } else {
+        alpha = 1.0;
+    }
+
+    if (isIndoor) {
+        current = kClear;
+        alpha = 0.0;
+    }
+
+    queueFlagSet(kCurrentFlag, current);
+    queueFlagSet(kTargetFlag, target);
+    queueFlagSet(kAlphaFlag, alpha);
+    queueFlagSet(kLastDayFlag, day);
+}
+
+int currentWeather(const BeTileGridFrame* frame) {
+    return static_cast<int>(readFlag(frame, kCurrentFlag, static_cast<double>(kClear)));
+}
+
+// js/effects.js's Weather.forceChange() (lines 868-871) -- called on a
+// zone transition so the newly-entered zone's own weather is
+// (re)computed against ITS zone name/isIndoor state on the very next
+// updateWeather() call, instead of waiting for the next in-game day.
+void forceChange() { queueFlagSet(kLastDayFlag, -1.0); }
+
+// ======= Weather particle bursts =======
+// GameModuleApi.h's requestedParticleEffect/X/Y (v9, widened v18->v19
+// with requestedParticleDirX/Y/Scale/ColorR/G/B/A) fires exactly ONE
+// particle burst per onTileGridUpdate() call it's set on -- confirmed by
+// reading TileGridHostRunner.cpp's own onTileGridUpdate consumer (grep
+// for "requestedParticleEffect"): each call that fires it constructs a
+// brand-new ParticleEmitterInstance from content/particle-effects.json's
+// named recipe (BeTileGridFrame's own doc comment, "GameModuleApi.h") and
+// appends it to the host's particleBursts list, which is exactly the
+// mechanism js/effects.js's Weather.draw() approximates continuously
+// with a persistent, host-owned particle pool. There is NO persistent
+// "ambient weather density" primitive on this ABI (checked: no
+// requestedAmbientParticle/requestedWeatherDensity field of any shape
+// exists) -- so continuous-looking weather is hand-driven here by firing
+// one fresh burst EVERY frame the weather is active, each one scattered
+// around the player's own position (the only camera-relative point this
+// ABI's read side exposes -- see handleZoneTransition()'s own doc
+// comment on the missing viewport-bounds read for the matching gap on
+// that side) with content/particle-effects.json's own Box emission shape
+// spreading each burst across a wide band so consecutive bursts overlap
+// into a continuous-reading effect rather than visible discrete puffs.
+constexpr const char* kRainEffect = "grimstone_rain";
+constexpr const char* kHeavyRainEffect = "grimstone_heavy_rain";
+constexpr const char* kSnowEffect = "grimstone_snow";
+constexpr const char* kSnowstormEffect = "grimstone_snowstorm";
+constexpr const char* kFogEffect = "grimstone_fog";
+
+const char* effectNameForWeather(int weather) {
+    switch (weather) {
+        case kRain:
+            return kRainEffect;
+        case kHeavyRain:
+            return kHeavyRainEffect;
+        case kFog:
+            return kFogEffect;
+        case kSnow:
+            return kSnowEffect;
+        case kSnowstorm:
+            return kSnowstormEffect;
+        default:
+            return nullptr;
+    }
+}
+
+void fireWeatherParticles(BeTileGridFrame* frame) {
+    const int weather = currentWeather(frame);
+    const char* effectName = effectNameForWeather(weather);
+    if (effectName == nullptr) return; // kClear, or isIndoorZone() already forced kClear this frame
+
+    // Spread bursts around the player rather than always at the exact
+    // same point -- frame->randomUint32 (the same seeded stream every
+    // other weighted roll in this file already draws from) stands in
+    // for js/effects.js's own Math.random()-seeded particle scatter.
+    // ~6 world units either side of the player, well past this file's
+    // own kMeleeRangeWorldUnits/kPortalTriggerRadiusWorld small radii --
+    // there is no viewport-bounds read on this ABI to size this exactly
+    // to "what's on screen" (see this namespace's own top-of-section
+    // doc comment), so this is a documented approximation, not a
+    // measured one.
+    constexpr float kScatterRadius = 6.0f;
+    float offsetX = 0.0f;
+    float offsetY = -4.0f; // bias upward/"north" so a fresh burst has room to fall/drift into view
+    if (frame->randomUint32 != nullptr) {
+        constexpr double kUint32Max = 4294967295.0;
+        const double unitX = static_cast<double>(frame->randomUint32()) / kUint32Max;
+        const double unitY = static_cast<double>(frame->randomUint32()) / kUint32Max;
+        offsetX = static_cast<float>((unitX - 0.5) * 2.0 * kScatterRadius);
+        offsetY = static_cast<float>(-3.0 - unitY * 3.0);
+    }
+
+    frame->requestedParticleEffect = effectName;
+    frame->requestedParticleX = frame->playerWorldX + offsetX;
+    frame->requestedParticleY = frame->playerWorldY + offsetY;
+}
+
+} // namespace daynight
+
 // Walks the player's own live ABI position against the CURRENT zone's real
 // (cached, C++-side) portal markers every frame, and fires a real
 // requestedLevelPath swap the moment one matches -- see the
@@ -762,6 +1051,13 @@ void handleZoneTransition(BeTileGridFrame* frame) {
         if (requestZoneSwap(frame, targetZone)) {
             toastScratch() = m.name.empty() ? ("Entering " + targetZone + "...") : (m.name + "...");
             frame->requestedToastText = toastScratch().c_str();
+            // js/effects.js's Weather.forceChange() is called on every
+            // zone entry (js/zones.js's own enterZone()) so the new
+            // zone's weather is recomputed against ITS OWN name/isIndoor
+            // state right away rather than carrying over whatever the
+            // PREVIOUS zone happened to be showing until the next
+            // in-game day rolls over.
+            daynight::forceChange();
         }
         return; // at most one transition per frame
     }
@@ -773,14 +1069,20 @@ void handleZoneTransition(BeTileGridFrame* frame) {
 // tackle-menu wiring (lines 482-486, openFishingMenu() at
 // js/activities.js line 430).
 //
-// ONE remaining real, documented gap versus the JS, not a simplification
-// this port can paper over: `timeOfDay`/`weather` columns are omitted --
-// per PORTING_PLAN.md, no day/night or weather state is tracked anywhere
-// in this port yet, so every fish is treated as always in season (the
-// JS's own `timeOfDay:'any'`/no `weather` key default, applied
-// unconditionally rather than selectively). Everything else -- minLvl,
-// tackle, zones, xp, rarity -- is real, transcribed from the JS's own
-// numbers.
+// `timeOfDay`/`weather` columns USED to be a real, documented gap ("no
+// day/night or weather state is tracked anywhere in this port," treating
+// every fish as always in season) -- CLOSED now that the
+// "======= Day/Night cycle + Weather =======" section above tracks both
+// as real host-flag state. `timeOfDay` transcribes js's own
+// 'day'/'night'/unset-means-any column (js/activities.js lines 111-138)
+// via daynight::isDay()/isNight() on the SAME gameTime flag the cycle
+// above advances; `weatherMask` transcribes js's own `weather:[...]`
+// array (same lines) as a bitmask over daynight::WeatherKind, 0 meaning
+// "no weather key in the JS, i.e. any weather" -- matching
+// `!f.weather || f.weather.includes(currentWeatherType)`'s own OR-with-
+// unset shape (js/activities.js line 471) exactly. Everything else --
+// minLvl, tackle, zones, xp, rarity -- is real, transcribed from the
+// JS's own numbers, unchanged from before.
 //
 // FISH_TABLE's own `zones` column USED to be a second real gap (there was
 // no way to read which zone/level is currently active from
@@ -808,6 +1110,10 @@ enum FishZone {
     kZoneAllFour = kZoneAshenveil | kZoneAshenMoor | kZoneIronPeaks | kZoneCursedMarshes,
 };
 
+// js's own `timeOfDay` column values (js/activities.js's own doc comment,
+// line 96: "'any'|'day'|'night' (default 'any')").
+enum FishTimeOfDay { kFishTimeAny = 0, kFishTimeDay = 1, kFishTimeNight = 2 };
+
 struct FishEntry {
     const char* rawItemId;
     const char* cookedItemId; // js/activities.js's own COOKED map (line 141)
@@ -816,6 +1122,8 @@ struct FishEntry {
     int zoneMask; // FishZone bits -- js/activities.js FISH_TABLE's own "zones" column
     double xp;
     double rarity;
+    int timeOfDay = kFishTimeAny;    // js's own `timeOfDay` column
+    int weatherMask = 0;             // bitmask over daynight::WeatherKind; 0 = js's own unset "any weather"
 };
 
 constexpr FishEntry kFishTable[] = {
@@ -829,26 +1137,34 @@ constexpr FishEntry kFishTable[] = {
     {"raw_swordfish", "cooked_swordfish", 35, kTackleHarpoon, kZoneIronPeaks | kZoneCursedMarshes, 155.0, 0.30},
     {"raw_shark", "cooked_shark", 50, kTackleHarpoon, kZoneCursedMarshes, 220.0, 0.15},
     {"raw_leviathan", "cooked_leviathan", 60, kTackleHarpoon, kZoneCursedMarshes, 300.0, 0.08},
-    // Day-only fish -- lines 111-114 (timeOfDay/weather gap, see above)
+    // Day-only fish -- lines 111-114. weather:[0] / weather:[0,1] ->
+    // W_CLEAR / W_CLEAR|W_RAIN, matching this file's own header comment's
+    // W_* bit values.
     {"raw_sunscale", "cooked_sunscale", 5, kTackleBait | kTackleFly, kZoneAshenveil | kZoneAshenMoor | kZoneIronPeaks,
-     45.0, 0.70},
-    {"raw_gilded_carp", "cooked_gilded_carp", 22, kTackleFly, kZoneAllFour, 100.0, 0.40},
+     45.0, 0.70, kFishTimeDay, 1 << daynight::kClear},
+    {"raw_gilded_carp", "cooked_gilded_carp", 22, kTackleFly, kZoneAllFour, 100.0, 0.40, kFishTimeDay,
+     (1 << daynight::kClear) | (1 << daynight::kRain)},
     // Night-only fish -- lines 117-122
     {"raw_moonshadow", "cooked_moonshadow", 25, kTackleFly, kZoneAshenMoor | kZoneIronPeaks | kZoneCursedMarshes,
-     130.0, 0.35},
-    {"raw_ghostfin", "cooked_ghostfin", 40, kTackleBait, kZoneIronPeaks | kZoneCursedMarshes, 175.0, 0.20},
-    {"raw_shadowcrawler", "cooked_shadowcrawler", 55, kTackleHarpoon, kZoneCursedMarshes, 260.0, 0.10},
+     130.0, 0.35, kFishTimeNight, (1 << daynight::kClear) | (1 << daynight::kFog)},
+    {"raw_ghostfin", "cooked_ghostfin", 40, kTackleBait, kZoneIronPeaks | kZoneCursedMarshes, 175.0, 0.20,
+     kFishTimeNight, (1 << daynight::kClear) | (1 << daynight::kRain) | (1 << daynight::kHeavyRain)},
+    {"raw_shadowcrawler", "cooked_shadowcrawler", 55, kTackleHarpoon, kZoneCursedMarshes, 260.0, 0.10, kFishTimeNight},
     // Rain fish -- lines 125-130
     {"raw_stormcatch", "cooked_stormcatch", 18, kTackleBait | kTackleFly,
-     kZoneAshenveil | kZoneAshenMoor | kZoneIronPeaks, 95.0, 0.45},
-    {"raw_raindrop_dace", "cooked_raindrop_dace", 8, kTackleBait, kZoneAllFour, 60.0, 0.65},
-    {"raw_torrent_fin", "cooked_torrent_fin", 45, kTackleHarpoon, kZoneIronPeaks | kZoneCursedMarshes, 195.0, 0.18},
+     kZoneAshenveil | kZoneAshenMoor | kZoneIronPeaks, 95.0, 0.45, kFishTimeAny,
+     (1 << daynight::kRain) | (1 << daynight::kHeavyRain)},
+    {"raw_raindrop_dace", "cooked_raindrop_dace", 8, kTackleBait, kZoneAllFour, 60.0, 0.65, kFishTimeAny,
+     (1 << daynight::kRain) | (1 << daynight::kHeavyRain)},
+    {"raw_torrent_fin", "cooked_torrent_fin", 45, kTackleHarpoon, kZoneIronPeaks | kZoneCursedMarshes, 195.0, 0.18,
+     kFishTimeAny, 1 << daynight::kHeavyRain},
     // Fog fish -- lines 133-138
     {"raw_mistwalker", "cooked_mistwalker", 12, kTackleFly, kZoneAshenveil | kZoneAshenMoor | kZoneIronPeaks, 80.0,
-     0.50},
+     0.50, kFishTimeAny, 1 << daynight::kFog},
     {"raw_phantom_crab", "cooked_phantom_crab", 30, kTackleBait, kZoneAshenMoor | kZoneIronPeaks | kZoneCursedMarshes,
-     145.0, 0.28},
-    {"raw_veilfish", "cooked_veilfish", 50, kTackleHarpoon | kTackleFly, kZoneCursedMarshes, 240.0, 0.12},
+     145.0, 0.28, kFishTimeAny, 1 << daynight::kFog},
+    {"raw_veilfish", "cooked_veilfish", 50, kTackleHarpoon | kTackleFly, kZoneCursedMarshes, 240.0, 0.12,
+     kFishTimeNight, 1 << daynight::kFog},
 };
 constexpr int kFishTableSize = sizeof(kFishTable) / sizeof(kFishTable[0]);
 
@@ -891,9 +1207,18 @@ void handleFishing(BeTileGridFrame* frame) {
 
     const int fishLevel = readSkillLevel(frame, GrimstoneSkill::Fishing);
     const int zoneMask = currentFishZoneMask();
+    // js/activities.js's startFish() own time-of-day classification
+    // (lines 457-459) -- reused via daynight::isNight()/isDay() rather
+    // than reimplemented, and the SAME gameTime flag
+    // daynight::updateDayNightCycle() advances every frame above.
+    const double gameTime = daynight::currentGameTime(frame);
+    const bool isNight = daynight::isNight(gameTime);
+    const bool isDay = daynight::isDay(gameTime);
+    const int weatherNow = daynight::currentWeather(frame);
 
-    // Eligible = level + tackle + zone -- see this function's own doc
-    // comment for the remaining time-of-day/weather gap.
+    // Eligible = level + tackle + zone + time-of-day + weather -- both
+    // gaps this function's own doc comment above used to name are now
+    // real.
     int eligibleIdx[kFishTableSize];
     int eligibleCount = 0;
     double totalWeight = 0.0;
@@ -902,6 +1227,9 @@ void handleFishing(BeTileGridFrame* frame) {
         if (fishLevel < f.minLevel) continue;
         if ((f.tackleMask & tackleMask) == 0) continue;
         if ((f.zoneMask & zoneMask) == 0) continue;
+        if (f.timeOfDay == kFishTimeNight && !isNight) continue;
+        if (f.timeOfDay == kFishTimeDay && !isDay) continue;
+        if (f.weatherMask != 0 && ((f.weatherMask >> weatherNow) & 1) == 0) continue;
         eligibleIdx[eligibleCount++] = i;
         totalWeight += f.rarity * (1.0 + fishLevel * 0.01); // js startFish() line 489
     }
@@ -2289,6 +2617,7 @@ void runDevConsoleCommand(BeTileGridFrame* frame, const std::string& raw) {
         }
         if (zonetransition::requestZoneSwap(frame, kZoneSlugs[idx])) {
             devConsoleToast(frame, std::string("Teleporting to ") + kZoneNames[idx] + "...");
+            daynight::forceChange(); // same "recompute weather for the new zone right away" as a real portal
         }
         return;
     }
@@ -2440,6 +2769,9 @@ void updateGrimstoneRuntime(BeTileGridFrame* frame) {
 
     syncHitpointsMaxHealth(frame);
     handleZoneTransition(frame); // before every other system -- see its own doc comment above
+    daynight::updateDayNightCycle(frame); // per-frame, not gated on interactPressed
+    daynight::updateWeather(frame);       // per-frame, not gated on interactPressed -- reads activeZoneId(), so after handleZoneTransition()
+    daynight::fireWeatherParticles(frame); // per-frame, not gated on interactPressed
     handleMiningAndWoodcutting(frame);
     handleCombatAttack(frame);
     handleCombatDeathRewards(frame); // per-frame, not gated on interactPressed
