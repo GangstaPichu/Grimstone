@@ -331,5 +331,328 @@
         ]
       }
     ]
+  },
+  {
+    "name": "grimward_greeting",
+    "startNodeId": "greet",
+    "nodes": [
+      {
+        "id": "greet",
+        "speaker": "Grimward",
+        "text": "If you've got ore, I can smelt it. If you want gear, I've got stock. Just don't touch the cooling rack.",
+        "choices": [
+          { "text": "Who are you?", "targetNodeId": "intro" },
+          { "text": "Just passing through." }
+        ]
+      },
+      {
+        "id": "intro",
+        "speaker": "Grimward",
+        "text": "Grimward. A resident of Ashenveil.",
+        "choices": [
+          { "text": "Good to know." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "bram_greeting",
+    "startNodeId": "greet",
+    "nodes": [
+      {
+        "id": "greet",
+        "speaker": "Bram",
+        "text": "Welcome to the Tarnished Flagon! Best -- and only -- inn in Ashenveil.",
+        "choices": [
+          { "text": "Who are you?", "targetNodeId": "intro" },
+          { "text": "How's business?", "targetNodeId": "business" },
+          { "text": "What's on the menu?", "targetNodeId": "bram_menu" },
+          { "text": "Farewell." }
+        ]
+      },
+      {
+        "id": "intro",
+        "speaker": "Bram",
+        "text": "Bram Hollowtap. He's run the Tarnished Flagon for twenty years. He knows every rumour that passes through Ashenveil, and shares none of them for free.",
+        "choices": [
+          { "text": "Any news passing through?", "targetNodeId": "news" },
+          { "text": "Goodbye." }
+        ]
+      },
+      {
+        "id": "business",
+        "speaker": "Bram",
+        "text": "Can't complain. Adventurers like yourself keep the coin flowing. Lost three regulars last month to the marshes though. Pour one out, as they say.",
+        "choices": [
+          { "text": "What's your best brew?", "targetNodeId": "brew" },
+          { "text": "Goodbye." }
+        ]
+      },
+      {
+        "id": "news",
+        "speaker": "Bram",
+        "text": "A merchant came through yesterday. Said the Obsidian Depths are moving -- literally. The tunnels shift overnight. Strange magic, that.",
+        "choices": [
+          { "text": "Goodbye." }
+        ]
+      },
+      {
+        "id": "brew",
+        "speaker": "Bram",
+        "text": "The Ashenveil Mead. Local honey, aged two seasons in oak barrels. Costs a bit more, but nothing else like it in the region. Worth every coin.",
+        "choices": [
+          { "text": "Tell me about the rooms.", "targetNodeId": "rooms" },
+          { "text": "Goodbye." }
+        ]
+      },
+      {
+        "id": "rooms",
+        "speaker": "Bram",
+        "text": "Two rooms upstairs, straw beds but clean linen. Sleep on either one -- no charge for resting. My policy: a rested adventurer is a living one.",
+        "choices": [
+          { "text": "Goodbye." }
+        ]
+      },
+      {
+        "id": "bram_menu",
+        "speaker": "Bram",
+        "text": "Here's what I've got on tap tonight.",
+        "choices": [
+          { "text": "Pale Ale -- 4g", "targetNodeId": "pale_ale_buy_result" },
+          { "text": "Ashenveil Mead -- 10g", "targetNodeId": "ashenveil_mead_buy_result" },
+          { "text": "Inn Stew -- 8g", "targetNodeId": "inn_stew_buy_result" },
+          { "text": "Back to Bram", "targetNodeId": "greet" }
+        ]
+      },
+      {
+        "id": "pale_ale_buy_result",
+        "speaker": "Bram",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "bram_menu" }
+        ]
+      },
+      {
+        "id": "ashenveil_mead_buy_result",
+        "speaker": "Bram",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "bram_menu" }
+        ]
+      },
+      {
+        "id": "inn_stew_buy_result",
+        "speaker": "Bram",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "bram_menu" }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "oswin_greeting",
+    "startNodeId": "greet",
+    "nodes": [
+      {
+        "id": "greet",
+        "speaker": "Oswin",
+        "text": "Been stuck here three days waiting on a caravan that hasn't shown. Bram's ale is good at least. Too good, maybe.",
+        "choices": [
+          { "text": "Who are you?", "targetNodeId": "intro" },
+          { "text": "Tell me about Ashenveil.", "targetNodeId": "ashenveil" },
+          { "text": "How are things?", "targetNodeId": "things" },
+          { "text": "Farewell." }
+        ]
+      },
+      {
+        "id": "intro",
+        "speaker": "Oswin",
+        "text": "Oswin. He travels between settlements buying and selling whatever fits in his pack. He's been waiting on a caravan for three days. He looks like he regrets stopping here.",
+        "choices": [
+          { "text": "Goodbye." }
+        ]
+      },
+      {
+        "id": "ashenveil",
+        "speaker": "Oswin",
+        "text": "It's a rough place, but it's home. The market runs every day, the inn's warm, and the Grimward family keeps the forge burning. That's enough for most of us.",
+        "choices": [
+          { "text": "Goodbye." }
+        ]
+      },
+      {
+        "id": "things",
+        "speaker": "Oswin",
+        "text": "Quiet. Too quiet. The caravans from the west haven't come in two weeks. Something's blocking the pass, but nobody dares find out what.",
+        "choices": [
+          { "text": "Goodbye." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "thessaly_greeting",
+    "startNodeId": "greet",
+    "nodes": [
+      {
+        "id": "greet",
+        "speaker": "Thessaly",
+        "text": "I came to Ashenveil to find someone. Asked around. Nobody talks much. Maybe you know something -- person in a dark cloak, never shows their face?",
+        "choices": [
+          { "text": "Who are you?", "targetNodeId": "intro" },
+          { "text": "Tell me about Ashenveil.", "targetNodeId": "ashenveil" },
+          { "text": "How are things?", "targetNodeId": "things" },
+          { "text": "Farewell." }
+        ]
+      },
+      {
+        "id": "intro",
+        "speaker": "Thessaly",
+        "text": "Thessaly. She arrived in Ashenveil alone and hasn't said where from. She's been asking questions around town -- quietly. She seems to know more than she lets on.",
+        "choices": [
+          { "text": "Goodbye." }
+        ]
+      },
+      {
+        "id": "ashenveil",
+        "speaker": "Thessaly",
+        "text": "It's a rough place, but it's home. The market runs every day, the inn's warm, and the Grimward family keeps the forge burning. That's enough for most of us.",
+        "choices": [
+          { "text": "Goodbye." }
+        ]
+      },
+      {
+        "id": "things",
+        "speaker": "Thessaly",
+        "text": "Quiet. Too quiet. The caravans from the west haven't come in two weeks. Something's blocking the pass, but nobody dares find out what.",
+        "choices": [
+          { "text": "Goodbye." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "dorin_greeting",
+    "startNodeId": "greet",
+    "nodes": [
+      {
+        "id": "greet",
+        "speaker": "Dorin",
+        "text": "Ahh, a customer! Come, come -- finest wares in the region.",
+        "choices": [
+          { "text": "Who are you?", "targetNodeId": "intro" },
+          { "text": "Where do you get your stock?", "targetNodeId": "stock" },
+          { "text": "Let's trade.", "targetNodeId": "dorin_trade_menu" },
+          { "text": "Farewell." }
+        ]
+      },
+      {
+        "id": "intro",
+        "speaker": "Dorin",
+        "text": "Dorin. He's been trading these roads since before Ashenveil had proper walls. He knows where everything comes from -- and where it disappears to.",
+        "choices": [
+          { "text": "Any rare items?", "targetNodeId": "rare" },
+          { "text": "Goodbye." }
+        ]
+      },
+      {
+        "id": "stock",
+        "speaker": "Dorin",
+        "text": "I travel the zones -- dangerous work, but the margins are good. Found a chest of goblin-looted gear last week. Cleaned it up, marked it up, here we are.",
+        "choices": [
+          { "text": "Any rare items?", "targetNodeId": "rare" },
+          { "text": "Goodbye." }
+        ]
+      },
+      {
+        "id": "rare",
+        "speaker": "Dorin",
+        "text": "Not today. But if you bring me interesting materials -- ores, rare hides -- I'll give you a fair price. Better than leaving them to rot in your pack.",
+        "choices": [
+          { "text": "Goodbye." }
+        ]
+      },
+      {
+        "id": "dorin_trade_menu",
+        "speaker": "Dorin",
+        "text": "Buying or selling?",
+        "choices": [
+          { "text": "I'd like to buy.", "targetNodeId": "dorin_buy_menu" },
+          { "text": "I'd like to sell.", "targetNodeId": "dorin_sell_menu" },
+          { "text": "Never mind." }
+        ]
+      },
+      {
+        "id": "dorin_buy_menu",
+        "speaker": "Dorin",
+        "text": "Have a look at what I've got.",
+        "choices": [
+          { "text": "Bronze Sword -- 40g", "targetNodeId": "bronze_sword_buy_result" },
+          { "text": "Cooked Salmon -- 20g", "targetNodeId": "cooked_salmon_buy_result" },
+          { "text": "Hoe -- 35g", "targetNodeId": "hoe_buy_result" },
+          { "text": "Back to trading", "targetNodeId": "dorin_trade_menu" }
+        ]
+      },
+      {
+        "id": "bronze_sword_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu" }
+        ]
+      },
+      {
+        "id": "cooked_salmon_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu" }
+        ]
+      },
+      {
+        "id": "hoe_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu" }
+        ]
+      },
+      {
+        "id": "dorin_sell_menu",
+        "speaker": "Dorin",
+        "text": "What are you selling?",
+        "choices": [
+          { "text": "Goblin Hide -- 8g", "targetNodeId": "goblin_hide_sell_result" },
+          { "text": "Iron Ore -- 7g", "targetNodeId": "iron_ore_sell_result" },
+          { "text": "Oak Log -- 6g", "targetNodeId": "oak_log_sell_result" },
+          { "text": "Back to trading", "targetNodeId": "dorin_trade_menu" }
+        ]
+      },
+      {
+        "id": "goblin_hide_sell_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu" }
+        ]
+      },
+      {
+        "id": "iron_ore_sell_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu" }
+        ]
+      },
+      {
+        "id": "oak_log_sell_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu" }
+        ]
+      }
+    ]
   }
 ]

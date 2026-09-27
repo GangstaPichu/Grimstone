@@ -2421,6 +2421,306 @@ void overrideBankMenuLiveDialogueText(BeTileGridFrame* frame) {
     }
 }
 
+// ======= The five inert `npc_spawn` proof-of-concept NPCs (Grimward,
+// Bram, Oswin, Thessaly, Dorin) =======
+// Transcribed from js/npcs.js in full (NPC_DIALOGUE/NAMED_NPCS/
+// VILLAGER_RUMOURS/getDynamicGreet()/openDialogue()'s own nameLines table)
+// plus js/zones.js's NAMED_NPCS-position table (lines 2468-2495) that
+// assigns each of these a real name, and INNKEEPER_SHOP_CONFIG/
+// MERCHANT_SHOP_CONFIG (this file, lines 918-1113) for the two who carry
+// `hasTrade: true`. Same exact shape as playerNearAldermast()/
+// startAldermastDialogue()/applyAldermastDialogueSideEffects() and
+// playerNearWilla()/startBankDialogue()/applyBankDialogueSideEffects()
+// above: BeTileMarker has no name/id crossing the ABI (same doc comment),
+// so each NPC is matched by the EXACT world position its own
+// addNpcSpawnMarker() call in GrimstoneGame.cpp places it at (+0.5/+0.5
+// offset, that helper's own doc comment) -- checked against every other
+// addNpcSpawnMarker() call site; none of the five below collide with each
+// other, with Aldermast (13.5, 5.5), or with Willa (6.5, 3.5).
+//
+// **What's real vs. deferred, per NPC (see PORTING_PLAN.md's own
+// js/npcs.js row for the fuller writeup)**:
+// - **Grimward** (forge:5,11 in the JS): the JS NEVER gives him real
+//   authored dialogue -- his `tiles[5][11] = T.NPC_GUARD` placement
+//   (js/zones.js line 1441, "re-using guard tile for now, named below") means
+//   `openDialogue()` would actually show him the GUARD typeId's "Halt!
+//   State your business" pool, a placeholder-tile artifact, not authored
+//   Grimward content. That pool is deliberately NOT ported (porting a
+//   town guard's lines as a blacksmith's own dialogue would be inventing
+//   content, not porting it). What IS real and ported: his
+//   VILLAGER_RUMOURS line and the generic name-fallback blurb
+//   `openDialogue()`'s own `nameLines[npc.npcName] || "${npc.npcName}. A
+//   resident of Ashenveil."` produces for him (he has no `nameLines` entry).
+//   No `hasTrade` anywhere for him in the JS -- no smithing/trade content
+//   to port, so none is added here.
+// - **Bram** (innkeeper, `hasTrade: true`): his 4 real topic lines, his
+//   `nameLines.Bram` blurb, and a curated 3-of-10 subset of
+//   INNKEEPER_SHOP_CONFIG.buyStock (pale_ale/ashenveil_mead/inn_stew) --
+//   the remaining 7 real menu items are a real, deliberately deferred cut
+//   (documented, not silently dropped) to keep this pass's own dialogue-
+//   tree size manageable; every item actually offered is real JS content,
+//   not invented. His dynamic, quest-aware greeting (ashen_seal_returned)
+//   is ported since that flag is real, already-ported state
+//   (updateAldermastObjectives() above); his OTHER dynamic branches
+//   (mystery_key_given, weather/Grimtide) are deferred -- the mystery quest
+//   chain was never ported to this file (checked: no "mystery_" flag
+//   anywhere in this file) and weather/time-of-day gating on a greeting is
+//   real but lower-value scope this pass didn't reach.
+// - **Oswin**/**Thessaly** (villagers, no `hasTrade`): their real rumour
+//   line, `nameLines` blurb, and the 2 generic NPC_VILLAGER topic lines.
+//   Oswin's one dynamic (ashen_seal_returned) branch is ported for the
+//   same reason Bram's is; Thessaly's OWN dynamic branches all key off the
+//   unported mystery quest chain (mystery_met/mystery_key_given) or
+//   Grimtide-night time-of-day, so none of them are reachable here --
+//   deferred, not faked.
+// - **Dorin** (merchant, `hasTrade: true`, inside his own Trading Post
+//   interior): his 2 real topic lines, `nameLines.Dorin` blurb, dynamic
+//   ashen_seal_returned greeting, and a curated 3-buy/3-sell subset of
+//   MERCHANT_SHOP_CONFIG's buyStock/sellAccepts (60+ real entries total)
+//   -- same "curated, documented, real items only" cut as Bram's, and for
+//   the same reason (DialogueChoice.h's own `kMaxDialogueChoices = 4` --
+//   the full catalog would need many more paginated menu screens than this
+//   pass's own scope covers). Dorin's own "Old Bones, New Debts" quest
+//   (js/npcs.js lines 499-535, 686-734 -- a forged-ledger side quest
+//   reached by sneaking into his shop after dark, hinging on Bertram AND
+//   Vayne/Edwyn, neither of whose OWN quest-giving dialogue exists in this
+//   file) is a real, substantially bigger gap than a dialogue tree -- a
+//   whole second quest-giver's dialogue plus a night-only stealth/break-in
+//   mechanic this port has no primitive for -- and is explicitly deferred,
+//   not attempted here.
+//
+// **NPC "schedules" (movement between named locations by time of day):
+// checked, and there simply is none to port.** grep for "schedule" across
+// every js/*.js file (js/activities.js's own scheduleKeyMove()/
+// scheduleP2KeyMove() are unrelated input-repeat helpers) turns up nothing
+// NPC-related, and every one of the five NAMED_NPCS entries above is a
+// single static `"zone:y,x"` position, never touched again after
+// spawnNpcsFromMap() places it -- none of them ever moves in the JS at
+// all. So unlike the "real primitive exists, just needs exposing" shape
+// this repo's own NEUTRAL-lens standing instruction usually looks for,
+// there is no JS behavior here to approximate with TileAgentSpawn's own
+// waypoint-route primitive (TileAgentSim.h) -- building NPC movement these
+// five never had would be inventing content, not porting it, so nothing
+// route/waypoint-based is added for any of them.
+constexpr float kNpcInteractRadius = 1.5f; // same adjacency spirit as kAldermastInteractRadius/kWillaInteractRadius
+
+bool playerNearMarkerAt(const BeTileGridFrame* frame, float markerX, float markerY) {
+    bool markerPresent = false;
+    for (int i = 0; i < frame->markerCount; ++i) {
+        const BeTileMarker& m = frame->markers[i];
+        if (m.kind == nullptr || std::strcmp(m.kind, "npc_spawn") != 0) continue;
+        if (std::fabs(m.worldX - markerX) > 0.01f) continue;
+        if (std::fabs(m.worldY - markerY) > 0.01f) continue;
+        markerPresent = true;
+        break;
+    }
+    if (!markerPresent) return false; // not currently in that interior/zone at all
+
+    const float dx = frame->playerWorldX - markerX;
+    const float dy = frame->playerWorldY - markerY;
+    return (dx * dx + dy * dy) <= kNpcInteractRadius * kNpcInteractRadius;
+}
+
+// ---- Grimward (forge:5,11 -> addNpcSpawnMarker(grid, "Grimward", 11.0f, 5.0f)) ----
+constexpr float kGrimwardMarkerWorldX = 11.5f;
+constexpr float kGrimwardMarkerWorldY = 5.5f;
+bool playerNearGrimward(const BeTileGridFrame* frame) { return playerNearMarkerAt(frame, kGrimwardMarkerWorldX, kGrimwardMarkerWorldY); }
+void startGrimwardDialogue(BeTileGridFrame* frame) {
+    if (!frame->interactPressed) return;
+    if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
+    if (!playerNearGrimward(frame)) return;
+    frame->requestedPushDialog = "dialogue:grimward_greeting";
+}
+
+// ---- Bram (inn:10,17 -> addNpcSpawnMarker(grid, "Bram", 17.0f, 10.0f)) ----
+constexpr float kBramMarkerWorldX = 17.5f;
+constexpr float kBramMarkerWorldY = 10.5f;
+bool playerNearBram(const BeTileGridFrame* frame) { return playerNearMarkerAt(frame, kBramMarkerWorldX, kBramMarkerWorldY); }
+void startBramDialogue(BeTileGridFrame* frame) {
+    if (!frame->interactPressed) return;
+    if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
+    if (!playerNearBram(frame)) return;
+    frame->requestedPushDialog = "dialogue:bram_greeting";
+}
+// Dynamic greeting override (js/npcs.js getDynamicGreet(), the `name ===
+// 'Bram'` branch, line 200-213) -- only the ashen_seal_returned line, per
+// this section's own doc comment on what's real vs. deferred. Same
+// "browse-only node, gate on no click this exact frame" split
+// overrideBankMenuLiveDialogueText() already establishes.
+void overrideBramLiveDialogueText(BeTileGridFrame* frame) {
+    if (frame->activeDialogueTreeName == nullptr || std::strcmp(frame->activeDialogueTreeName, "bram_greeting") != 0) return;
+    if (frame->activeDialogueNodeId == nullptr || std::strcmp(frame->activeDialogueNodeId, "greet") != 0) return;
+    if (frame->clickedUiActionId != nullptr && frame->clickedUiActionId[0] != '\0') return;
+    if (readFlag(frame, "ashen_seal_returned", 0.0) != 0.0) {
+        frame->requestedDialogueTextOverride =
+            "You're the one who went into the catacombs. I heard. Drink's on me tonight -- just this once. "
+            "Bram Hollowtap. Sit down.";
+    }
+}
+
+// ---- Oswin (inn:9,6 -> addNpcSpawnMarker(grid, "Oswin", 6.0f, 9.0f)) ----
+constexpr float kOswinMarkerWorldX = 6.5f;
+constexpr float kOswinMarkerWorldY = 9.5f;
+bool playerNearOswin(const BeTileGridFrame* frame) { return playerNearMarkerAt(frame, kOswinMarkerWorldX, kOswinMarkerWorldY); }
+void startOswinDialogue(BeTileGridFrame* frame) {
+    if (!frame->interactPressed) return;
+    if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
+    if (!playerNearOswin(frame)) return;
+    frame->requestedPushDialog = "dialogue:oswin_greeting";
+}
+// js/npcs.js getDynamicGreet(), the `name === 'Oswin'` branch, line 226-234.
+void overrideOswinLiveDialogueText(BeTileGridFrame* frame) {
+    if (frame->activeDialogueTreeName == nullptr || std::strcmp(frame->activeDialogueTreeName, "oswin_greeting") != 0) return;
+    if (frame->activeDialogueNodeId == nullptr || std::strcmp(frame->activeDialogueNodeId, "greet") != 0) return;
+    if (frame->clickedUiActionId != nullptr && frame->clickedUiActionId[0] != '\0') return;
+    if (readFlag(frame, "ashen_seal_returned", 0.0) != 0.0) {
+        frame->requestedDialogueTextOverride =
+            "Ashenveil's full of heroes all of a sudden. Oswin -- I'm still waiting on that caravan, but at least "
+            "the company's interesting.";
+    }
+}
+
+// ---- Thessaly (inn:12,7 -> addNpcSpawnMarker(grid, "Thessaly", 7.0f, 12.0f)) ----
+constexpr float kThessalyMarkerWorldX = 7.5f;
+constexpr float kThessalyMarkerWorldY = 12.5f;
+bool playerNearThessaly(const BeTileGridFrame* frame) { return playerNearMarkerAt(frame, kThessalyMarkerWorldX, kThessalyMarkerWorldY); }
+void startThessalyDialogue(BeTileGridFrame* frame) {
+    if (!frame->interactPressed) return;
+    if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
+    if (!playerNearThessaly(frame)) return;
+    frame->requestedPushDialog = "dialogue:thessaly_greeting";
+}
+// No live override for Thessaly -- every one of her OWN dynamic branches
+// (js/npcs.js lines 236-246) keys off mystery_met/mystery_key_given (the
+// unported mystery quest chain) or Grimtide-night time-of-day; see this
+// section's own doc comment above.
+
+// ---- Dorin (shop:2,6 -> addNpcSpawnMarker(grid, "Dorin", 6.0f, 2.0f)) ----
+constexpr float kDorinMarkerWorldX = 6.5f;
+constexpr float kDorinMarkerWorldY = 2.5f;
+bool playerNearDorin(const BeTileGridFrame* frame) { return playerNearMarkerAt(frame, kDorinMarkerWorldX, kDorinMarkerWorldY); }
+void startDorinDialogue(BeTileGridFrame* frame) {
+    if (!frame->interactPressed) return;
+    if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
+    if (!playerNearDorin(frame)) return;
+    frame->requestedPushDialog = "dialogue:dorin_greeting";
+}
+// js/npcs.js getDynamicGreet(), the `name === 'Dorin'` branch, line 303-315
+// (ashen_seal_returned only -- same real-vs-deferred split as Bram's).
+void overrideDorinLiveDialogueText(BeTileGridFrame* frame) {
+    if (frame->activeDialogueTreeName == nullptr || std::strcmp(frame->activeDialogueTreeName, "dorin_greeting") != 0) return;
+    if (frame->activeDialogueNodeId == nullptr || std::strcmp(frame->activeDialogueNodeId, "greet") != 0) return;
+    if (frame->clickedUiActionId != nullptr && frame->clickedUiActionId[0] != '\0') return;
+    if (readFlag(frame, "ashen_seal_returned", 0.0) != 0.0) {
+        frame->requestedDialogueTextOverride =
+            "Word from the south road -- a catacomb got cleared out. That was you? Dorin. Forty years trading "
+            "these roads. First time I've heard that done.";
+    }
+}
+
+// ---- Shared buy/sell side-effect helper for Bram/Dorin's curated menus --
+// same gold-check/grant/text-override shape applyBankStockSideEffect()
+// already establishes above, generalized to a plain (itemId, displayName,
+// price) triple since neither NPC's menu needs a held-share count. ----
+struct NpcShopItem {
+    const char* id;
+    const char* displayName;
+    double price;
+};
+
+void applyNpcBuySideEffect(BeTileGridFrame* frame, const NpcShopItem& item) {
+    const double gold = readFlag(frame, kPlayerGoldFlag, 0.0);
+    if (gold < item.price) {
+        dialogueOverrideScratch() = std::string("You don't have enough gold in hand for the ") + item.displayName +
+                                     " (" + std::to_string(static_cast<int>(item.price)) + "g).";
+    } else {
+        BeFlagUpdate goldUpdate;
+        goldUpdate.key = kPlayerGoldFlag;
+        goldUpdate.value = -item.price;
+        goldUpdate.mode = 1; // INCREMENT
+        flagUpdateBuffer().push_back(goldUpdate);
+        queueItemGrant(item.id, 1);
+        dialogueOverrideScratch() =
+            std::string("Bought the ") + item.displayName + " for " + std::to_string(static_cast<int>(item.price)) + "g.";
+    }
+    frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+}
+
+void applyNpcSellSideEffect(BeTileGridFrame* frame, const NpcShopItem& item) {
+    if (countInInventory(frame, item.id) < 1) {
+        dialogueOverrideScratch() = std::string("You don't have a ") + item.displayName + " to sell.";
+    } else {
+        queueItemGrant(item.id, -1);
+        BeFlagUpdate goldUpdate;
+        goldUpdate.key = kPlayerGoldFlag;
+        goldUpdate.value = item.price;
+        goldUpdate.mode = 1; // INCREMENT
+        flagUpdateBuffer().push_back(goldUpdate);
+        dialogueOverrideScratch() =
+            std::string("Sold the ") + item.displayName + " for " + std::to_string(static_cast<int>(item.price)) + "g.";
+    }
+    frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+}
+
+// Bram's curated 3-of-10 INNKEEPER_SHOP_CONFIG.buyStock subset (js/npcs.js
+// lines 1092-1113).
+constexpr NpcShopItem kBramShopItems[] = {
+    {"pale_ale", "Pale Ale", 4.0},
+    {"ashenveil_mead", "Ashenveil Mead", 10.0},
+    {"inn_stew", "Inn Stew", 8.0},
+};
+constexpr int kBramShopItemCount = sizeof(kBramShopItems) / sizeof(kBramShopItems[0]);
+
+void applyBramDialogueSideEffects(BeTileGridFrame* frame) {
+    if (frame->activeDialogueTreeName == nullptr || std::strcmp(frame->activeDialogueTreeName, "bram_greeting") != 0)
+        return;
+    if (frame->clickedUiActionId == nullptr || frame->clickedUiActionId[0] == '\0') return;
+    if (frame->activeDialogueNodeId == nullptr) return;
+    const std::string node(frame->activeDialogueNodeId);
+    for (int i = 0; i < kBramShopItemCount; ++i) {
+        if (node == std::string(kBramShopItems[i].id) + "_buy_result") {
+            applyNpcBuySideEffect(frame, kBramShopItems[i]);
+            return;
+        }
+    }
+}
+
+// Dorin's curated 3-buy/3-sell MERCHANT_SHOP_CONFIG subset (js/npcs.js
+// lines 947-1024) -- buy prices from buyStock, sell prices from
+// sellAccepts (both real entries, not invented).
+constexpr NpcShopItem kDorinBuyItems[] = {
+    {"bronze_sword", "Bronze Sword", 40.0},
+    {"cooked_salmon", "Cooked Salmon", 20.0},
+    {"hoe", "Hoe", 35.0},
+};
+constexpr int kDorinBuyItemCount = sizeof(kDorinBuyItems) / sizeof(kDorinBuyItems[0]);
+constexpr NpcShopItem kDorinSellItems[] = {
+    {"goblin_hide", "Goblin Hide", 8.0},
+    {"iron_ore", "Iron Ore", 7.0},
+    {"oak_log", "Oak Log", 6.0},
+};
+constexpr int kDorinSellItemCount = sizeof(kDorinSellItems) / sizeof(kDorinSellItems[0]);
+
+void applyDorinDialogueSideEffects(BeTileGridFrame* frame) {
+    if (frame->activeDialogueTreeName == nullptr || std::strcmp(frame->activeDialogueTreeName, "dorin_greeting") != 0)
+        return;
+    if (frame->clickedUiActionId == nullptr || frame->clickedUiActionId[0] == '\0') return;
+    if (frame->activeDialogueNodeId == nullptr) return;
+    const std::string node(frame->activeDialogueNodeId);
+    for (int i = 0; i < kDorinBuyItemCount; ++i) {
+        if (node == std::string(kDorinBuyItems[i].id) + "_buy_result") {
+            applyNpcBuySideEffect(frame, kDorinBuyItems[i]);
+            return;
+        }
+    }
+    for (int i = 0; i < kDorinSellItemCount; ++i) {
+        if (node == std::string(kDorinSellItems[i].id) + "_sell_result") {
+            applyNpcSellSideEffect(frame, kDorinSellItems[i]);
+            return;
+        }
+    }
+}
+
 // ======= Dev Console (js/devconsole.js) =======
 // Transcribed from js/devconsole.js's runDevCommand() switch (lines 78-238)
 // and its toggle/close wiring (toggleConsole()/the two keydown listeners,
@@ -2937,6 +3237,16 @@ void updateGrimstoneRuntime(BeTileGridFrame* frame) {
     startBankDialogue(frame);
     applyBankDialogueSideEffects(frame);
     overrideBankMenuLiveDialogueText(frame);
+    startGrimwardDialogue(frame);
+    startBramDialogue(frame);
+    applyBramDialogueSideEffects(frame);
+    overrideBramLiveDialogueText(frame);
+    startOswinDialogue(frame);
+    overrideOswinLiveDialogueText(frame);
+    startThessalyDialogue(frame);
+    startDorinDialogue(frame);
+    applyDorinDialogueSideEffects(frame);
+    overrideDorinLiveDialogueText(frame);
     handleDevConsole(frame);
 
     // Drain the scratch buffers into the frame's own write-back arrays --
