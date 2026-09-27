@@ -2047,52 +2047,41 @@ void overrideBankMenuLiveDialogueText(BeTileGridFrame* frame) {
 // line 257) is reproduced exactly for closing, even though opening can't
 // use the same key the JS does.
 //
-// **The real, load-bearing gap, same shape as this file's other "found
-// while wiring this up" notes**: PORTING_PLAN.md's own js/quests.js row
-// already documents that no `DialogueTemplate` UILayout has been authored
-// anywhere in `content/` yet, so `requestedPushDialog("dialogue:...")` has
-// nowhere to actually draw a speaker/body/choices. The dev console needs
-// its OWN UILayout for the exact same reason and has the exact same gap:
-// no UILayout named `kDevConsoleLayoutName` ("DevConsoleTemplate") exists
-// anywhere in this repo's content, and Grimstone doesn't author ANY
-// UILayout at all yet (checked: no `hudLayoutName`/UILayout content
-// anywhere in GrimstoneGame.h/.cpp) -- so there is currently no HUD
-// screen, dialog screen, or otherwise, that this port draws through this
-// engine's UILayout system at all. Pushing `kDevConsoleLayoutName` onto
-// the dialog stack is real (`TileGridHostRunner.cpp`'s `pushDialogOrTree()`
-// unconditionally does `dialogStack.push(name)` for any non-"dialogue:"
-// name, confirmed by reading it, not guessed), and it correctly reports
-// back via `activeDialogLayoutName`/suppresses movement exactly like any
-// other pushed dialog -- but with no UILayout of that name authored, the
-// screen has nothing to draw and the player sees nothing (the same "opens
-// a screen with nothing on it" behavior an unauthored `DialogueTemplate`
-// push would already have). This is NOT faked around here: rather than
-// inventing a fallback rendering path this ABI doesn't offer (there is no
-// primitive for a plugin to draw its own text/log surface beyond a single
-// toast line -- checked, `requestedSprites` is world-space shapes only, no
-// text), this ships the REAL toggle/open/close plumbing plus a REAL,
-// fully working command parser/dispatcher below, verified against every
+// **The real, load-bearing gap this section used to document is now
+// CLOSED, schema-side**: a hand-authored `content/ui-layouts.json` (new,
+// this pass) now carries both `kDialogueTemplateLayoutName`
+// ("DialogueTemplate" -- a speaker Label id `dlg_speaker`, a body Label id
+// `dlg_body`, and `kMaxDialogueChoices` (4) interactive choice Labels ids
+// `dlg_choice_0`..`dlg_choice_3` with matching `actionId`s, exactly the
+// element-id/actionId convention `TileGridHostRunner.cpp`'s own
+// `UILayoutOverrides` dialogue-tree binding reads -- confirmed by reading
+// that binding code, not guessed) and `kDevConsoleLayoutName`
+// ("DevConsoleTemplate" -- a TextInput id exactly `kDevConsoleInputElementId`
+// plus an interactive Label id/actionId exactly `kDevConsoleSubmitActionId`,
+// below). Both layouts are verified against `UILayout.h`'s real struct
+// fields AND its real serializer (`UILayout.cpp`'s `parseElement()`/
+// `elementToJson()`/`parseLayout()`), not guessed from a header comment
+// alone -- same discipline `content/weapons.json`/`content/dialogue-trees.json`
+// already established for this port's other hand-authored content.
+// **What's still open, same shape as every other hand-authored content
+// file in this port**: `content/ui-layouts.json` has no packaging/copy-to-
+// `<BE_DATA_DIR>` step of its own -- checked, and there ISN'T one for
+// `content/weapons.json`/`content/dialogue-trees.json` either (this
+// project's own `CMakeLists.txt` builds only the plugin `.so`, no content-
+// copy step exists anywhere in this repo), so this is not a gap specific
+// to UI content, it's this port's existing, already-documented convention:
+// a file at `<BE_DATA_DIR>/ui-layouts.json` is what `uiLayoutLibrary()`
+// (UILayout.h) actually reads at runtime (confirmed: `libraryPath()` in
+// `UILayout.cpp` resolves to `userDataDir() / "ui-layouts.json"`), so this
+// new file still needs to be copied there (or wired into a packaging step)
+// before a running engine actually loads it -- not yet done, and, with no
+// engine build existing in this sandbox, NOT verified against a real
+// running engine, only against the real C++ schema/serializer read in full
+// above. Once it's in place, the toggle/open/close plumbing plus the REAL,
+// fully working command parser/dispatcher below need no further source
+// change to start actually rendering end to end -- verified against every
 // helper it reuses (queueXpGrant/queueItemGrant/kPlayerGoldFlag/
-// requestedHealthDelta), and documents exactly what a future UILayout-
-// authoring pass needs to actually put it on screen:
-//   - A UILayout named exactly `kDevConsoleLayoutName` ("DevConsoleTemplate").
-//   - One TextInput element with id exactly `kDevConsoleInputElementId`
-//     ("dev_console_input") -- its live typed value shows up in
-//     `frame->activeTextInputs` (BeUiTextInputState) the moment the player
-//     focuses it, per that struct's own doc comment.
-//   - One submit button (or Enter-bound element) with actionId exactly
-//     `kDevConsoleSubmitActionId` ("dev_console_submit") -- `handleDevConsole()`
-//     below reacts to it showing up in `frame->clickedUiActionId` the SAME
-//     way every other dialog-side-effect handler in this file already does.
-//   - Optionally a Label to show `requestedToastText`'s own last result as
-//     a persistent line instead of a fading toast -- not required for the
-//     command dispatch below to work, since every command already reports
-//     its result via the SAME toast mechanism handleMiningAndWoodcutting()/
-//     etc. already use for lack of a richer UI surface, matching this
-//     file's own established fallback for "no progress-bar/log HUD exists
-//     yet" gaps.
-// Once that layout exists, everything below needs no source change at all
-// to start actually working end to end.
+// requestedHealthDelta).
 constexpr const char* kDevConsoleLayoutName = "DevConsoleTemplate";
 constexpr const char* kDevConsoleInputElementId = "dev_console_input";
 constexpr const char* kDevConsoleSubmitActionId = "dev_console_submit";

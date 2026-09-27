@@ -1,0 +1,115 @@
+[
+  {
+    "name": "DialogueTemplate",
+    "elements": [
+      {
+        "kind": "panel",
+        "id": "dlg_panel",
+        "position": [0.04, 0.56],
+        "size": [0.92, 0.4],
+        "color": [0.06, 0.06, 0.09],
+        "alpha": 0.85,
+        "cornerRadius": 0.02
+      },
+      {
+        "kind": "label",
+        "id": "dlg_speaker",
+        "position": [0.08, 0.6],
+        "scale": 0.05,
+        "color": [1.0, 0.85, 0.35],
+        "text": ""
+      },
+      {
+        "kind": "label",
+        "id": "dlg_body",
+        "position": [0.08, 0.67],
+        "scale": 0.04,
+        "color": [0.95, 0.95, 0.95],
+        "text": "",
+        "wordWrap": true,
+        "wrapWidth": 0.84,
+        "lineSpacing": 1.25
+      },
+      {
+        "kind": "label",
+        "id": "dlg_choice_0",
+        "position": [0.08, 0.82],
+        "size": [0.84, 0.04],
+        "scale": 0.032,
+        "color": [0.8, 0.9, 1.0],
+        "text": "",
+        "interactive": true,
+        "actionId": "dlg_choice_0"
+      },
+      {
+        "kind": "label",
+        "id": "dlg_choice_1",
+        "position": [0.08, 0.865],
+        "size": [0.84, 0.04],
+        "scale": 0.032,
+        "color": [0.8, 0.9, 1.0],
+        "text": "",
+        "interactive": true,
+        "actionId": "dlg_choice_1"
+      },
+      {
+        "kind": "label",
+        "id": "dlg_choice_2",
+        "position": [0.08, 0.91],
+        "size": [0.84, 0.04],
+        "scale": 0.032,
+        "color": [0.8, 0.9, 1.0],
+        "text": "",
+        "interactive": true,
+        "actionId": "dlg_choice_2"
+      },
+      {
+        "kind": "label",
+        "id": "dlg_choice_3",
+        "position": [0.08, 0.955],
+        "size": [0.84, 0.04],
+        "scale": 0.032,
+        "color": [0.8, 0.9, 1.0],
+        "text": "",
+        "interactive": true,
+        "actionId": "dlg_choice_3"
+      }
+    ]
+  },
+  {
+    "name": "DevConsoleTemplate",
+    "elements": [
+      {
+        "kind": "panel",
+        "id": "dev_console_panel",
+        "position": [0.04, 0.02],
+        "size": [0.92, 0.08],
+        "color": [0.04, 0.04, 0.05],
+        "alpha": 0.88,
+        "cornerRadius": 0.015
+      },
+      {
+        "kind": "textInput",
+        "id": "dev_console_input",
+        "position": [0.065, 0.035],
+        "size": [0.72, 0.045],
+        "scale": 0.035,
+        "color": [0.95, 0.95, 0.95],
+        "bevelColor": [0.8, 0.95, 0.8],
+        "placeholder": "Enter command...",
+        "interactive": true
+      },
+      {
+        "kind": "label",
+        "id": "dev_console_submit",
+        "position": [0.8, 0.035],
+        "size": [0.14, 0.045],
+        "scale": 0.035,
+        "color": [0.7, 1.0, 0.7],
+        "text": "Run",
+        "interactive": true,
+        "actionId": "dev_console_submit"
+      }
+    ]
+  }
+]
