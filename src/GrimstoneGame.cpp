@@ -720,7 +720,12 @@ TileGrid buildAshenveilLevel(const TileKindRegistry& registry) {
         marker.properties["targetZone"] = targetZone;
         grid.markers.push_back(marker);
     };
-    addPortalMarker("Exit -> Ashwood Vale", static_cast<float>(W - 1), static_cast<float>(exitY), "ashwood_vale");
+    // Slug fixed to "ashen_moor" (was "ashwood_vale", a stray display-name-
+    // derived slug that never matched kZoneSlugs[0] below, which every
+    // other reference to zoneIndex 1 in this file already uses -- caught
+    // while wiring real zone transitions, see zoneSlugToTileGrid()'s own
+    // doc comment).
+    addPortalMarker("Exit -> Ashwood Vale", static_cast<float>(W - 1), static_cast<float>(exitY), "ashen_moor");
     addPortalMarker("Chapel Portal", 18.0f, 1.0f, "forsaken_chapel");
     addPortalMarker("Forest Portal -> Whisperwood", static_cast<float>(southPortalX), static_cast<float>(H - 1),
                      "whisperwood");
@@ -4264,4 +4269,87 @@ TileGrid buildHomeCabinInterior(const TileKindRegistry& registry) {
         {"player_spawn", glm::vec2(static_cast<float>(W / 2) + 0.5f, static_cast<float>(H - 2) + 0.5f), "Player Spawn"});
 
     return grid;
+}
+
+// See GrimstoneGame.h's own doc comment for the full contract. One
+// if/else chain, slug by slug -- deliberately not a std::unordered_map of
+// std::function, since several zones need extra arguments (a resident
+// name, a seed) that a uniform (registry)-only signature can't carry, and
+// a chain reads exactly like the doc comment's own gap list (every zone
+// covered, every zone NOT covered named explicitly).
+bool zoneSlugToTileGrid(const TileKindRegistry& registry, const std::string& slug, uint32_t seed, TileGrid& outGrid) {
+    if (slug == "ashenveil") {
+        outGrid = buildAshenveilLevel(registry);
+        return true;
+    }
+    if (slug == "stormcrag_reach") {
+        outGrid = buildStormcragLevel(registry);
+        return true;
+    }
+    if (slug == "aetheric_spire") {
+        outGrid = buildWizardTowerInterior(registry);
+        return true;
+    }
+    if (slug == "whisperwood") {
+        outGrid = buildWhisperwoodLevel(registry);
+        return true;
+    }
+    if (slug == "greenfield_pastures") {
+        outGrid = buildGreenfieldLevel(registry);
+        return true;
+    }
+    if (slug == "forsaken_chapel") {
+        outGrid = buildChapelLevel(registry);
+        return true;
+    }
+    if (slug == "forsaken_library") {
+        outGrid = buildChapelLibrary(registry);
+        return true;
+    }
+    if (slug == "hidden_vault") {
+        outGrid = buildSecretLibrary(registry);
+        return true;
+    }
+    if (slug == "ashgrove_hollow") {
+        outGrid = buildAshgroveHollowLevel(registry);
+        return true;
+    }
+    if (slug == "western_pass") {
+        outGrid = buildCaravanZoneLevel(registry);
+        return true;
+    }
+    if (slug == "homestead") {
+        outGrid = buildHomesteadLevel(registry);
+        return true;
+    }
+    // The 4 procedurally-generated overworld biomes -- buildProceduralZone()'s
+    // own zoneIndex 1-4, matching kZoneSlugs (this file, buildProceduralZone()
+    // above) exactly.
+    if (slug == "ashen_moor") {
+        outGrid = buildProceduralZone(registry, 1, seed);
+        return true;
+    }
+    if (slug == "iron_peaks") {
+        outGrid = buildProceduralZone(registry, 2, seed);
+        return true;
+    }
+    if (slug == "cursed_marshes") {
+        outGrid = buildProceduralZone(registry, 3, seed);
+        return true;
+    }
+    if (slug == "obsidian_depths") {
+        outGrid = buildProceduralZone(registry, 4, seed);
+        return true;
+    }
+    // Reachable via buildChapelLevel()'s own hidden-tomb "portal" marker
+    // (targetZone "cultist_catacombs") -- the one dungeon actually wired to
+    // a portal marker with a real targetZone; the Ashen Crypts/Iron Depths
+    // dungeon stairs carry no targetZone at all yet (see
+    // buildAshenDungeon()/buildIronPeaksDungeon()'s own doc comments), so
+    // they're intentionally NOT in this table.
+    if (slug == "cultist_catacombs") {
+        outGrid = buildCultistCatacombs(registry, seed);
+        return true;
+    }
+    return false;
 }

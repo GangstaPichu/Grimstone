@@ -1,11 +1,17 @@
 #include "GrimstoneRuntime.h"
 
+#include "GrimstoneGame.h"
+#include "TileGrid.h"
+#include "TileKindRegistry.h"
+
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <deque>
+#include <filesystem>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace {
@@ -544,34 +550,262 @@ void handleCombatDeathRewards(BeTileGridFrame* frame) {
     }
 }
 
+// ======= Zone transitions =======
+//
+// Closes the real, documented gap GrimstoneRuntime.cpp's own dev-console
+// "tp" command used to describe: every zone in GrimstoneGame.h/.cpp is its
+// own in-process buildXLevel()/buildXInterior() C++ function, and
+// BeTileGridFrame::requestedLevelPath (GameModuleApi.h, Milestone 252) is
+// the engine's real "swap the active level" primitive -- but it is
+// resolved by the HOST exactly the way `--level`/loadOrBuildLevel() already
+// resolve it (TileGridHostRunner.cpp: `loadTileGrid(path, tileKinds)`,
+// checked directly, not guessed), i.e. a FILE ON DISK in loadTileGrid()'s
+// own JSON schema. There is no ABI hook for "here is a TileGrid I already
+// built in memory, make it the active one" -- only a path.
+//
+// So the real, honest mechanism (not a workaround; TileGrid.h ships exactly
+// this pair for exactly this purpose) is: build the destination zone's
+// TileGrid in-process (unchanged, existing buildXLevel() functions),
+// saveTileGrid() it out to a file in loadTileGrid()'s own schema under this
+// plugin's asset directory, then point requestedLevelPath at that file --
+// the host loads it back via the identical loadTileGrid() call a `--level`
+// swap already uses. Every zone is regenerated into that file fresh on
+// every transition into it (deterministic given the same seed -- see
+// kPlaceholderWorldSeed below -- so this is not lossy), not pre-exported
+// once at build time, so no new build step or content/*.json asset is
+// needed for this to work.
+//
+// The SECOND real ABI gap this closes: BeTileMarker (the per-frame ABI
+// struct handed to the plugin every frame) carries only `kind`/`worldX`/
+// `worldY` -- TileMarker::properties (where every portal's own
+// "targetZone" string lives) does NOT cross the ABI boundary at all
+// (confirmed by reading BeTileMarker's full field list, GameModuleApi.h --
+// the same gap playerNearAldermast()'s own doc comment above already
+// documents and works around by position). So a portal can't be resolved
+// from frame->markers alone. The fix here is the same position-based
+// workaround, generalized: this file keeps its OWN cached copy of each
+// zone's real, C++-side TileGrid (which DOES still have `properties` --
+// it's the plugin's own in-process object, never round-tripped through the
+// ABI) built by the exact same buildXLevel() call the host's own loaded
+// grid came from, and matches the player's live ABI position against THAT
+// cached grid's own marker positions/properties. Since this plugin is the
+// only thing that ever requests a zone swap, its own idea of "which zone
+// is active" is always exactly right the same frame it requests the swap
+// (see activeZoneId() below) -- a real, complete fix for "no active-zone
+// read field exists on the ABI", not a guess.
+//
+// Real, honestly-documented gap this does NOT close: `activeZoneId()`
+// below defaults to "ashenveil" at process start, assuming the host's own
+// initial `--level` is Ashenveil's own exported level.json (there is no
+// ABI field to confirm this, or any other zone, is what actually loaded
+// before this plugin's first frame) -- if a packaged build is ever
+// launched with a different starting `--level`, portal detection in that
+// starting zone will silently look at the wrong marker set until the
+// first real transition corrects it. A future pass adding a real
+// "confirm which level actually loaded" ABI field (the same gap
+// handleFishing()'s own doc comment below names from the read side) would
+// close this for good; there is no way to close it from the plugin side
+// alone.
+namespace zonetransition {
+
+// There is still no persisted per-playthrough world seed anywhere in this
+// port (buildStormcragLevel()'s own doc comment names the same gap) -- so
+// every procedurally-seeded zone this plugin ever (re)builds uses this one
+// fixed placeholder, matching that function's own judgement call. A future
+// pass threading a real per-playthrough seed through (see PORTING_PLAN.md)
+// should replace this constant with that seed everywhere it's read below.
+constexpr uint32_t kPlaceholderWorldSeed = 1;
+
+// How close (world units) the player must be to a "portal" TileMarker's own
+// position for stepping onto it to fire a transition -- half a tile plus a
+// little slack, the same "step onto it" spirit js/zones.js's own tile-based
+// EXIT/PORTAL handlers use, ported to this engine's continuous world
+// coordinates. Deliberately proximity-only, NOT gated on interactPressed --
+// every portal in this port is a floor decal the JS always fires by
+// walking over, never an interact prompt.
+constexpr float kPortalTriggerRadiusWorld = 0.65f;
+
+// Suppresses re-triggering a transition for this many frames right after
+// one fires -- guards against the destination zone's own player_spawn
+// marker happening to land within kPortalTriggerRadiusWorld of one of ITS
+// portals (checked: none currently do, but a future zone easily could) and
+// bouncing straight back. ~0.5s at a typical frame rate.
+constexpr int kPostTransitionCooldownFrames = 30;
+
+std::filesystem::path& assetDir() {
+    static std::filesystem::path dir;
+    return dir;
+}
+
+std::string& activeZoneIdRef() {
+    static std::string zone = "ashenveil"; // see this section's own doc comment above
+    return zone;
+}
+
+int& cooldownFrames() {
+    static int frames = 0;
+    return frames;
+}
+
+// Scratch buffer for frame->requestedLevelPath -- same "static buffer,
+// valid across this one call, re-set every time it's needed" convention
+// toastScratch()/stringScratch() etc. already use elsewhere in this file.
+std::string& levelPathScratch() {
+    static std::string path;
+    return path;
+}
+
+std::unordered_map<std::string, TileGrid>& zoneCache() {
+    static std::unordered_map<std::string, TileGrid> cache;
+    return cache;
+}
+
+// Builds (if not already cached) and returns the real, C++-side TileGrid
+// for `slug`, or nullptr if `slug` isn't in zoneSlugToTileGrid()'s own
+// table (GrimstoneGame.h/.cpp) at all.
+const TileGrid* cachedZone(const std::string& slug) {
+    auto& cache = zoneCache();
+    const auto it = cache.find(slug);
+    if (it != cache.end()) return &it->second;
+    TileGrid built;
+    if (!zoneSlugToTileGrid(TileKindRegistry::instance(), slug, kPlaceholderWorldSeed, built)) return nullptr;
+    return &cache.emplace(slug, std::move(built)).first->second;
+}
+
+// The first "player_spawn" marker in `grid`, or a small fallback near the
+// origin (documented, not silently wrong) if a destination zone somehow
+// has none -- every buildXLevel()/buildXInterior() function in
+// GrimstoneGame.cpp places exactly one, but this is a real fallback rather
+// than an out-of-bounds read if that ever isn't true.
+glm::vec2 zoneSpawnPosition(const TileGrid& grid) {
+    for (const TileMarker& m : grid.markers) {
+        if (m.kind == "player_spawn") return m.position;
+    }
+    return glm::vec2(1.5f, 1.5f);
+}
+
+// The real mechanism, shared by both callers below (a portal the player
+// stepped on, and the dev console's "tp"): build/cache the destination
+// zone, save it to a real file in loadTileGrid()'s own schema, and point
+// requestedLevelPath/requestedWarp at it -- see this section's own doc
+// comment for why a file on disk is the real, non-optional shape this
+// takes. Returns false (and toasts why) on a genuinely unknown slug or a
+// file-write failure; true on success.
+bool requestZoneSwap(BeTileGridFrame* frame, const std::string& targetZone) {
+    const TileGrid* dest = cachedZone(targetZone);
+    if (dest == nullptr) {
+        toastScratch() = "No such zone: '" + targetZone + "'.";
+        frame->requestedToastText = toastScratch().c_str();
+        return false;
+    }
+
+    const std::filesystem::path outPath = assetDir() / "generated-zones" / (targetZone + "-level.json");
+    try {
+        std::filesystem::create_directories(outPath.parent_path());
+        saveTileGrid(*dest, TileKindRegistry::instance(), outPath);
+    } catch (const std::exception& e) {
+        toastScratch() = std::string("Zone swap failed: ") + e.what();
+        frame->requestedToastText = toastScratch().c_str();
+        return false;
+    }
+
+    const glm::vec2 spawn = zoneSpawnPosition(*dest);
+    levelPathScratch() = outPath.string();
+    frame->requestedLevelPath = levelPathScratch().c_str();
+    frame->requestedWarp = 1;
+    frame->requestedWarpX = spawn.x;
+    frame->requestedWarpY = spawn.y;
+
+    activeZoneIdRef() = targetZone;
+    cooldownFrames() = kPostTransitionCooldownFrames;
+    return true;
+}
+
+} // namespace zonetransition
+
+// Read by handleFishing()'s FISH_TABLE zone-gating and tillTile()'s
+// homestead-only check below -- both used to treat every zone as eligible/
+// matching because no such read existed anywhere on the ABI (their own doc
+// comments named this exact gap). Real and complete, per this section's
+// own doc comment above: this plugin is the only thing that ever requests
+// a zone swap, so it always knows the destination the same frame it
+// requests it.
+const std::string& activeZoneId() { return zonetransition::activeZoneIdRef(); }
+
+// Walks the player's own live ABI position against the CURRENT zone's real
+// (cached, C++-side) portal markers every frame, and fires a real
+// requestedLevelPath swap the moment one matches -- see the
+// "======= Zone transitions =======" section's own doc comment above for
+// the full mechanism.
+void handleZoneTransition(BeTileGridFrame* frame) {
+    using namespace zonetransition;
+
+    if (cooldownFrames() > 0) {
+        --cooldownFrames();
+        return;
+    }
+
+    const TileGrid* current = cachedZone(activeZoneIdRef());
+    if (current == nullptr) return; // activeZoneIdRef() itself is always a known slug; defensive only
+
+    const float px = frame->playerWorldX;
+    const float py = frame->playerWorldY;
+    for (const TileMarker& m : current->markers) {
+        if (m.kind != "portal") continue;
+        const float dx = px - m.position.x;
+        const float dy = py - m.position.y;
+        if (dx * dx + dy * dy > kPortalTriggerRadiusWorld * kPortalTriggerRadiusWorld) continue;
+
+        const std::string targetZone = m.properties.value("targetZone", std::string());
+        if (targetZone.empty()) continue; // a portal authored with no targetZone yet -- nothing to do
+
+        if (requestZoneSwap(frame, targetZone)) {
+            toastScratch() = m.name.empty() ? ("Entering " + targetZone + "...") : (m.name + "...");
+            frame->requestedToastText = toastScratch().c_str();
+        }
+        return; // at most one transition per frame
+    }
+}
+
 // ======= Fishing =======
 // Transcribed from js/activities.js's FISH_TABLE (lines 99-139) and
 // startFish()/catchFish() (lines 447-500, 700-717), and js/input.js's own
 // tackle-menu wiring (lines 482-486, openFishingMenu() at
 // js/activities.js line 430).
 //
-// Two REAL, documented gaps versus the JS, not simplifications this port
-// can paper over:
-//   1. FISH_TABLE's own `zones` column (which of the 4 ZONE_CONFIGS biome
-//      indices a fish can appear in) is NOT applied here. There is no way
-//      to read which zone/level is currently active from BeTileGridFrame
-//      -- requestedLevelPath (GameModuleApi.h) is WRITE-ONLY (it REQUESTS a
-//      zone swap; nothing on the frame reports the zone the plugin is
-//      CURRENTLY in), and no zoneIndex/currentLevelPath/zoneName read field
-//      exists anywhere on the struct. Every fish in the table below is
-//      treated as available in every zone. This is the "real gap" this
-//      port's own PORTING_PLAN.md now records rather than guesses around.
-//   2. `timeOfDay`/`weather` columns are likewise omitted -- per
-//      PORTING_PLAN.md, no day/night or weather state is tracked anywhere
-//      in this port yet, so every fish is treated as always in season
-//      (the JS's own `timeOfDay:'any'`/no `weather` key default, applied
-//      unconditionally rather than selectively).
-// Everything else -- minLvl, tackle, xp, rarity -- is real, transcribed
-// from the JS's own numbers.
+// ONE remaining real, documented gap versus the JS, not a simplification
+// this port can paper over: `timeOfDay`/`weather` columns are omitted --
+// per PORTING_PLAN.md, no day/night or weather state is tracked anywhere
+// in this port yet, so every fish is treated as always in season (the
+// JS's own `timeOfDay:'any'`/no `weather` key default, applied
+// unconditionally rather than selectively). Everything else -- minLvl,
+// tackle, zones, xp, rarity -- is real, transcribed from the JS's own
+// numbers.
+//
+// FISH_TABLE's own `zones` column USED to be a second real gap (there was
+// no way to read which zone/level is currently active from
+// BeTileGridFrame) -- closed now that activeZoneId() (see the
+// "======= Zone transitions =======" section above) gives this plugin a
+// real answer. `zones` transcribes js/activities.js's own array 1:1 as a
+// bitmask, where bit i is js's own full `zoneIndex` i (0=Ashenveil,
+// 1=Ashwood Vale/this port's "ashen_moor", 2=Iron Peaks/"iron_peaks",
+// 3=Cursed Marshes/"cursed_marshes" -- matching `f.zones.includes(zoneIndex)`,
+// js/activities.js line 466, and js/quests.js's own "z=1->Ashwood Vale"
+// comment). Zone 4 (Obsidian Depths/"obsidian_depths") never appears in
+// ANY fish's own `zones` array in the JS source (checked) -- a real JS
+// quirk (that biome has no fish at all), preserved rather than "fixed".
 enum FishTackle {
     kTackleBait = 1 << 0,
     kTackleFly = 1 << 1,
     kTackleHarpoon = 1 << 2,
+};
+
+enum FishZone {
+    kZoneAshenveil = 1 << 0,
+    kZoneAshenMoor = 1 << 1,   // js zoneIndex 1, "Ashwood Vale"
+    kZoneIronPeaks = 1 << 2,   // js zoneIndex 2
+    kZoneCursedMarshes = 1 << 3, // js zoneIndex 3
+    kZoneAllFour = kZoneAshenveil | kZoneAshenMoor | kZoneIronPeaks | kZoneCursedMarshes,
 };
 
 struct FishEntry {
@@ -579,37 +813,56 @@ struct FishEntry {
     const char* cookedItemId; // js/activities.js's own COOKED map (line 141)
     int minLevel;
     int tackleMask;
+    int zoneMask; // FishZone bits -- js/activities.js FISH_TABLE's own "zones" column
     double xp;
     double rarity;
 };
 
 constexpr FishEntry kFishTable[] = {
     // Standard fish (any time, any weather) -- js/activities.js lines 101-108
-    {"raw_shrimp", "cooked_shrimp", 1, kTackleBait, 10.0, 1.0},
-    {"raw_trout", "cooked_trout", 5, kTackleBait | kTackleFly, 50.0, 0.75},
-    {"raw_salmon", "cooked_salmon", 10, kTackleFly, 70.0, 0.65},
-    {"raw_pike", "cooked_pike", 15, kTackleBait | kTackleFly, 90.0, 0.55},
-    {"raw_tuna", "cooked_tuna", 20, kTackleHarpoon, 115.0, 0.45},
-    {"raw_swordfish", "cooked_swordfish", 35, kTackleHarpoon, 155.0, 0.30},
-    {"raw_shark", "cooked_shark", 50, kTackleHarpoon, 220.0, 0.15},
-    {"raw_leviathan", "cooked_leviathan", 60, kTackleHarpoon, 300.0, 0.08},
+    {"raw_shrimp", "cooked_shrimp", 1, kTackleBait, kZoneAllFour, 10.0, 1.0},
+    {"raw_trout", "cooked_trout", 5, kTackleBait | kTackleFly, kZoneAllFour, 50.0, 0.75},
+    {"raw_salmon", "cooked_salmon", 10, kTackleFly, kZoneAllFour, 70.0, 0.65},
+    {"raw_pike", "cooked_pike", 15, kTackleBait | kTackleFly, kZoneAshenMoor | kZoneIronPeaks | kZoneCursedMarshes,
+     90.0, 0.55},
+    {"raw_tuna", "cooked_tuna", 20, kTackleHarpoon, kZoneIronPeaks | kZoneCursedMarshes, 115.0, 0.45},
+    {"raw_swordfish", "cooked_swordfish", 35, kTackleHarpoon, kZoneIronPeaks | kZoneCursedMarshes, 155.0, 0.30},
+    {"raw_shark", "cooked_shark", 50, kTackleHarpoon, kZoneCursedMarshes, 220.0, 0.15},
+    {"raw_leviathan", "cooked_leviathan", 60, kTackleHarpoon, kZoneCursedMarshes, 300.0, 0.08},
     // Day-only fish -- lines 111-114 (timeOfDay/weather gap, see above)
-    {"raw_sunscale", "cooked_sunscale", 5, kTackleBait | kTackleFly, 45.0, 0.70},
-    {"raw_gilded_carp", "cooked_gilded_carp", 22, kTackleFly, 100.0, 0.40},
+    {"raw_sunscale", "cooked_sunscale", 5, kTackleBait | kTackleFly, kZoneAshenveil | kZoneAshenMoor | kZoneIronPeaks,
+     45.0, 0.70},
+    {"raw_gilded_carp", "cooked_gilded_carp", 22, kTackleFly, kZoneAllFour, 100.0, 0.40},
     // Night-only fish -- lines 117-122
-    {"raw_moonshadow", "cooked_moonshadow", 25, kTackleFly, 130.0, 0.35},
-    {"raw_ghostfin", "cooked_ghostfin", 40, kTackleBait, 175.0, 0.20},
-    {"raw_shadowcrawler", "cooked_shadowcrawler", 55, kTackleHarpoon, 260.0, 0.10},
+    {"raw_moonshadow", "cooked_moonshadow", 25, kTackleFly, kZoneAshenMoor | kZoneIronPeaks | kZoneCursedMarshes,
+     130.0, 0.35},
+    {"raw_ghostfin", "cooked_ghostfin", 40, kTackleBait, kZoneIronPeaks | kZoneCursedMarshes, 175.0, 0.20},
+    {"raw_shadowcrawler", "cooked_shadowcrawler", 55, kTackleHarpoon, kZoneCursedMarshes, 260.0, 0.10},
     // Rain fish -- lines 125-130
-    {"raw_stormcatch", "cooked_stormcatch", 18, kTackleBait | kTackleFly, 95.0, 0.45},
-    {"raw_raindrop_dace", "cooked_raindrop_dace", 8, kTackleBait, 60.0, 0.65},
-    {"raw_torrent_fin", "cooked_torrent_fin", 45, kTackleHarpoon, 195.0, 0.18},
+    {"raw_stormcatch", "cooked_stormcatch", 18, kTackleBait | kTackleFly,
+     kZoneAshenveil | kZoneAshenMoor | kZoneIronPeaks, 95.0, 0.45},
+    {"raw_raindrop_dace", "cooked_raindrop_dace", 8, kTackleBait, kZoneAllFour, 60.0, 0.65},
+    {"raw_torrent_fin", "cooked_torrent_fin", 45, kTackleHarpoon, kZoneIronPeaks | kZoneCursedMarshes, 195.0, 0.18},
     // Fog fish -- lines 133-138
-    {"raw_mistwalker", "cooked_mistwalker", 12, kTackleFly, 80.0, 0.50},
-    {"raw_phantom_crab", "cooked_phantom_crab", 30, kTackleBait, 145.0, 0.28},
-    {"raw_veilfish", "cooked_veilfish", 50, kTackleHarpoon | kTackleFly, 240.0, 0.12},
+    {"raw_mistwalker", "cooked_mistwalker", 12, kTackleFly, kZoneAshenveil | kZoneAshenMoor | kZoneIronPeaks, 80.0,
+     0.50},
+    {"raw_phantom_crab", "cooked_phantom_crab", 30, kTackleBait, kZoneAshenMoor | kZoneIronPeaks | kZoneCursedMarshes,
+     145.0, 0.28},
+    {"raw_veilfish", "cooked_veilfish", 50, kTackleHarpoon | kTackleFly, kZoneCursedMarshes, 240.0, 0.12},
 };
 constexpr int kFishTableSize = sizeof(kFishTable) / sizeof(kFishTable[0]);
+
+// activeZoneId() -> FishZone bit, or 0 for a zone with no fish at all
+// (Obsidian Depths, every interior/dungeon) -- see this section's own doc
+// comment above.
+int currentFishZoneMask() {
+    const std::string& zone = activeZoneId();
+    if (zone == "ashenveil") return kZoneAshenveil;
+    if (zone == "ashen_moor") return kZoneAshenMoor;
+    if (zone == "iron_peaks") return kZoneIronPeaks;
+    if (zone == "cursed_marshes") return kZoneCursedMarshes;
+    return 0;
+}
 
 const char* const kFishingSpotKinds[] = {"fishing_spot", "fishing_spot_2"};
 
@@ -637,9 +890,10 @@ void handleFishing(BeTileGridFrame* frame) {
     }
 
     const int fishLevel = readSkillLevel(frame, GrimstoneSkill::Fishing);
+    const int zoneMask = currentFishZoneMask();
 
-    // Eligible = level + tackle only -- see this function's own doc comment
-    // for the zone/time-of-day/weather gap.
+    // Eligible = level + tackle + zone -- see this function's own doc
+    // comment for the remaining time-of-day/weather gap.
     int eligibleIdx[kFishTableSize];
     int eligibleCount = 0;
     double totalWeight = 0.0;
@@ -647,6 +901,7 @@ void handleFishing(BeTileGridFrame* frame) {
         const FishEntry& f = kFishTable[i];
         if (fishLevel < f.minLevel) continue;
         if ((f.tackleMask & tackleMask) == 0) continue;
+        if ((f.zoneMask & zoneMask) == 0) continue;
         eligibleIdx[eligibleCount++] = i;
         totalWeight += f.rarity * (1.0 + fishLevel * 0.01); // js startFish() line 489
     }
@@ -934,6 +1189,13 @@ std::string farmCellKey(int cellX, int cellY) {
 
 void handleTilling(BeTileGridFrame* frame) {
     if (!frame->interactPressed) return;
+    // js's own tillTile() (line 2055): currentMap.name === 'YOUR HOMESTEAD'.
+    // Real fix, not a simplification any more -- activeZoneId() (see the
+    // "======= Zone transitions =======" section above) is a real read of
+    // which zone this plugin last swapped into, closing the gap this
+    // comment used to document (no current-zone/level-name read existed on
+    // BeTileGridFrame at all).
+    if (activeZoneId() != "homestead") return;
     int cx, cy;
     const char* const kDirtKinds[] = {"dirt"};
     if (!findAdjacentTileOfKind(frame, kDirtKinds, 1, &cx, &cy, nullptr)) return;
@@ -948,11 +1210,6 @@ void handleTilling(BeTileGridFrame* frame) {
     queueXpGrant(GrimstoneSkill::Farming, 3.0);
     toastScratch() = "You till the soil, preparing it for planting.";
     frame->requestedToastText = toastScratch().c_str();
-    // Deliberate simplification: the JS also gates this to
-    // currentMap.name === 'YOUR HOMESTEAD' (tillTile() line 2055) -- same
-    // real gap handleFishing() documents above (no current-zone/level-name
-    // read exists on BeTileGridFrame), so this tills ANY registered "dirt"
-    // tile the player is adjacent to, wherever that happens to be.
 }
 
 void handlePlanting(BeTileGridFrame* frame) {
@@ -2019,24 +2276,17 @@ void runDevConsoleCommand(BeTileGridFrame* frame, const std::string& raw) {
     }
 
     if (cmd == "tp") {
-        // **Real, documented gap, not faked**: js's own tp (lines 147-168)
-        // swaps `zoneIndex`/rebuilds `currentMap` in-process because the JS
-        // keeps every zone as one big in-memory generator. This port's
-        // zones are each their own `buildXLevel()` C++ function
-        // (GrimstoneGame.h/.cpp) with NO exported per-zone level JSON file
-        // and no slug/index -> file-path table anywhere in this repo
-        // (checked: no requestedLevelPath call site exists anywhere in
-        // this port yet, and no content/*.json zone export exists either)
-        // -- the same "zone content exists, zone-SWITCHING plumbing does
-        // not" gap handleFishing()'s own doc comment above already
-        // documents from the read side (no way to tell which zone is
-        // active). `requestedLevelPath` (GameModuleApi.h v4) is the real,
-        // working primitive that WOULD drive this the moment that mapping
-        // exists; this command validates its argument for real and says
-        // exactly what's missing rather than swapping to a path that was
-        // never verified to exist.
+        // Real zone swap, using the exact same mechanism a portal
+        // TileMarker fires (see the "======= Zone transitions ======="
+        // section's own doc comment above) -- this used to be a
+        // documented, unfixed gap (js's own tp, lines 147-168, swaps
+        // `zoneIndex` in-process; this port had no slug/index -> file-path
+        // table anywhere), closed by zoneSlugToTileGrid()
+        // (GrimstoneGame.h/.cpp) + zonetransition::requestZoneSwap() above.
         static const char* const kZoneNames[] = {"Ashenveil", "Ashen Moor", "Iron Peaks", "Cursed Marshes",
                                                    "Obsidian Depths"};
+        static const char* const kZoneSlugs[] = {"ashenveil", "ashen_moor", "iron_peaks", "cursed_marshes",
+                                                   "obsidian_depths"};
         if (args.empty()) {
             devConsoleToast(frame, "Usage: tp <0-4>  (0=Ashenveil, 1=Ashen Moor, 2=Iron Peaks, "
                                     "3=Cursed Marshes, 4=Obsidian Depths)");
@@ -2048,9 +2298,9 @@ void runDevConsoleCommand(BeTileGridFrame* frame, const std::string& raw) {
                                     "3=Cursed Marshes, 4=Obsidian Depths)");
             return;
         }
-        devConsoleToast(frame, std::string("tp is not wired up yet: no exported level file/zone-index table "
-                                            "exists in this port for '") +
-                                    kZoneNames[idx] + "' -- see PORTING_PLAN.md's devconsole.js row.");
+        if (zonetransition::requestZoneSwap(frame, kZoneSlugs[idx])) {
+            devConsoleToast(frame, std::string("Teleporting to ") + kZoneNames[idx] + "...");
+        }
         return;
     }
 
@@ -2186,6 +2436,8 @@ void handleDevConsole(BeTileGridFrame* frame) {
 
 } // namespace
 
+void setGrimstoneRuntimeAssetDir(const std::filesystem::path& assetDir) { zonetransition::assetDir() = assetDir; }
+
 void updateGrimstoneRuntime(BeTileGridFrame* frame) {
     if (frame == nullptr) return;
 
@@ -2198,6 +2450,7 @@ void updateGrimstoneRuntime(BeTileGridFrame* frame) {
     stringScratch().clear();
 
     syncHitpointsMaxHealth(frame);
+    handleZoneTransition(frame); // before every other system -- see its own doc comment above
     handleMiningAndWoodcutting(frame);
     handleCombatAttack(frame);
     handleCombatDeathRewards(frame); // per-frame, not gated on interactPressed

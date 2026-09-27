@@ -2,6 +2,16 @@
 
 #include "GameModuleApi.h"
 
+#include <filesystem>
+
+// Called once from GrimstonePlugin.cpp's registerRuntime() hook, alongside
+// registerGrimstoneGame(assetDir) -- gives the zone-transition machinery in
+// GrimstoneRuntime.cpp (see handleZoneTransition()'s own doc comment) a
+// writable directory to save a freshly-built destination zone's TileGrid to
+// before pointing BeTileGridFrame::requestedLevelPath at it. Safe to call
+// with an empty path (falls back to the current working directory).
+void setGrimstoneRuntimeAssetDir(const std::filesystem::path& assetDir);
+
 // Grimstone's per-frame gameplay runtime -- the entry point
 // GrimstonePlugin.cpp's onTileGridUpdate hook calls every frame. This is the
 // FIRST slice of the "port the actual gameplay logic" phase (see

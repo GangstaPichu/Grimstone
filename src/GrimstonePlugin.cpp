@@ -15,7 +15,9 @@
 namespace {
 
 void pluginRegisterRuntime(const char* assetDir) {
-    registerGrimstoneGame(std::filesystem::path(assetDir ? assetDir : "."));
+    const std::filesystem::path dir(assetDir ? assetDir : ".");
+    registerGrimstoneGame(dir);
+    setGrimstoneRuntimeAssetDir(dir);
 }
 
 // The project identity, same schema as project.json -- carried in the

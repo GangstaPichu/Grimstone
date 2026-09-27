@@ -540,3 +540,38 @@ TileGrid buildHomesteadLevel(const TileKindRegistry& registry);
 // parent zone" convention every other interior in this file already
 // establishes.
 TileGrid buildHomeCabinInterior(const TileKindRegistry& registry);
+
+// ---- Zone registry (real zone-to-zone transitions) ---------------------
+//
+// Closes the gap GrimstoneRuntime.cpp's own dev-console "tp" command used
+// to document as a real, unfixed blocker: every zone above is its own
+// buildXLevel()/buildXInterior() C++ function with no slug/index -> builder
+// table anywhere, so a portal TileMarker's own "targetZone" property
+// (set by every addPortalMarker()/exitMarker call site above) had nowhere
+// to resolve to. This is that table -- the single place that maps a portal's
+// "targetZone" string (or the dev console's own zone name) to the builder
+// that actually produces it.
+//
+// `seed` feeds every procedurally-seeded zone this maps to
+// (buildProceduralZone()'s 4 overworld biomes, buildCultistCatacombs()) --
+// there is still no persisted per-playthrough world seed anywhere in this
+// port (see buildStormcragLevel()'s own doc comment on the same gap), so
+// GrimstoneRuntime.cpp passes one fixed placeholder value everywhere this
+// is called, same judgement call as that function's own "no seed threaded
+// through yet" note.
+//
+// Returns false (and leaves `outGrid` untouched) for a slug this table
+// doesn't know -- a real, honest "no such zone" answer rather than a
+// fallback to some default zone, so a caller (the dev console's "tp", the
+// portal-transition handler) can report exactly that rather than silently
+// teleporting somewhere unintended. NOT every zone in this file is
+// reachable this way yet: the 6 generic house interiors and the
+// blacksmith/inn/shop/bank interiors are entered by bumping a BWALL_DOOR
+// tile in buildAshenveilLevel() (a gameplay-side bump-trigger this port
+// hasn't wired at all, a separate gap from this table), and the Homestead
+// is entered only via a not-yet-ported "Homestead Sigil" item-use action
+// (see buildHomesteadLevel()'s own doc comment) -- both are real, already-
+// documented gaps this table doesn't attempt to paper over. Every zone
+// actually reachable via a "portal" TileMarker's own targetZone IS in this
+// table.
+bool zoneSlugToTileGrid(const TileKindRegistry& registry, const std::string& slug, uint32_t seed, TileGrid& outGrid);
