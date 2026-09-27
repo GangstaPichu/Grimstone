@@ -1100,6 +1100,83 @@ void fireWeatherParticles(BeTileGridFrame* frame) {
     frame->requestedParticleY = frame->playerWorldY + offsetY;
 }
 
+// ======= Color grade (day/night + weather tint) =======
+// GameModuleApi.h v36 -> v37 (item N4-GRADE) added a real per-frame
+// scene-lighting write field -- BeTileGridFrame::hasRequestedGradeTemperature/
+// requestedGradeTemperature, hasRequestedGradeTint/requestedGradeTint,
+// hasRequestedGradeSaturation/requestedGradeSaturation (see that struct's
+// own doc comment). Before this, updateDayNightCycle()/updateWeather()
+// tracked real day/night + weather state but had nowhere on the ABI to
+// actually tint the rendered scene with it -- PORTING_PLAN.md's own
+// js/world.js row named exactly this gap. This closes it by driving the
+// three new fields FROM the day/night flag state above, every frame.
+//
+// js/render.js's own night treatment (lines ~2735-2754, "Day/Night
+// lighting with proper light source cutouts") is a screen-space alpha
+// overlay: a `rgba(5,8,28, nightAlpha*0.82)` fill blended over the whole
+// canvas (then punched with light-source cutouts, which this pass does
+// not attempt to reproduce -- see the doc comment below). `nightAlpha`
+// is js/world.js's own getNightAlpha() (lines 38-45): 0 across the whole
+// day window (0.2-0.8), a SMOOTH linear fade across dusk (0.8-0.867) and
+// dawn (0.133-0.2), and 1 through full night -- transcribed here as
+// nightAlpha(), rather than reusing daynight::isNight()/isDay() (whose
+// own doc comment already explains those two functions encode
+// activities.js's fishing gate, a DIFFERENT, deliberately-narrower pair
+// of boundaries with a "neither" band -- the wrong boundaries for a
+// smoothly-blended visual tint).
+//
+// (5,8,28) has no meaningful red/green split (5 vs 8) but is heavily
+// blue-dominant -- i.e. "cooler" in exactly the sense this ABI's own
+// `temperature` knob (-1 cool/blue, +1 warm/orange) describes, so
+// nightAlpha drives `temperature` negative. There is no ABI knob for
+// "blend toward an arbitrary flat color" (see GameModuleApi.h's own
+// v36->v37 comment: three knobs -- temperature/tint/saturation -- not a
+// LUT or a lift/gamma/gain corrector), so the alpha-overlay's darkening
+// itself is NOT reproduced here -- only its color cast is. `tint`
+// (-1 green/+1 magenta) is left at a small, fixed negative (green) lean,
+// since G(8) is slightly above R(5) in the source color; the effect is
+// minor next to the dominant blue shift. `saturation` is pulled down
+// moderately at night (real night vision reads as less saturated,
+// scotopic-vision desaturation being the closest real-world analogue to
+// "dark blue overlay" a pure color-balance knob can express).
+//
+// Weather (fog specifically, per this item's own scope note) adds a
+// small additional desaturation on top -- js/effects.js's own fog
+// treatment is a separate screen-space haze layer this ABI has no
+// equivalent primitive for either, so (matching the day/night tint
+// above) only a modest color-grade approximation is attempted, not a
+// reproduction of the haze itself.
+constexpr double kNightTemperature = -0.55;
+constexpr double kNightTint = -0.08;
+constexpr double kNightSaturationDrop = 0.30;
+constexpr double kFogSaturationDrop = 0.15;
+
+// js/world.js's getNightAlpha() (lines 38-45), transcribed exactly --
+// see this section's own doc comment above for why isNight()/isDay()
+// (this file's OTHER day/night boundary pair, for fishing) aren't reused.
+double nightAlpha(double t) {
+    if (t >= 0.2 && t <= 0.8) return 0.0;                          // full day
+    if (t > 0.8 && t <= 0.867) return (t - 0.8) / 0.067;           // dusk fade in
+    if (t > 0.867 || t <= 0.133) return 1.0;                       // full night
+    if (t > 0.133 && t < 0.2) return 1.0 - (t - 0.133) / 0.067;    // dawn fade out
+    return 0.0;
+}
+
+void updateColorGrade(BeTileGridFrame* frame) {
+    const double alpha = nightAlpha(currentGameTime(frame));
+
+    double saturation = 1.0 - kNightSaturationDrop * alpha;
+    if (currentWeather(frame) == kFog) saturation -= kFogSaturationDrop;
+    saturation = std::fmax(0.0, std::fmin(1.0, saturation));
+
+    frame->hasRequestedGradeTemperature = 1;
+    frame->requestedGradeTemperature = static_cast<float>(kNightTemperature * alpha);
+    frame->hasRequestedGradeTint = 1;
+    frame->requestedGradeTint = static_cast<float>(kNightTint * alpha);
+    frame->hasRequestedGradeSaturation = 1;
+    frame->requestedGradeSaturation = static_cast<float>(saturation);
+}
+
 } // namespace daynight
 
 // Walks the player's own live ABI position against the CURRENT zone's real
@@ -3591,6 +3668,7 @@ void updateGrimstoneRuntime(BeTileGridFrame* frame) {
     daynight::updateDayNightCycle(frame); // per-frame, not gated on interactPressed
     daynight::updateWeather(frame);       // per-frame, not gated on interactPressed -- reads activeZoneId(), so after handleZoneTransition()
     daynight::fireWeatherParticles(frame); // per-frame, not gated on interactPressed
+    daynight::updateColorGrade(frame);     // per-frame, not gated on interactPressed -- reads currentGameTime()/currentWeather(), so after the two calls above
     handleMiningAndWoodcutting(frame);
     handleCombatAttack(frame);
     handleCombatDeathRewards(frame); // per-frame, not gated on interactPressed
