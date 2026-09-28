@@ -1,0 +1,1496 @@
+[
+  {
+    "name": "aldermast_seal_offer",
+    "startNodeId": "offer",
+    "nodes": [
+      {
+        "id": "offer",
+        "speaker": "Aldermast",
+        "text": "Hmm. You actually made it up here. Good. I have been watching the Catacombs from the crystal ball -- the cultists have a ritual seal down there. If they complete the binding, whatever they have caged beneath that altar walks free. I need you to bring me the Ashen Seal before that happens.",
+        "choices": [
+          { "text": "I'll retrieve it.", "targetNodeId": "accepted_confirm" },
+          { "text": "Tell me more about the seal.", "targetNodeId": "offer_more" },
+          { "text": "Not right now." }
+        ]
+      },
+      {
+        "id": "offer_more",
+        "speaker": "Aldermast",
+        "text": "A ritual binder -- carved from the same stone as the altar itself. The cultists use it to anchor a summoning. Without the seal the ritual collapses. With it in the wrong hands... well. That is why I need it here, not there.",
+        "choices": [
+          { "text": "I'll retrieve it.", "targetNodeId": "accepted_confirm" },
+          { "text": "Not right now." }
+        ]
+      },
+      {
+        "id": "accepted_confirm",
+        "speaker": "Aldermast",
+        "text": "Good. The seal is deep in the Catacombs -- past the first hall, held in a chest the cultists guard jealously. You'll know it by the red glow. Do not attempt to use it yourself. Bring it directly to me.",
+        "choices": [
+          { "text": "Understood." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "aldermast_seal_reminder",
+    "startNodeId": "reminder",
+    "nodes": [
+      {
+        "id": "reminder",
+        "speaker": "Aldermast",
+        "text": "The Ashen Seal is still in the Catacombs. Find it -- it's guarded deep in the dungeon. Look for a chest with a red glow. Don't dawdle.",
+        "choices": [
+          { "text": "I'm working on it." },
+          { "text": "What does it look like again?", "targetNodeId": "reminder_detail" }
+        ]
+      },
+      {
+        "id": "reminder_detail",
+        "speaker": "Aldermast",
+        "text": "Red. Glowing. About the size of your fist. You will feel the wrongness of it before you see it. The cultists keep it behind their inner sanctum -- clear the hall and search the chests.",
+        "choices": [
+          { "text": "Got it." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "aldermast_seal_handin",
+    "startNodeId": "handin",
+    "nodes": [
+      {
+        "id": "handin",
+        "speaker": "Aldermast",
+        "text": "You have it. I can feel it from here. Hand it over -- quickly, please, before it starts responding to the tower's aetheric field.",
+        "choices": [
+          {
+            "text": "Here, take it.",
+            "targetNodeId": "handin_thanks",
+            "action": "give_item",
+            "actionParam": "ring_of_warding",
+            "actionParam2": "1"
+          },
+          { "text": "Actually, can I hold onto it?", "targetNodeId": "handin_refuse" }
+        ]
+      },
+      {
+        "id": "handin_thanks",
+        "speaker": "Aldermast",
+        "text": "Excellent. I'll seal it in the null-vault tonight. As for your reward -- this ring has been in my collection for two centuries. The warding runes are my own design. It will serve you better than it does a shelf.",
+        "choices": [
+          { "text": "Thank you, Aldermast.", "targetNodeId": "seal_epilogue" }
+        ]
+      },
+      {
+        "id": "seal_epilogue",
+        "speaker": "Aldermast",
+        "text": "One more thing -- since you've proven yourself. Look up at the sky tonight. Count the stars in the Void Constellation. Four are missing. I believe their shards fell somewhere in the depths of this realm. Find them, and I can build something remarkable.",
+        "choices": [
+          { "text": "Tell me more." },
+          { "text": "Perhaps later." }
+        ]
+      },
+      {
+        "id": "handin_refuse",
+        "speaker": "Aldermast",
+        "text": "No. Absolutely not. Bring it here immediately.",
+        "choices": [
+          { "text": "I'll bring it." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "aldermast_seal_missing",
+    "startNodeId": "missing",
+    "nodes": [
+      {
+        "id": "missing",
+        "speaker": "Aldermast",
+        "text": "Where is the seal? You found it -- I could sense it briefly in the crystal -- but now I cannot. Did you lose it? Check your belongings carefully.",
+        "choices": [
+          { "text": "I'll find it again." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "aldermast_void_offer_undertrained",
+    "startNodeId": "undertrained",
+    "nodes": [
+      {
+        "id": "undertrained",
+        "speaker": "Aldermast",
+        "text": "Four Void Shards, scattered across the deepest dungeon chambers. The things guarding them are not goblins. You need seasoned combat skills before I'd send you in. Come back when you're ready.",
+        "choices": [
+          { "text": "I'll train and return." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "aldermast_void_offer",
+    "startNodeId": "offer",
+    "nodes": [
+      {
+        "id": "offer",
+        "speaker": "Aldermast",
+        "text": "Good -- you have the mettle for this. The four Void Shards are hidden in dungeon chests across the realm. The Ashwood Crypts, the Iron Depths, the Cultist Catacombs -- and one last shard in the deepest chest of the Stormcrag mountain caves. Each one will feel distinctly cold. Bring all four and I'll forge something you won't find anywhere else.",
+        "choices": [
+          { "text": "I'll find them.", "targetNodeId": "accepted" },
+          { "text": "Not yet." }
+        ]
+      },
+      {
+        "id": "accepted",
+        "speaker": "Aldermast",
+        "text": "Excellent. Remember -- four shards, all of them. Half a constellation is useless to me.",
+        "choices": [
+          { "text": "Understood." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "aldermast_void_progress",
+    "startNodeId": "progress",
+    "nodes": [
+      {
+        "id": "progress",
+        "speaker": "Aldermast",
+        "text": "Search the deepest chests in every dungeon -- the Ashwood Crypts, the Iron Depths, and the Cultist Catacombs. The shards are drawn to darkness.",
+        "choices": [
+          { "text": "I'll keep searching." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "aldermast_void_handin",
+    "startNodeId": "handin",
+    "nodes": [
+      {
+        "id": "handin",
+        "speaker": "Aldermast",
+        "text": "Four shards. I can feel them from here -- the constellation hums again. Bring them to me. All four, now.",
+        "choices": [
+          {
+            "text": "Here are all four shards.",
+            "targetNodeId": "handin_thanks",
+            "action": "give_item",
+            "actionParam": "amulet_of_stars",
+            "actionParam2": "1"
+          }
+        ]
+      },
+      {
+        "id": "handin_thanks",
+        "speaker": "Aldermast",
+        "text": "Perfect. Watch -- yes, there. The four stars are lit again. The Amulet of Stars is yours. I cannot explain what it will do in detail without three hours and a chalkboard. Wear it. You will understand.",
+        "choices": [
+          { "text": "Remarkable.", "targetNodeId": "void_epilogue" }
+        ]
+      },
+      {
+        "id": "void_epilogue",
+        "speaker": "Aldermast",
+        "text": "Now -- while you are here. My Grimoire. The original one -- three hundred years of research. The cultists stole it during the siege and tore it into three fragments before I could stop them. The pages are scattered across the dungeons. I need them back. All three.",
+        "choices": [
+          { "text": "I'll find them.", "targetNodeId": "grimoire_accepted_confirm" },
+          { "text": "Perhaps later." }
+        ]
+      },
+      {
+        "id": "grimoire_accepted_confirm",
+        "speaker": "Aldermast",
+        "text": "Good. The fragments will be in chests -- they are distinctive, you'll know them. The pages glow faintly even after all this time. Find all three and I'll teach you the Void Rune -- and give you something else besides.",
+        "choices": [
+          { "text": "I will return." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "aldermast_void_gathering",
+    "startNodeId": "gathering",
+    "nodes": [
+      {
+        "id": "gathering",
+        "speaker": "Aldermast",
+        "text": "Four shards. I can feel them from here -- the constellation hums again. Bring them to me. All four, now.",
+        "choices": [
+          { "text": "I'm gathering them." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "aldermast_grimoire_progress",
+    "startNodeId": "progress",
+    "nodes": [
+      {
+        "id": "progress",
+        "speaker": "Aldermast",
+        "text": "You have found 0 of the three Grimoire Fragments. Search dungeon chests across the Ashwood Crypts, Iron Depths, and Cultist Catacombs. The pages still carry a faint aetheric signature -- they glow.",
+        "choices": [
+          { "text": "I'll keep looking." },
+          { "text": "What's in the Grimoire?", "targetNodeId": "progress_detail" }
+        ]
+      },
+      {
+        "id": "progress_detail",
+        "speaker": "Aldermast",
+        "text": "Everything. Three centuries of arcane theory, forty-seven original rune designs, the complete history of the Void Constellation event. And my chicken pie recipe, but that is confidential.",
+        "choices": [
+          { "text": "Noted." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "aldermast_grimoire_handin",
+    "startNodeId": "handin",
+    "nodes": [
+      {
+        "id": "handin",
+        "speaker": "Aldermast",
+        "text": "All three fragments. I can feel the resonance even across the room. Hand them over -- carefully.",
+        "choices": [
+          {
+            "text": "Here, all three.",
+            "targetNodeId": "handin_thanks",
+            "action": "give_item",
+            "actionParam": "staff_of_aldermast",
+            "actionParam2": "1"
+          }
+        ]
+      },
+      {
+        "id": "handin_thanks",
+        "speaker": "Aldermast",
+        "text": "There. Whole again. Centuries of work, intact. As promised -- the Void Rune is now available at the Spell Tome. And this staff has been waiting for someone worthy. It was made to amplify arcane intent. I find myself no longer needing it. You clearly do.",
+        "choices": [
+          { "text": "I am honoured." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "aldermast_grimoire_missing",
+    "startNodeId": "missing",
+    "nodes": [
+      {
+        "id": "missing",
+        "speaker": "Aldermast",
+        "text": "You have found all three fragments -- but I sense you do not have them all on you. Check your inventory. Bring all three at once.",
+        "choices": [
+          { "text": "I'll check." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "aldermast_lore_chat",
+    "startNodeId": "idle",
+    "nodes": [
+      {
+        "id": "idle",
+        "speaker": "Aldermast",
+        "text": "The constellation burns bright again. Whatever is happening below that chapel -- the surges will slow, for a time. Though I suspect the calm won't last. Come back if you find anything else interesting.",
+        "choices": [
+          { "text": "Goodbye, Aldermast." },
+          { "text": "What are Shadow Walkers?", "targetNodeId": "lore_shadow" },
+          { "text": "What happened to the Grimward kings?", "targetNodeId": "lore_grimward" },
+          { "text": "More questions...", "targetNodeId": "idle_more" }
+        ]
+      },
+      {
+        "id": "idle_more",
+        "speaker": "Aldermast",
+        "text": "The constellation burns bright again. Whatever is happening below that chapel -- the surges will slow, for a time. Though I suspect the calm won't last. Come back if you find anything else interesting.",
+        "choices": [
+          { "text": "Back.", "targetNodeId": "idle" },
+          { "text": "Tell me about the Void Shards.", "targetNodeId": "lore_void" },
+          { "text": "Tell me about rune crafting.", "targetNodeId": "lore_runecraft" },
+          { "text": "What is magic, really?", "targetNodeId": "lore_magic" }
+        ]
+      },
+      {
+        "id": "lore_shadow",
+        "speaker": "Aldermast",
+        "text": "Impressions. When something vast moved through the Whisperwood -- centuries ago -- it left residue. The Shadow Walkers are that residue, shaped by the ambient fear of the forest. They are not alive, exactly. But they are not not alive either.",
+        "choices": [
+          { "text": "Ask something else.", "targetNodeId": "idle" },
+          { "text": "Goodbye, Aldermast." }
+        ]
+      },
+      {
+        "id": "lore_grimward",
+        "speaker": "Aldermast",
+        "text": "They were warned. I warned them personally, three times, in writing. They built their city on a convergence point -- aetheric lines crossing in the wrong configuration. When the cultists started digging beneath the chapel, the end was already written. I left before the last page.",
+        "choices": [
+          { "text": "Ask something else.", "targetNodeId": "idle" },
+          { "text": "Goodbye, Aldermast." }
+        ]
+      },
+      {
+        "id": "lore_void",
+        "speaker": "Aldermast",
+        "text": "Crystallised void-energy. They fell when four stars in the Constellation were extinguished -- something consumed them. The shards landed in the darkest places in the realm, drawn by resonance. You will feel cold near them.",
+        "choices": [
+          { "text": "Ask something else.", "targetNodeId": "idle" },
+          { "text": "Goodbye, Aldermast." }
+        ]
+      },
+      {
+        "id": "lore_runecraft",
+        "speaker": "Aldermast",
+        "text": "Rune crafting? A worthy pursuit. Find the Spell Tome in this very tower -- it will guide you. Start with Arcane Dust before you attempt anything more ambitious. The tome is upstairs.",
+        "choices": [
+          { "text": "Ask something else.", "targetNodeId": "idle" },
+          { "text": "Goodbye, Aldermast." }
+        ]
+      },
+      {
+        "id": "lore_magic",
+        "speaker": "Aldermast",
+        "text": "Pattern recognition, at the most fundamental level. The world has a grammar. Magic is learning to speak it. The runes are just mnemonic shortcuts -- training wheels for those who haven't memorised the conjugations yet. Give it time.",
+        "choices": [
+          { "text": "Ask something else.", "targetNodeId": "idle" },
+          { "text": "Goodbye, Aldermast." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "willa_bank",
+    "startNodeId": "menu",
+    "nodes": [
+      {
+        "id": "menu",
+        "speaker": "Willa",
+        "text": "Welcome to the Grimstone Savings Bank! I can help you play the market, or lock some gold into a bond. What'll it be?",
+        "choices": [
+          { "text": "The Stock Market", "targetNodeId": "market" },
+          { "text": "Savings Bonds", "targetNodeId": "bonds" },
+          { "text": "Never mind, thanks." }
+        ]
+      },
+      {
+        "id": "market",
+        "speaker": "Willa",
+        "text": "Let me check the boards for you...",
+        "choices": [
+          { "text": "Grimco Mining Co.", "targetNodeId": "grimco_menu" },
+          { "text": "Ironvale Smelters", "targetNodeId": "ironvale_menu" },
+          { "text": "Ashenveil Gold Trust", "targetNodeId": "ashgold_menu" },
+          { "text": "Verdant Farms Ltd.", "targetNodeId": "verdant_menu" }
+        ]
+      },
+      {
+        "id": "grimco_menu",
+        "speaker": "Willa",
+        "text": "Grimco Mining Co. -- checking the board...",
+        "choices": [
+          { "text": "Buy 1 share", "targetNodeId": "grimco_buy_result" },
+          { "text": "Sell 1 share", "targetNodeId": "grimco_sell_result" },
+          { "text": "Back to the market board", "targetNodeId": "market" }
+        ]
+      },
+      {
+        "id": "grimco_buy_result",
+        "speaker": "Willa",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "grimco_menu" }
+        ]
+      },
+      {
+        "id": "grimco_sell_result",
+        "speaker": "Willa",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "grimco_menu" }
+        ]
+      },
+      {
+        "id": "ironvale_menu",
+        "speaker": "Willa",
+        "text": "Ironvale Smelters -- checking the board...",
+        "choices": [
+          { "text": "Buy 1 share", "targetNodeId": "ironvale_buy_result" },
+          { "text": "Sell 1 share", "targetNodeId": "ironvale_sell_result" },
+          { "text": "Back to the market board", "targetNodeId": "market" }
+        ]
+      },
+      {
+        "id": "ironvale_buy_result",
+        "speaker": "Willa",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "ironvale_menu" }
+        ]
+      },
+      {
+        "id": "ironvale_sell_result",
+        "speaker": "Willa",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "ironvale_menu" }
+        ]
+      },
+      {
+        "id": "ashgold_menu",
+        "speaker": "Willa",
+        "text": "Ashenveil Gold Trust -- checking the board...",
+        "choices": [
+          { "text": "Buy 1 share", "targetNodeId": "ashgold_buy_result" },
+          { "text": "Sell 1 share", "targetNodeId": "ashgold_sell_result" },
+          { "text": "Back to the market board", "targetNodeId": "market" }
+        ]
+      },
+      {
+        "id": "ashgold_buy_result",
+        "speaker": "Willa",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "ashgold_menu" }
+        ]
+      },
+      {
+        "id": "ashgold_sell_result",
+        "speaker": "Willa",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "ashgold_menu" }
+        ]
+      },
+      {
+        "id": "verdant_menu",
+        "speaker": "Willa",
+        "text": "Verdant Farms Ltd. -- checking the board...",
+        "choices": [
+          { "text": "Buy 1 share", "targetNodeId": "verdant_buy_result" },
+          { "text": "Sell 1 share", "targetNodeId": "verdant_sell_result" },
+          { "text": "Back to the market board", "targetNodeId": "market" }
+        ]
+      },
+      {
+        "id": "verdant_buy_result",
+        "speaker": "Willa",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "verdant_menu" }
+        ]
+      },
+      {
+        "id": "verdant_sell_result",
+        "speaker": "Willa",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "verdant_menu" }
+        ]
+      },
+      {
+        "id": "bonds",
+        "speaker": "Willa",
+        "text": "Bonds lock a fixed sum of gold away and return it with interest. A Short Bond locks 100g for 5 minutes and returns 110g. A Medium Bond locks 200g for 15 minutes and returns 250g. A Long Bond locks 400g for 30 minutes and returns 600g.",
+        "choices": [
+          { "text": "Lock in a Short Bond (100g)", "targetNodeId": "bond_short_result" },
+          { "text": "Lock in a Medium Bond (200g)", "targetNodeId": "bond_medium_result" },
+          { "text": "Lock in a Long Bond (400g)", "targetNodeId": "bond_long_result" },
+          { "text": "Back to Willa", "targetNodeId": "menu" }
+        ]
+      },
+      {
+        "id": "bond_short_result",
+        "speaker": "Willa",
+        "text": "One moment...",
+        "choices": [
+          { "text": "Understood.", "targetNodeId": "bonds" }
+        ]
+      },
+      {
+        "id": "bond_medium_result",
+        "speaker": "Willa",
+        "text": "One moment...",
+        "choices": [
+          { "text": "Understood.", "targetNodeId": "bonds" }
+        ]
+      },
+      {
+        "id": "bond_long_result",
+        "speaker": "Willa",
+        "text": "One moment...",
+        "choices": [
+          { "text": "Understood.", "targetNodeId": "bonds" }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "grimward_greeting",
+    "startNodeId": "greet",
+    "nodes": [
+      {
+        "id": "greet",
+        "speaker": "Grimward",
+        "text": "If you've got ore, I can smelt it. If you want gear, I've got stock. Just don't touch the cooling rack.",
+        "choices": [
+          { "text": "Who are you?", "targetNodeId": "intro" },
+          { "text": "Just passing through." }
+        ]
+      },
+      {
+        "id": "intro",
+        "speaker": "Grimward",
+        "text": "Grimward. A resident of Ashenveil.",
+        "choices": [
+          { "text": "Good to know." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "bram_greeting",
+    "startNodeId": "greet",
+    "nodes": [
+      {
+        "id": "greet",
+        "speaker": "Bram",
+        "text": "Welcome to the Tarnished Flagon! Best -- and only -- inn in Ashenveil.",
+        "choices": [
+          { "text": "Who are you?", "targetNodeId": "intro" },
+          { "text": "How's business?", "targetNodeId": "business" },
+          { "text": "What's on the menu?", "targetNodeId": "bram_menu" },
+          { "text": "Farewell." }
+        ]
+      },
+      {
+        "id": "intro",
+        "speaker": "Bram",
+        "text": "Bram Hollowtap. He's run the Tarnished Flagon for twenty years. He knows every rumour that passes through Ashenveil, and shares none of them for free.",
+        "choices": [
+          { "text": "Any news passing through?", "targetNodeId": "news" },
+          { "text": "Goodbye." }
+        ]
+      },
+      {
+        "id": "business",
+        "speaker": "Bram",
+        "text": "Can't complain. Adventurers like yourself keep the coin flowing. Lost three regulars last month to the marshes though. Pour one out, as they say.",
+        "choices": [
+          { "text": "What's your best brew?", "targetNodeId": "brew" },
+          { "text": "Goodbye." }
+        ]
+      },
+      {
+        "id": "news",
+        "speaker": "Bram",
+        "text": "A merchant came through yesterday. Said the Obsidian Depths are moving -- literally. The tunnels shift overnight. Strange magic, that.",
+        "choices": [
+          { "text": "Goodbye." }
+        ]
+      },
+      {
+        "id": "brew",
+        "speaker": "Bram",
+        "text": "The Ashenveil Mead. Local honey, aged two seasons in oak barrels. Costs a bit more, but nothing else like it in the region. Worth every coin.",
+        "choices": [
+          { "text": "Tell me about the rooms.", "targetNodeId": "rooms" },
+          { "text": "Goodbye." }
+        ]
+      },
+      {
+        "id": "rooms",
+        "speaker": "Bram",
+        "text": "Two rooms upstairs, straw beds but clean linen. Sleep on either one -- no charge for resting. My policy: a rested adventurer is a living one.",
+        "choices": [
+          { "text": "Goodbye." }
+        ]
+      },
+      {
+        "id": "bram_menu",
+        "speaker": "Bram",
+        "text": "Here's what I've got on tap tonight.",
+        "choices": [
+          { "text": "Pale Ale -- 4g", "targetNodeId": "pale_ale_buy_result" },
+          { "text": "Dark Stout -- 7g", "targetNodeId": "dark_stout_buy_result" },
+          { "text": "Ashenveil Mead -- 10g", "targetNodeId": "ashenveil_mead_buy_result" },
+          { "text": "More on tap...", "targetNodeId": "bram_menu_page2" }
+        ]
+      },
+      {
+        "id": "bram_menu_page2",
+        "speaker": "Bram",
+        "text": "Still more where that came from.",
+        "choices": [
+          { "text": "Witchwood Brew -- 14g", "targetNodeId": "witchwood_brew_buy_result" },
+          { "text": "Ironpeak Lager -- 9g", "targetNodeId": "ironpeak_lager_buy_result" },
+          { "text": "Inn Stew -- 8g", "targetNodeId": "inn_stew_buy_result" },
+          { "text": "More on tap...", "targetNodeId": "bram_menu_page3" }
+        ]
+      },
+      {
+        "id": "bram_menu_page3",
+        "speaker": "Bram",
+        "text": "Kitchen's got a bit more too.",
+        "choices": [
+          { "text": "Roast Leg -- 12g", "targetNodeId": "roast_leg_buy_result" },
+          { "text": "Ash Bread -- 3g", "targetNodeId": "ash_bread_buy_result" },
+          { "text": "Smoked Fish -- 6g", "targetNodeId": "smoked_fish_buy_result" },
+          { "text": "One more thing...", "targetNodeId": "bram_menu_page4" }
+        ]
+      },
+      {
+        "id": "bram_menu_page4",
+        "speaker": "Bram",
+        "text": "And last but not least.",
+        "choices": [
+          { "text": "Mushroom Pie -- 11g", "targetNodeId": "mushroom_pie_buy_result" },
+          { "text": "Back to Bram", "targetNodeId": "greet" }
+        ]
+      },
+      {
+        "id": "pale_ale_buy_result",
+        "speaker": "Bram",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "bram_menu" }
+        ]
+      },
+      {
+        "id": "dark_stout_buy_result",
+        "speaker": "Bram",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "bram_menu" }
+        ]
+      },
+      {
+        "id": "ashenveil_mead_buy_result",
+        "speaker": "Bram",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "bram_menu" }
+        ]
+      },
+      {
+        "id": "witchwood_brew_buy_result",
+        "speaker": "Bram",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "bram_menu_page2" }
+        ]
+      },
+      {
+        "id": "ironpeak_lager_buy_result",
+        "speaker": "Bram",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "bram_menu_page2" }
+        ]
+      },
+      {
+        "id": "inn_stew_buy_result",
+        "speaker": "Bram",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "bram_menu_page2" }
+        ]
+      },
+      {
+        "id": "roast_leg_buy_result",
+        "speaker": "Bram",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "bram_menu_page3" }
+        ]
+      },
+      {
+        "id": "ash_bread_buy_result",
+        "speaker": "Bram",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "bram_menu_page3" }
+        ]
+      },
+      {
+        "id": "smoked_fish_buy_result",
+        "speaker": "Bram",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "bram_menu_page3" }
+        ]
+      },
+      {
+        "id": "mushroom_pie_buy_result",
+        "speaker": "Bram",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "bram_menu_page4" }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "oswin_greeting",
+    "startNodeId": "greet",
+    "nodes": [
+      {
+        "id": "greet",
+        "speaker": "Oswin",
+        "text": "Been stuck here three days waiting on a caravan that hasn't shown. Bram's ale is good at least. Too good, maybe.",
+        "choices": [
+          { "text": "Who are you?", "targetNodeId": "intro" },
+          { "text": "Tell me about Ashenveil.", "targetNodeId": "ashenveil" },
+          { "text": "How are things?", "targetNodeId": "things" },
+          { "text": "Farewell." }
+        ]
+      },
+      {
+        "id": "intro",
+        "speaker": "Oswin",
+        "text": "Oswin. He travels between settlements buying and selling whatever fits in his pack. He's been waiting on a caravan for three days. He looks like he regrets stopping here.",
+        "choices": [
+          { "text": "Goodbye." }
+        ]
+      },
+      {
+        "id": "ashenveil",
+        "speaker": "Oswin",
+        "text": "It's a rough place, but it's home. The market runs every day, the inn's warm, and the Grimward family keeps the forge burning. That's enough for most of us.",
+        "choices": [
+          { "text": "Goodbye." }
+        ]
+      },
+      {
+        "id": "things",
+        "speaker": "Oswin",
+        "text": "Quiet. Too quiet. The caravans from the west haven't come in two weeks. Something's blocking the pass, but nobody dares find out what.",
+        "choices": [
+          { "text": "Goodbye." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "thessaly_greeting",
+    "startNodeId": "greet",
+    "nodes": [
+      {
+        "id": "greet",
+        "speaker": "Thessaly",
+        "text": "I came to Ashenveil to find someone. Asked around. Nobody talks much. Maybe you know something -- person in a dark cloak, never shows their face?",
+        "choices": [
+          { "text": "Who are you?", "targetNodeId": "intro" },
+          { "text": "Tell me about Ashenveil.", "targetNodeId": "ashenveil" },
+          { "text": "How are things?", "targetNodeId": "things" },
+          { "text": "Farewell." }
+        ]
+      },
+      {
+        "id": "intro",
+        "speaker": "Thessaly",
+        "text": "Thessaly. She arrived in Ashenveil alone and hasn't said where from. She's been asking questions around town -- quietly. She seems to know more than she lets on.",
+        "choices": [
+          { "text": "Goodbye." }
+        ]
+      },
+      {
+        "id": "ashenveil",
+        "speaker": "Thessaly",
+        "text": "It's a rough place, but it's home. The market runs every day, the inn's warm, and the Grimward family keeps the forge burning. That's enough for most of us.",
+        "choices": [
+          { "text": "Goodbye." }
+        ]
+      },
+      {
+        "id": "things",
+        "speaker": "Thessaly",
+        "text": "Quiet. Too quiet. The caravans from the west haven't come in two weeks. Something's blocking the pass, but nobody dares find out what.",
+        "choices": [
+          { "text": "Goodbye." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "dorin_greeting",
+    "startNodeId": "greet",
+    "nodes": [
+      {
+        "id": "greet",
+        "speaker": "Dorin",
+        "text": "Ahh, a customer! Come, come -- finest wares in the region.",
+        "choices": [
+          { "text": "Who are you?", "targetNodeId": "intro" },
+          { "text": "Where do you get your stock?", "targetNodeId": "stock" },
+          { "text": "Let's trade.", "targetNodeId": "dorin_trade_menu" },
+          { "text": "Farewell." }
+        ]
+      },
+      {
+        "id": "intro",
+        "speaker": "Dorin",
+        "text": "Dorin. He's been trading these roads since before Ashenveil had proper walls. He knows where everything comes from -- and where it disappears to.",
+        "choices": [
+          { "text": "Any rare items?", "targetNodeId": "rare" },
+          { "text": "Goodbye." }
+        ]
+      },
+      {
+        "id": "stock",
+        "speaker": "Dorin",
+        "text": "I travel the zones -- dangerous work, but the margins are good. Found a chest of goblin-looted gear last week. Cleaned it up, marked it up, here we are.",
+        "choices": [
+          { "text": "Any rare items?", "targetNodeId": "rare" },
+          { "text": "Goodbye." }
+        ]
+      },
+      {
+        "id": "rare",
+        "speaker": "Dorin",
+        "text": "Not today. But if you bring me interesting materials -- ores, rare hides -- I'll give you a fair price. Better than leaving them to rot in your pack.",
+        "choices": [
+          { "text": "Goodbye." }
+        ]
+      },
+      {
+        "id": "dorin_trade_menu",
+        "speaker": "Dorin",
+        "text": "Buying or selling?",
+        "choices": [
+          { "text": "I'd like to buy.", "targetNodeId": "dorin_buy_menu" },
+          { "text": "I'd like to sell.", "targetNodeId": "dorin_sell_menu" },
+          { "text": "Never mind." }
+        ]
+      },
+      {
+        "id": "dorin_buy_menu",
+        "speaker": "Dorin",
+        "text": "Have a look at what I've got.",
+        "choices": [
+          { "text": "Wooden Club -- 8g", "targetNodeId": "wooden_club_buy_result" },
+          { "text": "Bronze Sword -- 40g", "targetNodeId": "bronze_sword_buy_result" },
+          { "text": "Iron Sword -- 120g", "targetNodeId": "iron_sword_buy_result" },
+          { "text": "More wares...", "targetNodeId": "dorin_buy_menu_page2" }
+        ]
+      },
+      {
+        "id": "dorin_buy_menu_page2",
+        "speaker": "Dorin",
+        "text": "Plenty more armour where that came from.",
+        "choices": [
+          { "text": "War Axe -- 95g", "targetNodeId": "war_axe_buy_result" },
+          { "text": "Steel Sword -- 280g", "targetNodeId": "steel_sword_buy_result" },
+          { "text": "Bone Dagger -- 60g", "targetNodeId": "bone_dagger_buy_result" },
+          { "text": "More wares...", "targetNodeId": "dorin_buy_menu_page3" }
+        ]
+      },
+      {
+        "id": "dorin_buy_menu_page3",
+        "speaker": "Dorin",
+        "text": "Still got a few pieces left.",
+        "choices": [
+          { "text": "Wooden Shield -- 15g", "targetNodeId": "wooden_shield_buy_result" },
+          { "text": "Bronze Shield -- 55g", "targetNodeId": "bronze_shield_buy_result" },
+          { "text": "Iron Shield -- 140g", "targetNodeId": "iron_shield_buy_result" },
+          { "text": "More wares...", "targetNodeId": "dorin_buy_menu_page4" }
+        ]
+      },
+      {
+        "id": "dorin_buy_menu_page4",
+        "speaker": "Dorin",
+        "text": "Getting to the good stuff now.",
+        "choices": [
+          { "text": "Kite Shield -- 320g", "targetNodeId": "kite_shield_buy_result" },
+          { "text": "Leather Coif -- 20g", "targetNodeId": "leather_coif_buy_result" },
+          { "text": "Bronze Helm -- 50g", "targetNodeId": "bronze_helm_buy_result" },
+          { "text": "More wares...", "targetNodeId": "dorin_buy_menu_page5" }
+        ]
+      },
+      {
+        "id": "dorin_buy_menu_page5",
+        "speaker": "Dorin",
+        "text": "Halfway through the rack.",
+        "choices": [
+          { "text": "Iron Helm -- 130g", "targetNodeId": "iron_helm_buy_result" },
+          { "text": "Steel Helm -- 300g", "targetNodeId": "steel_helm_buy_result" },
+          { "text": "Leather Body -- 30g", "targetNodeId": "leather_body_buy_result" },
+          { "text": "More wares...", "targetNodeId": "dorin_buy_menu_page6" }
+        ]
+      },
+      {
+        "id": "dorin_buy_menu_page6",
+        "speaker": "Dorin",
+        "text": "A bit more heavy gear.",
+        "choices": [
+          { "text": "Bronze Plate -- 80g", "targetNodeId": "bronze_plate_buy_result" },
+          { "text": "Iron Plate -- 200g", "targetNodeId": "iron_plate_buy_result" },
+          { "text": "Steel Plate -- 450g", "targetNodeId": "steel_plate_buy_result" },
+          { "text": "More wares...", "targetNodeId": "dorin_buy_menu_page7" }
+        ]
+      },
+      {
+        "id": "dorin_buy_menu_page7",
+        "speaker": "Dorin",
+        "text": "Almost through the lot.",
+        "choices": [
+          { "text": "Leather Legs -- 25g", "targetNodeId": "leather_legs_buy_result" },
+          { "text": "Bronze Legs -- 65g", "targetNodeId": "bronze_legs_buy_result" },
+          { "text": "Iron Legs -- 160g", "targetNodeId": "iron_legs_buy_result" },
+          { "text": "More wares...", "targetNodeId": "dorin_buy_menu_page8" }
+        ]
+      },
+      {
+        "id": "dorin_buy_menu_page8",
+        "speaker": "Dorin",
+        "text": "Last of it, plus something to eat.",
+        "choices": [
+          { "text": "Steel Legs -- 360g", "targetNodeId": "steel_legs_buy_result" },
+          { "text": "Cooked Trout -- 12g", "targetNodeId": "cooked_trout_buy_result" },
+          { "text": "Cooked Salmon -- 20g", "targetNodeId": "cooked_salmon_buy_result" },
+          { "text": "Back to trading", "targetNodeId": "dorin_trade_menu" }
+        ]
+      },
+      {
+        "id": "wooden_club_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu" }
+        ]
+      },
+      {
+        "id": "bronze_sword_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu" }
+        ]
+      },
+      {
+        "id": "iron_sword_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu" }
+        ]
+      },
+      {
+        "id": "war_axe_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page2" }
+        ]
+      },
+      {
+        "id": "steel_sword_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page2" }
+        ]
+      },
+      {
+        "id": "bone_dagger_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page2" }
+        ]
+      },
+      {
+        "id": "wooden_shield_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page3" }
+        ]
+      },
+      {
+        "id": "bronze_shield_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page3" }
+        ]
+      },
+      {
+        "id": "iron_shield_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page3" }
+        ]
+      },
+      {
+        "id": "kite_shield_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page4" }
+        ]
+      },
+      {
+        "id": "leather_coif_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page4" }
+        ]
+      },
+      {
+        "id": "bronze_helm_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page4" }
+        ]
+      },
+      {
+        "id": "iron_helm_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page5" }
+        ]
+      },
+      {
+        "id": "steel_helm_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page5" }
+        ]
+      },
+      {
+        "id": "leather_body_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page5" }
+        ]
+      },
+      {
+        "id": "bronze_plate_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page6" }
+        ]
+      },
+      {
+        "id": "iron_plate_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page6" }
+        ]
+      },
+      {
+        "id": "steel_plate_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page6" }
+        ]
+      },
+      {
+        "id": "leather_legs_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page7" }
+        ]
+      },
+      {
+        "id": "bronze_legs_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page7" }
+        ]
+      },
+      {
+        "id": "iron_legs_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page7" }
+        ]
+      },
+      {
+        "id": "steel_legs_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page8" }
+        ]
+      },
+      {
+        "id": "cooked_trout_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page8" }
+        ]
+      },
+      {
+        "id": "cooked_salmon_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page8" }
+        ]
+      },
+      {
+        "id": "dorin_sell_menu",
+        "speaker": "Dorin",
+        "text": "What are you selling?",
+        "choices": [
+          { "text": "Bones -- 5g", "targetNodeId": "bones_sell_result" },
+          { "text": "Goblin Hide -- 8g", "targetNodeId": "goblin_hide_sell_result" },
+          { "text": "Bronze Bar -- 20g", "targetNodeId": "bronze_bar_sell_result" },
+          { "text": "More I'll take...", "targetNodeId": "dorin_sell_menu_page2" }
+        ]
+      },
+      {
+        "id": "dorin_sell_menu_page2",
+        "speaker": "Dorin",
+        "text": "I'll take more than that.",
+        "choices": [
+          { "text": "Iron Bar -- 30g", "targetNodeId": "iron_bar_sell_result" },
+          { "text": "Gold Bar -- 55g", "targetNodeId": "gold_bar_sell_result" },
+          { "text": "Mithril Bar -- 90g", "targetNodeId": "mithril_bar_sell_result" },
+          { "text": "More I'll take...", "targetNodeId": "dorin_sell_menu_page3" }
+        ]
+      },
+      {
+        "id": "dorin_sell_menu_page3",
+        "speaker": "Dorin",
+        "text": "Still buying.",
+        "choices": [
+          { "text": "Coal -- 8g", "targetNodeId": "coal_sell_result" },
+          { "text": "Copper Ore -- 4g", "targetNodeId": "copper_ore_sell_result" },
+          { "text": "Iron Ore -- 7g", "targetNodeId": "iron_ore_sell_result" },
+          { "text": "More I'll take...", "targetNodeId": "dorin_sell_menu_page4" }
+        ]
+      },
+      {
+        "id": "dorin_sell_menu_page4",
+        "speaker": "Dorin",
+        "text": "Last of what I'm after.",
+        "choices": [
+          { "text": "Normal Log -- 3g", "targetNodeId": "normal_log_sell_result" },
+          { "text": "Oak Log -- 6g", "targetNodeId": "oak_log_sell_result" },
+          { "text": "Willow Log -- 12g", "targetNodeId": "willow_log_sell_result" },
+          { "text": "Back to trading", "targetNodeId": "dorin_trade_menu" }
+        ]
+      },
+      {
+        "id": "bones_sell_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu" }
+        ]
+      },
+      {
+        "id": "goblin_hide_sell_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu" }
+        ]
+      },
+      {
+        "id": "bronze_bar_sell_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu" }
+        ]
+      },
+      {
+        "id": "iron_bar_sell_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu_page2" }
+        ]
+      },
+      {
+        "id": "gold_bar_sell_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu_page2" }
+        ]
+      },
+      {
+        "id": "mithril_bar_sell_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu_page2" }
+        ]
+      },
+      {
+        "id": "coal_sell_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu_page3" }
+        ]
+      },
+      {
+        "id": "copper_ore_sell_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu_page3" }
+        ]
+      },
+      {
+        "id": "iron_ore_sell_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu_page3" }
+        ]
+      },
+      {
+        "id": "normal_log_sell_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu_page4" }
+        ]
+      },
+      {
+        "id": "oak_log_sell_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu_page4" }
+        ]
+      },
+      {
+        "id": "willow_log_sell_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu_page4" }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "character_creation",
+    "startNodeId": "cc_intro",
+    "nodes": [
+      {
+        "id": "cc_intro",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Before you take your first step into Ashenveil, you must choose your calling. Every path grants its own strengths and starting gear -- choose the one that calls to you.",
+        "choices": [
+          { "text": "Warrior -- iron and brute force", "targetNodeId": "cc_class_warrior" },
+          { "text": "Ranger -- swift and deadly from the shadows", "targetNodeId": "cc_class_ranger" },
+          { "text": "Prospector -- wealth waits beneath the stone", "targetNodeId": "cc_class_miner" },
+          { "text": "More paths...", "targetNodeId": "cc_class_page2" }
+        ]
+      },
+      {
+        "id": "cc_class_page2",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "There are other callings still. Choose one, or see what remains.",
+        "choices": [
+          { "text": "Shadowblade -- strikes once, and it is enough", "targetNodeId": "cc_class_rogue" },
+          { "text": "Alchemist -- life-saving concoctions from raw ingredients", "targetNodeId": "cc_class_cook" },
+          { "text": "Farmhand -- knows the soil and the seasons", "targetNodeId": "cc_class_farmhand" },
+          { "text": "One path remains...", "targetNodeId": "cc_class_page3" }
+        ]
+      },
+      {
+        "id": "cc_class_page3",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "One calling remains, for those touched by the arcane.",
+        "choices": [
+          { "text": "Arcane Mage -- the runes answered, and now they always will", "targetNodeId": "cc_class_mage" }
+        ]
+      },
+      {
+        "id": "cc_class_warrior",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Warrior. A battle-hardened fighter who charges into the fray. Masters of brute force and iron defence.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_origin_page1" }
+        ]
+      },
+      {
+        "id": "cc_class_ranger",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Ranger. A wanderer of the wilds who hunts from the shadows. Swift and deadly, masters of the hunt.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_origin_page1" }
+        ]
+      },
+      {
+        "id": "cc_class_miner",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Prospector. A hardy digger who knows every vein of ore in the rock. Wealth waits beneath the stone.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_origin_page1" }
+        ]
+      },
+      {
+        "id": "cc_class_rogue",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Shadowblade. A creature of darkness, lurking in fog and silence. They strike once -- and it is enough.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_origin_page1" }
+        ]
+      },
+      {
+        "id": "cc_class_cook",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Alchemist. Part chef, part herbalist. Transforms raw ingredients into life-saving concoctions.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_origin_page1" }
+        ]
+      },
+      {
+        "id": "cc_class_farmhand",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Farmhand. Raised on the land, calloused hands and a strong back. Knows the soil, the seasons, and which plants will kill you.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_origin_page1" }
+        ]
+      },
+      {
+        "id": "cc_class_mage",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Arcane Mage. You came to the arcane through study, obsession, or accident. Either way, the runes answered -- and now they always will.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_origin_page1" }
+        ]
+      },
+      {
+        "id": "cc_origin_page1",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "And where do you come from? Your origin shapes you too.",
+        "choices": [
+          { "text": "Valley Born -- a gentle start", "targetNodeId": "cc_origin_valley" },
+          { "text": "Highlander -- forged in the high crags", "targetNodeId": "cc_origin_highlands" },
+          { "text": "Exiled Noble -- coin, if little else", "targetNodeId": "cc_origin_exile" },
+          { "text": "More origins...", "targetNodeId": "cc_origin_page2" }
+        ]
+      },
+      {
+        "id": "cc_origin_page2",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "There are other origins still. Choose one, or see what remains.",
+        "choices": [
+          { "text": "Street Orphan -- learned to take what you needed", "targetNodeId": "cc_origin_orphan" },
+          { "text": "Veteran -- has seen real battle", "targetNodeId": "cc_origin_soldier" },
+          { "text": "Hedge Witch -- knows what grows and what heals", "targetNodeId": "cc_origin_herbalist" },
+          { "text": "More origins...", "targetNodeId": "cc_origin_page3" }
+        ]
+      },
+      {
+        "id": "cc_origin_page3",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "The last origins remain.",
+        "choices": [
+          { "text": "Wandering Pilgrim -- has walked every road", "targetNodeId": "cc_origin_pilgrim" },
+          { "text": "Cursed Bloodline -- starts in darkness", "targetNodeId": "cc_origin_cursed" },
+          { "text": "Arcane Touched -- the runes noticed you too", "targetNodeId": "cc_origin_arcane" }
+        ]
+      },
+      {
+        "id": "cc_origin_valley",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Valley Born. +5 Fishing, gentle start.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_confirm" }
+        ]
+      },
+      {
+        "id": "cc_origin_highlands",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Highlander. +5 Mining, +2 Strength.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_confirm" }
+        ]
+      },
+      {
+        "id": "cc_origin_exile",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Exiled Noble. +30 starting gold, +2 Crafting.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_confirm" }
+        ]
+      },
+      {
+        "id": "cc_origin_orphan",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Street Orphan. +5 Crafting, +2 Attack.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_confirm" }
+        ]
+      },
+      {
+        "id": "cc_origin_soldier",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Veteran. +3 Attack & Defence.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_confirm" }
+        ]
+      },
+      {
+        "id": "cc_origin_herbalist",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Hedge Witch. +4 Farming, +4 Cooking.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_confirm" }
+        ]
+      },
+      {
+        "id": "cc_origin_pilgrim",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Wandering Pilgrim. +3 Woodcutting, +3 Fishing.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_confirm" }
+        ]
+      },
+      {
+        "id": "cc_origin_cursed",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Cursed Bloodline. +6 Hitpoints, starts in darkness.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_confirm" }
+        ]
+      },
+      {
+        "id": "cc_origin_arcane",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Arcane Touched. +8 Magic, +2 Crafting.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_confirm" }
+        ]
+      },
+      {
+        "id": "cc_confirm",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Your path is set. Take up your gear, and step into Ashenveil.",
+        "choices": [
+          { "text": "Begin your adventure" }
+        ]
+      }
+    ]
+  }
+]

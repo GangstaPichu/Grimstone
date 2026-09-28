@@ -1,0 +1,98 @@
+[
+  {
+    "name": "grimstone_fists_t1",
+    "damage": 3.0,
+    "hitboxShape": "circle",
+    "hitboxHalfExtents": [0.5, 0.5],
+    "hitboxRadius": 1.5,
+    "knockback": 0.4
+  },
+  {
+    "name": "grimstone_fists_t2",
+    "damage": 6.0,
+    "hitboxShape": "circle",
+    "hitboxHalfExtents": [0.5, 0.5],
+    "hitboxRadius": 1.5,
+    "knockback": 0.4
+  },
+  {
+    "name": "grimstone_fists_t3",
+    "damage": 10.0,
+    "hitboxShape": "circle",
+    "hitboxHalfExtents": [0.5, 0.5],
+    "hitboxRadius": 1.5,
+    "knockback": 0.4
+  },
+  {
+    "name": "grimstone_fists_t4",
+    "damage": 15.0,
+    "hitboxShape": "circle",
+    "hitboxHalfExtents": [0.5, 0.5],
+    "hitboxRadius": 1.5,
+    "knockback": 0.4
+  },
+  {
+    "name": "grimstone_fists_t5",
+    "damage": 21.0,
+    "hitboxShape": "circle",
+    "hitboxHalfExtents": [0.5, 0.5],
+    "hitboxRadius": 1.5,
+    "knockback": 0.4
+  },
+  {
+    "name": "grimstone_fists_t6",
+    "damage": 28.0,
+    "hitboxShape": "circle",
+    "hitboxHalfExtents": [0.5, 0.5],
+    "hitboxRadius": 1.5,
+    "knockback": 0.4
+  },
+  {
+    "name": "grimstone_fists_t7",
+    "damage": 37.0,
+    "hitboxShape": "circle",
+    "hitboxHalfExtents": [0.5, 0.5],
+    "hitboxRadius": 1.5,
+    "knockback": 0.4
+  },
+  {
+    "name": "grimstone_fists_t8",
+    "damage": 48.0,
+    "hitboxShape": "circle",
+    "hitboxHalfExtents": [0.5, 0.5],
+    "hitboxRadius": 1.5,
+    "knockback": 0.4
+  },
+  {
+    "name": "grimstone_fists_t9",
+    "damage": 62.0,
+    "hitboxShape": "circle",
+    "hitboxHalfExtents": [0.5, 0.5],
+    "hitboxRadius": 1.5,
+    "knockback": 0.4
+  },
+  {
+    "name": "grimstone_fists_t10",
+    "damage": 80.0,
+    "hitboxShape": "circle",
+    "hitboxHalfExtents": [0.5, 0.5],
+    "hitboxRadius": 1.5,
+    "knockback": 0.4
+  },
+  {
+    "name": "grimstone_fists_t11",
+    "damage": 100.0,
+    "hitboxShape": "circle",
+    "hitboxHalfExtents": [0.5, 0.5],
+    "hitboxRadius": 1.5,
+    "knockback": 0.4
+  },
+  {
+    "name": "grimstone_fists_t12",
+    "damage": 125.0,
+    "hitboxShape": "circle",
+    "hitboxHalfExtents": [0.5, 0.5],
+    "hitboxRadius": 1.5,
+    "knockback": 0.4
+  }
+]

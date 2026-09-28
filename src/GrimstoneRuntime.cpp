@@ -1,0 +1,5309 @@
+#include "GrimstoneRuntime.h"
+
+#include "GrimstoneGame.h"
+#include "TileGrid.h"
+#include "TileKindRegistry.h"
+
+#include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
+#include <deque>
+#include <filesystem>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+namespace {
+
+// ======= SKILLS/XP =======
+// Transcribed from js/world.js's SKILL_XP_TABLE (line 103) and js/ui.js's
+// xpForLevel() (line 610) / js/activities.js's giveXP() (line 1914).
+enum class GrimstoneSkill {
+    Mining,
+    Smithing,
+    Woodcutting,
+    Crafting,
+    Fishing,
+    Cooking,
+    Farming,
+    Attack,
+    Defence,
+    Strength,
+    Hitpoints,
+    Count,
+};
+constexpr int kSkillCount = static_cast<int>(GrimstoneSkill::Count);
+
+// String literals -- static storage duration, so a pointer into one of
+// these is safe to hand to a BeFlagUpdate/etc. without any lifetime
+// concern, unlike a std::string's own c_str() (which would dangle the
+// moment the temporary is destroyed).
+constexpr const char* kSkillXpFlagKeys[kSkillCount] = {
+    "skill_xp_mining",     "skill_xp_smithing", "skill_xp_woodcutting", "skill_xp_crafting",
+    "skill_xp_fishing",    "skill_xp_cooking",  "skill_xp_farming",     "skill_xp_attack",
+    "skill_xp_defence",    "skill_xp_strength", "skill_xp_hitpoints",
+};
+// Mirrors js/world.js's own state.players[0].skills default -- every skill
+// starts at level 1 (xp 0) except Hitpoints, which starts at level 10
+// (xp 1154, SKILL_XP_TABLE[9]).
+constexpr double kSkillDefaultXp[kSkillCount] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1154};
+
+// Same display-name order as kSkillXpFlagKeys/GrimstoneSkill above --
+// case-insensitively matched, mirroring the JS's own
+// `charAt(0).toUpperCase()+slice(1).toLowerCase()` capitalization dance
+// (setskill/xp, lines 172, 187) with a plain case-fold instead (this port
+// has no `p.skills` object whose exact-cased keys need matching, just this
+// file's own fixed enum). Hoisted up here (was originally defined right
+// next to the dev-console skill lookup, much further down this file) so
+// updatePlayerHud()'s SkillsPanel section (below) can use it too --
+// devConsoleToLower()/findSkillByName() still live near the dev console,
+// unaffected; only the plain array moved.
+constexpr const char* kSkillDisplayNames[kSkillCount] = {
+    "Mining", "Smithing", "Woodcutting", "Crafting", "Fishing", "Cooking", "Farming",
+    "Attack", "Defence", "Strength", "Hitpoints",
+};
+
+// js/world.js line 103 -- levels 1-30; js/ui.js's xpForLevel() (line
+// 610-614) extrapolates past the table linearly by the table's own last
+// step, which the C++ xpForLevel() below reproduces exactly.
+constexpr double kSkillXpTable[] = {0,    83,   174,  276,  388,  512,  650,   801,   969,   1154,  1358,  1584,
+                                     1833, 2107, 2411, 2746, 3115, 3523, 3973,  4470,  5018,  5624,  6291,  7028,
+                                     7842, 8740, 9730, 10824, 12031, 13363};
+constexpr int kSkillXpTableSize = sizeof(kSkillXpTable) / sizeof(kSkillXpTable[0]);
+
+double xpForLevel(int lvl) {
+    if (lvl <= 1) return 0.0;
+    if (lvl - 1 < kSkillXpTableSize) return kSkillXpTable[lvl - 1];
+    return kSkillXpTable[kSkillXpTableSize - 1] * (lvl - kSkillXpTableSize + 1);
+}
+
+// Mirrors giveXP()'s own level-up while-loop (js/activities.js line 1920):
+// walk levels upward while accumulated xp already covers the next level,
+// capped at 99 (the JS's own hard skill cap).
+int levelForXp(double xp) {
+    int lvl = 1;
+    while (lvl < 99 && xp >= xpForLevel(lvl + 1)) ++lvl;
+    return lvl;
+}
+
+double readFlag(const BeTileGridFrame* frame, const char* key, double defaultValue) {
+    for (int i = 0; i < frame->flagCount; ++i)
+        if (std::strcmp(key, frame->flags[i].key) == 0) return frame->flags[i].value;
+    return defaultValue;
+}
+
+// Forward-declared here (real definition, and handleDevConsoleToggle()'s own
+// doc comment on the fixed keysDown table, live much further down this
+// file) so updatePlayerHud()'s SkillsPanel toggle -- which needs to run
+// BEFORE handleDevConsoleToggle() is defined, since updatePlayerHud() itself
+// is defined and called earlier in this file's own top-to-bottom layout --
+// can reuse the identical helper rather than a second copy.
+bool isKeyDown(const BeTileGridFrame* frame, const char* name);
+
+// String-store twin of readFlag() above (BeTileGridFrame::strings,
+// TileGridStringStore.h) -- returns nullptr (not "", which would be
+// indistinguishable from a real empty stored value) when `key` was never
+// set. Used by zonetransition::resumeActiveZoneFromSaveIfNeeded() below to
+// read back the active zone id a previous session's requestZoneSwap()
+// wrote via queueStringSet().
+const char* readString(const BeTileGridFrame* frame, const char* key) {
+    for (int i = 0; i < frame->stringCount; ++i)
+        if (std::strcmp(key, frame->strings[i].key) == 0) return frame->strings[i].value;
+    return nullptr;
+}
+
+double readSkillXp(const BeTileGridFrame* frame, GrimstoneSkill skill) {
+    const int idx = static_cast<int>(skill);
+    return readFlag(frame, kSkillXpFlagKeys[idx], kSkillDefaultXp[idx]);
+}
+
+int readSkillLevel(const BeTileGridFrame* frame, GrimstoneSkill skill) { return levelForXp(readSkillXp(frame, skill)); }
+
+// ======= Per-frame write-back scratch buffers =======
+// Every `requested*Updates` array in BeTileGridFrame only needs to stay
+// valid until onTileGridUpdate returns (same lifetime rule as every other
+// write-back field in GameModuleApi.h) -- a function-local static reused
+// every frame (cleared at the top of updateGrimstoneRuntime(), below)
+// avoids a fresh heap allocation every single frame without any actual
+// lifetime risk, since the host reads/copies these before this call
+// returns and never retains the pointers.
+std::vector<BeFlagUpdate>& flagUpdateBuffer() {
+    static std::vector<BeFlagUpdate> buf;
+    return buf;
+}
+std::vector<BeItemDelta>& itemUpdateBuffer() {
+    static std::vector<BeItemDelta> buf;
+    return buf;
+}
+// Milestone <2d-save-slots> investigation (PORTING_PLAN.md's js/save-load.js
+// row): the host's string store (TileGridStringStore.h) persists through a
+// save/resume exactly like the flag store already does (TileGridSaveGame.h's
+// stringStates), so it's the natural place for the one piece of this
+// plugin's own in-memory state that used to be lost across a process
+// restart -- see zonetransition::resumeActiveZoneFromSaveIfNeeded() below.
+std::vector<BeStringUpdate>& stringUpdateBuffer() {
+    static std::vector<BeStringUpdate> buf;
+    return buf;
+}
+void queueStringSet(const char* key, const char* value) {
+    BeStringUpdate update;
+    update.key = key;
+    update.value = value;
+    stringUpdateBuffer().push_back(update);
+}
+
+void queueXpGrant(GrimstoneSkill skill, double amount) {
+    BeFlagUpdate update;
+    update.key = kSkillXpFlagKeys[static_cast<int>(skill)];
+    update.value = amount;
+    update.mode = 1; // INCREMENT (BeFlagUpdate::mode, GameModuleApi.h)
+    flagUpdateBuffer().push_back(update);
+}
+
+void queueItemGrant(const char* itemId, int count) {
+    BeItemDelta delta;
+    delta.itemId = itemId;
+    delta.count = count; // positive = add, negative = remove (BeItemDelta's own doc comment)
+    itemUpdateBuffer().push_back(delta);
+}
+
+// Forward-declared here (defined below, near the other Aldermast/bank
+// dialogue write-back helpers) so the day/night + weather section --
+// which sits earlier in the file, right after zone transitions -- can
+// use it too instead of duplicating a second "SET a flag" helper.
+void queueFlagSet(const char* key, double value);
+
+// ======= More per-frame write-back scratch buffers (Fishing/Cooking/
+// Smithing/Farming) =======
+// Same lifetime rule as flagUpdateBuffer()/itemUpdateBuffer() above.
+std::vector<BeTileCellEdit>& tileEditBuffer() {
+    static std::vector<BeTileCellEdit> buf;
+    return buf;
+}
+std::vector<BeTimerRequest>& timerStartBuffer() {
+    static std::vector<BeTimerRequest> buf;
+    return buf;
+}
+std::vector<BeHitboxRequest>& hitboxBuffer() {
+    static std::vector<BeHitboxRequest> buf;
+    return buf;
+}
+void queueTileEdit(int layerIndex, int cellX, int cellY, const char* kindId) {
+    BeTileCellEdit edit;
+    edit.layerIndex = layerIndex;
+    edit.cellX = cellX;
+    edit.cellY = cellY;
+    edit.kindId = kindId;
+    tileEditBuffer().push_back(edit);
+}
+void queueTimerStart(const char* key, double seconds) {
+    BeTimerRequest req;
+    req.key = key;
+    req.seconds = seconds;
+    timerStartBuffer().push_back(req);
+}
+void queueHitbox(float centerX, float centerY, int shape, float sizeX, float sizeY, const char* weaponName) {
+    BeHitboxRequest req;
+    req.centerX = centerX;
+    req.centerY = centerY;
+    req.shape = shape;
+    req.sizeX = sizeX;
+    req.sizeY = sizeY;
+    req.weaponName = weaponName;
+    hitboxBuffer().push_back(req);
+}
+
+// Farming's per-cell flag/timer keys are built at runtime ("farmplot_grow_
+// 12_7", ...), unlike every OTHER key in this file (all static string
+// literals, safe to hand a BeFlagUpdate/BeTimerRequest directly). A
+// std::deque never invalidates an existing element's address when
+// something is pushed onto the back (unlike std::vector, which can
+// reallocate), so interning a dynamically-built key's string here keeps
+// its c_str() pointer valid for the rest of this frame -- exactly as long
+// as requestedFlagUpdates/requestedTimerStarts need it to be.
+std::deque<std::string>& stringScratch() {
+    static std::deque<std::string> buf;
+    return buf;
+}
+const char* internString(std::string s) {
+    stringScratch().push_back(std::move(s));
+    return stringScratch().back().c_str();
+}
+
+// ======= Inventory read helpers =======
+// frame->inventory is a read-only per-frame snapshot of the host's fixed-
+// length TileGridInventory (BeInventorySlot's own doc comment) -- mirrors
+// js/activities.js's own countInInventory()/hasItem() helpers, just reading
+// the host's array instead of a JS state.players[0].inventory array.
+int countInInventory(const BeTileGridFrame* frame, const char* itemId) {
+    int total = 0;
+    for (int i = 0; i < frame->inventoryCount; ++i) {
+        if (frame->inventory[i].itemId != nullptr && frame->inventory[i].itemId[0] != '\0' &&
+            std::strcmp(frame->inventory[i].itemId, itemId) == 0) {
+            total += frame->inventory[i].count;
+        }
+    }
+    return total;
+}
+
+// Checks the player's own cell plus its 4 orthogonal neighbors (the same
+// "no facing direction" adjacency rule handleMiningAndWoodcutting() already
+// establishes below) for a tile whose kind id is one of `kindIds`, on
+// EITHER layer -- Floor (0) or Overlay (1). Both layers are checked because
+// this port's own facility placements aren't consistent about which one
+// they paint onto: buildProceduralZone() paints e.g. "smelter"/
+// "cooking_fire" straight onto the Floor layer's `tiles` array before its
+// own floor snapshot, while buildHomeCabinInterior()/buildBlacksmithInterior()
+// place the very same tile kinds via grid.setOverlay() instead. Returns the
+// matching cell's own coordinates and matched kind id via the (optional)
+// out-parameters, so a caller that needs to know WHICH cell (farming) or
+// WHICH kind matched (harvesting, to look up which crop it is) can.
+bool findAdjacentTileOfKind(BeTileGridFrame* frame, const char* const* kindIds, int kindIdCount,
+                             int* outCellX, int* outCellY, const char** outMatchedKindId) {
+    if (frame->queryTileKindId == nullptr || frame->worldToCell == nullptr) return false;
+
+    int px, py;
+    frame->worldToCell(frame->playerWorldX, frame->playerWorldY, &px, &py);
+
+    constexpr int kDx[] = {0, 0, 0, -1, 1};
+    constexpr int kDy[] = {0, -1, 1, 0, 0};
+
+    for (int dir = 0; dir < 5; ++dir) {
+        const int cx = px + kDx[dir];
+        const int cy = py + kDy[dir];
+        for (int layer = 0; layer < 2; ++layer) {
+            const char* kindId = frame->queryTileKindId(layer, cx, cy);
+            if (kindId == nullptr || kindId[0] == '\0') continue;
+            for (int i = 0; i < kindIdCount; ++i) {
+                if (std::strcmp(kindId, kindIds[i]) != 0) continue;
+                if (outCellX != nullptr) *outCellX = cx;
+                if (outCellY != nullptr) *outCellY = cy;
+                if (outMatchedKindId != nullptr) *outMatchedKindId = kindIds[i];
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// ======= Hitpoints <-> playerMaxHealth sync =======
+// js/activities.js's giveXP() (line 1926): a Hitpoints level-up sets
+// `p.maxHp = sk.lvl*3` and heals 5 (clamped to the new max). The host's
+// own playerHealth/playerMaxHealth (v15->v16 ABI) starts both at 100 for a
+// fresh game, with no level concept of its own -- this keeps the two
+// systems in sync every frame without assuming which one moved first.
+void syncHitpointsMaxHealth(BeTileGridFrame* frame) {
+    const int hpLevel = readSkillLevel(frame, GrimstoneSkill::Hitpoints);
+    const float targetMax = static_cast<float>(hpLevel) * 3.0f;
+    // Only fire when it actually needs to change -- requestedSetMaxHealth
+    // fires whenever set > 0, and re-asserting the SAME value every frame
+    // is harmless but pointless; comparing first also means a plugin that
+    // deliberately raised playerMaxHealth by some other means this exact
+    // frame isn't immediately stomped back (not a case that exists yet,
+    // but the cheap comparison costs nothing and avoids relying on that).
+    if (frame->playerMaxHealth != targetMax) frame->requestedSetMaxHealth = targetMax;
+}
+
+// ======= Mining + Woodcutting =======
+// Transcribed from js/activities.js's startMine()/startChop() (lines
+// 62-92) and js/input.js's own per-tile action wiring (lines 474-481),
+// which is where the real level requirements/XP amounts/item ids live --
+// startMine/startChop themselves take those as parameters, so input.js's
+// call sites are the actual source of truth, not a guess.
+//
+// Simplification versus the JS: the JS runs a multi-second progress-bar
+// timer (startActivity(), line 10) before granting the item/XP. This
+// engine's 2D host has no plugin-drawable progress-bar HUD primitive yet
+// (BeTileGridFrame's UI surface is a toast + the dialog-stack template,
+// neither of which is a progress bar) -- ported as an instant grant on
+// the frame `interactPressed` lands next to the resource, with a toast
+// standing in for the "you mine/chop some X" log line. A timed variant is
+// straightforward to add once a progress-bar HUD primitive exists (or by
+// using the host-ticked timer store, TileGridTimerStore.h, to gate a
+// second interact press) -- noted in PORTING_PLAN.md as a follow-up, not
+// silently dropped.
+struct MinableResource {
+    const char* tileKindId;    // registerGrimstoneTileKinds()'s own id (GrimstoneGame.cpp)
+    const char* itemId;        // js/input.js's own item id (matches ITEMS[] in the JS source)
+    GrimstoneSkill skill;
+    int requiredLevel;         // js/activities.js startMine()'s own reqLvl map (line 65); 1 = no real gate
+    double xpAmount;
+    const char* toastVerb;     // "mine" or "chop", matching the JS's own log line
+};
+
+constexpr MinableResource kMinableResources[] = {
+    {"copper_ore_node", "copper_ore", GrimstoneSkill::Mining, 1, 10.0, "mine"},
+    {"iron_ore_node", "iron_ore", GrimstoneSkill::Mining, 15, 35.0, "mine"},
+    {"gold_ore_node", "gold_ore", GrimstoneSkill::Mining, 40, 65.0, "mine"},
+    {"mithril_ore_node", "mithril_ore", GrimstoneSkill::Mining, 55, 80.0, "mine"},
+    {"coal_node", "coal", GrimstoneSkill::Mining, 20, 30.0, "mine"},
+    {"normal_tree", "normal_log", GrimstoneSkill::Woodcutting, 1, 25.0, "chop"},
+    {"oak_tree", "oak_log", GrimstoneSkill::Woodcutting, 1, 37.5, "chop"},
+    {"willow_tree", "willow_log", GrimstoneSkill::Woodcutting, 1, 67.5, "chop"},
+};
+constexpr int kMinableResourceCount = sizeof(kMinableResources) / sizeof(kMinableResources[0]);
+
+// One static toast buffer, reused per frame (same lifetime rule as the
+// write-back vectors above: valid only until onTileGridUpdate returns,
+// which is exactly how long requestedToastText needs to live).
+std::string& toastScratch() {
+    static std::string buf;
+    return buf;
+}
+
+void handleMiningAndWoodcutting(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
+    if (frame->queryTileKindId == nullptr || frame->worldToCell == nullptr) return;
+
+    int px, py;
+    frame->worldToCell(frame->playerWorldX, frame->playerWorldY, &px, &py);
+
+    // Check the player's own cell plus its 4 orthogonal neighbors -- there
+    // is no "facing direction" in this ABI (BeTileGridFrame has no facing
+    // field), so this checks everywhere immediately adjacent rather than
+    // guessing a direction, same "player must be right next to it" spirit
+    // the JS's own click-to-interact model has (a right-click context menu
+    // action only ever fires on a tile the player has already walked to).
+    constexpr int kDx[] = {0, 0, 0, -1, 1};
+    constexpr int kDy[] = {0, -1, 1, 0, 0};
+
+    for (int dir = 0; dir < 5; ++dir) {
+        const int cx = px + kDx[dir];
+        const int cy = py + kDy[dir];
+        // Resources are painted on the Floor layer (0) by every
+        // buildXLevel()/buildProceduralZone() function in GrimstoneGame.cpp
+        // (see e.g. registerGrimstoneTileKinds()'s own "Resource nodes"
+        // section) -- Overlay (1) never holds an ore/tree kind.
+        const char* kindId = frame->queryTileKindId(0, cx, cy);
+        if (kindId == nullptr || kindId[0] == '\0') continue;
+
+        for (int i = 0; i < kMinableResourceCount; ++i) {
+            const MinableResource& res = kMinableResources[i];
+            if (std::strcmp(kindId, res.tileKindId) != 0) continue;
+
+            const int level = readSkillLevel(frame, res.skill);
+            if (level < res.requiredLevel) {
+                toastScratch() = std::string("Need level ") + std::to_string(res.requiredLevel) + ".";
+                frame->requestedToastText = toastScratch().c_str();
+                return;
+            }
+
+            queueItemGrant(res.itemId, 1);
+            queueXpGrant(res.skill, res.xpAmount);
+            toastScratch() = std::string("You ") + res.toastVerb + " some " + res.itemId + ".";
+            frame->requestedToastText = toastScratch().c_str();
+            return; // one resource per interact press, matching the JS's own single-activity-at-a-time rule
+        }
+    }
+}
+
+// ======= Combat (js/activities.js's real turn-based battle menu, ported for
+// real -- see the "UPDATE (turn-based combat pass)" note below for the
+// current system; the paragraphs immediately following this one are the
+// ORIGINAL real-time-stand-in design note, kept in place rather than deleted
+// per this file's own "append a correction, don't rewrite history"
+// convention) =======
+// js/activities.js's real combat is a full turn-based modal battle-menu
+// system (executeCombatMove(), ~line 1293, and the whole panel around it,
+// ~lines 1109-1790): move buttons with damage multipliers/multi-hit/buffs/
+// debuffs/miss chance/magic-scaling, turn order, flee, etc. This engine's
+// own combat primitives (BeHitboxRequest/BeAgentState::health,
+// GameModuleApi.h's "combat framework v20->v21" section) are built for a
+// REAL-TIME action-combat model instead -- a hitbox fired at a moment of the
+// caller's choosing, resolved against a named WeaponDef's FIXED damage, no
+// menu, no turns, no per-swing damage override. Building the full turn-based
+// menu system was, at the time this note was first written, judged OUT OF
+// SCOPE for that pass; what followed for a while was a real, working
+// SIMPLIFIED real-time stand-in instead: one BeHitboxRequest per interact
+// press against the nearest living enemy agent, using the JS's own
+// basic-attack (Punch, dmgMult:1.0) damage formula.
+//
+// **UPDATE (turn-based combat pass): the stand-in above is GONE, replaced by
+// a real turn-based battle menu.** `handleCombatAttack()` (the interact-
+// press-fires-a-hitbox function this whole section originally described) no
+// longer exists -- see `handleCombatEncounter()`/`updateBattleMenu()` further
+// down for what replaced it, and PORTING_PLAN.md's own combat row for the
+// full move-list/mechanics writeup. The short version, since this is the
+// single biggest design call this pass made:
+//
+// - **Real-time-vs-turn-based coexistence, resolved by FREEZING, not by
+//   deleting either system.** This port's OWN real-time layer turned out to
+//   be considerably more built-out than "one hitbox per interact press"
+//   suggests: `GrimstoneGame.cpp`'s `makeEnemyAgentSpawn()` already gives
+//   every one of the six enemy kinds a real, host-autonomous
+//   `TileAgentSpawn::reactionMode = Chase` + `attackWeaponName` +
+//   `attackRange` -- the HOST itself already chases the player and applies
+//   `attackWeaponName`'s damage to `playerHealth` the instant an agent gets
+//   within `attackRange`, entirely independent of any plugin code
+//   (`TileGridHostRunner.cpp`'s own combat-framework block, confirmed by
+//   reading it directly: `if (npcs[i].attacking && !attackWeaponName.empty())
+//   playerHealth = clamp(playerHealth - weapon->damage, ...)`, gated on the
+//   SAME `frozenAgents[i]` check that skips that agent's `update()` call
+//   entirely). Two independently-damaging systems firing on the same living
+//   agent at once -- the host's own autonomous real-time swing AND this
+//   pass's turn-based menu -- would be exactly the "silently conflicting"
+//   outcome this task explicitly calls out to avoid. The fix: the moment a
+//   battle opens against agent index N, this file lists N in
+//   `requestedAgentFreezes` EVERY frame the battle stays open (cleared the
+//   frame the battle ends) -- `TileGridHostRunner.cpp`'s own frozen-agent
+//   `continue` is BEFORE both `update()` (wander/chase) and the
+//   `attacking`/`attackWeaponName` damage-application block, confirmed by
+//   reading that exact code path, so freezing genuinely suspends the whole
+//   real-time exchange for that one agent, not just its movement. Every
+//   OTHER agent in the zone keeps running its own real-time AI unaffected --
+//   this is a deliberate, narrower freeze than "pause the world," matching
+//   the JS's own real behavior (combat's own modal panel takes over input,
+//   but the JS never pauses anything OUTSIDE the fight either).
+// - **The trigger is now proximity-OR-explicit, closer to the JS's own
+//   `triggerEnemyAttack()`** ("when an enemy enters attack range, it pulls
+//   the player into combat," js/activities.js line ~1001) than the old
+//   interact-only stand-in was: a battle opens either when a `reacting`
+//   (chasing) enemy agent is within `kMeleeRangeWorldUnits` of the player
+//   (the real proximity pull, unconditional on interactPressed), OR via an
+//   explicit interact press / the right-click "Attack" menu entry against a
+//   living enemy in range regardless of whether it has noticed the player
+//   yet (preserving this port's own pre-existing sneak-attack agency, which
+//   the old stand-in already had and which nothing in the JS's own
+//   `triggerEnemyAttack()` forbids -- it just never had an equivalent button
+//   to press).
+// - **A player-initiated (right-click) attack and the host's own proximity
+//   pull can target the SAME agent through the identical code path** -- both
+//   funnel into `startCombatEncounter()`, so there is exactly one way a
+//   battle begins, not two.
+//
+// **Real gap, found while wiring this up, not a simplification this port can
+// paper over**: NOTHING in this port currently spawns a live TileAgentSpawn
+// for ANY enemy kind -- grep GrimstoneGame.cpp for "agentSpawns"/
+// "TileAgentSpawn" and there are zero hits. Every goblin/skeleton/wolf/
+// zombie/cultist placed by every buildXLevel()/buildProceduralZone()
+// function so far is a purely decorative painted TILE
+// (registerGrimstoneTileKinds()'s own enemy-kind entries), matching
+// PORTING_PLAN.md's own repeated "painted tiles only, no markers" note on
+// every zone that places one. That means frame->agents is currently EMPTY
+// (agentCount == 0) in every ported zone today -- there is no live agent
+// anywhere in this port with a health/maxHealth for a hitbox to resolve
+// against yet. This code is written against the real, intended mechanism
+// (BeHitboxRequest resolved host-side against frame->agents by kind) so it
+// works the moment a FUTURE pass authors these enemy placements as real
+// TileAgentSpawn entries -- swapping dozens of painted-tile placements
+// across every zone for host-owned agents is its own separate, larger
+// authoring task, out of scope here. It is UNVERIFIED against a live agent
+// in this sandbox for exactly that reason (no engine build exists here
+// either), and this comment says so rather than claiming otherwise.
+//
+// UPDATE (later pass): this gap has since been closed incrementally --
+// GrimstoneGame.cpp's makeEnemyAgentSpawn()/kEnemyAgentTuning[] now spawn
+// real TileAgentSpawn agents for all six enemy kinds this table lists
+// (goblin_spawn/skeleton_spawn/wolf_spawn/zombie first, then cultist/
+// shadow_walker), so frame->agents is no longer empty in zones that place
+// them -- the historical claim above describes this file's state at the
+// time this combat framework was first written, not today's.
+//
+// **Judgement call on how damage is applied**: BeHitboxRequest can only name
+// a WeaponDef with a FIXED damage value (WeaponDef.h's own doc comment: "no
+// per-attack runtime concept... a weapon's active frames are the caller's
+// own responsibility"), and GameModuleApi.h has no direct agent-health
+// write-back at all -- searched the whole header (grep for
+// "requestedHealthDelta", which exists ONLY for the PLAYER's own health, and
+// for any agent-health-shaped write-back) and BeAgentState::health's own doc
+// comment is explicit that a hit is applied only by "the host resolving a
+// requestedHitboxes hit." Hitbox resolution against a named weapon is
+// therefore the ONLY way an agent's health changes -- there is no second,
+// more-precise option to pick between. This resolves the two choices
+// GrimstoneRuntime's own task framing offered in favor of (a): a small SET
+// of discrete weapon tiers (content/weapons.json, see below), each a
+// candidate fixed damage value, with the closest tier to the JS's own
+// computed roll fired each swing. This is real, deliberate quantization, not
+// a faithful per-swing roll -- e.g. a computed roll of 24 snaps to whichever
+// authored tier is nearest (21 or 28), same as any other "pick the closest
+// bucket" approximation.
+constexpr const char* kEnemyAgentKinds[] = {"goblin_spawn", "skeleton_spawn", "wolf_spawn", "zombie", "cultist",
+                                             "shadow_walker"};
+constexpr int kEnemyAgentKindCount = sizeof(kEnemyAgentKinds) / sizeof(kEnemyAgentKinds[0]);
+
+// ~1.5 tiles (TileGrid::tileSize defaults to 1.0 world unit) -- the "player
+// must be standing right next to it" adjacency spirit
+// handleMiningAndWoodcutting() already uses, generalized to a plain radius
+// since there's no facing direction in this ABI.
+constexpr float kMeleeRangeWorldUnits = 1.5f;
+
+// content/weapons.json's own real, hand-authored entries (its own header
+// comment documents the exact WeaponDef.h/WeaponDef.cpp schema this was
+// verified against) -- `damage` here MUST match that file's own "damage"
+// field for each `weaponName`, since this table is what PICKS which one to
+// fire, not a duplicate source of truth for the number itself.
+struct CombatWeaponTier {
+    const char* weaponName;
+    double damage;
+};
+constexpr CombatWeaponTier kCombatWeaponTiers[] = {
+    {"grimstone_fists_t1", 3.0},   {"grimstone_fists_t2", 6.0},    {"grimstone_fists_t3", 10.0},
+    {"grimstone_fists_t4", 15.0},  {"grimstone_fists_t5", 21.0},   {"grimstone_fists_t6", 28.0},
+    {"grimstone_fists_t7", 37.0},  {"grimstone_fists_t8", 48.0},   {"grimstone_fists_t9", 62.0},
+    {"grimstone_fists_t10", 80.0}, {"grimstone_fists_t11", 100.0}, {"grimstone_fists_t12", 125.0},
+};
+constexpr int kCombatWeaponTierCount = sizeof(kCombatWeaponTiers) / sizeof(kCombatWeaponTiers[0]);
+
+// js/activities.js's own ENEMY_DEFS (line 741-747). `xp` was the only field
+// this table carried through the real-time-stand-in pass -- hp/aggroRange
+// were irrelevant then since the HOST owns HP (BeAgentState::health/
+// maxHealth) and there was no per-species AI to tune. The turn-based battle
+// menu genuinely needs three more of ENEMY_DEFS' own fields the old comment
+// here called irrelevant:
+//   - `minDmg`/`maxDmg` -- the enemy's own attack-roll range for its turn in
+//     battle (js's own `_combatEnemyTurn()`: `floor(random()*(maxDmg-minDmg+1))
+//     +minDmg`). GrimstoneGame.cpp's own kEnemyAgentTuning[] (real-time AI
+//     tuning) has NO equivalent field at all -- it authors a single
+//     `attackWeaponName` (a fixed-damage WeaponDef) instead of a min/max
+//     range, so this table is genuinely the only place these two numbers
+//     exist in this port.
+//   - `speed` -- js's own flee-chance formula reads it (`_combatEnemyTurn()`'s
+//     sibling `combatFlee()`, both js/activities.js ~line 1738: `speedPenalty
+//     = max(0, (speed-1.5)*0.08)`). Matches kEnemyAgentTuning[]'s own `speed`
+//     field exactly (both transcribed from the same ENEMY_DEFS row), kept
+//     duplicated here rather than reaching across files for the same
+//     "ordering/module-boundary" reason kEnemyAgentTuning[]'s own doc comment
+//     already gives for duplicating the attack-tier quantization logic.
+//   - `gold` -- js's own `_combatVictory()` grants `p.gold += e.def.gold`
+//     (js/activities.js line 1767). The ORIGINAL real-time-stand-in comment
+//     here said gold was ungranted because "no gold/economy flag ... exists
+//     anywhere in this port" -- true when it was written, but stale by the
+//     time of this pass: the Bank system (`kPlayerGoldFlag`, further down
+//     this file) has since given this port a real wallet. Victory in the
+//     turn-based battle grants it (see `endBattleVictory()` below);
+//     `handleCombatDeathRewards()` itself is UNCHANGED and still does not
+//     grant gold -- see that function's own doc comment for why closing
+//     that specific gap is left alone rather than touched incidentally here.
+struct EnemyDef {
+    const char* kind; // registerGrimstoneTileKinds()'s own tile-kind id
+    const char* displayName;
+    double xp;     // matches ENEMY_DEFS[...].xp exactly
+    double minDmg; // matches ENEMY_DEFS[...].minDmg exactly
+    double maxDmg; // matches ENEMY_DEFS[...].maxDmg exactly
+    double speed;  // matches ENEMY_DEFS[...].speed exactly
+    double gold;   // matches ENEMY_DEFS[...].gold exactly
+};
+constexpr EnemyDef kEnemyDefs[] = {
+    {"goblin_spawn", "Goblin", 12.0, 3.0, 8.0, 1.8, 8.0},
+    {"skeleton_spawn", "Skeleton", 18.0, 5.0, 12.0, 1.4, 14.0},
+    {"wolf_spawn", "Wolf", 15.0, 4.0, 10.0, 2.4, 10.0},
+    {"zombie", "Zombie", 20.0, 4.0, 11.0, 0.9, 12.0},
+    {"cultist", "Cultist", 22.0, 6.0, 14.0, 1.6, 18.0},
+    {"shadow_walker", "Shadow Walker", 22.0, 5.0, 13.0, 1.5, 15.0},
+};
+constexpr int kEnemyDefCount = sizeof(kEnemyDefs) / sizeof(kEnemyDefs[0]);
+
+const EnemyDef* findEnemyDef(const char* kind) {
+    if (kind == nullptr) return nullptr;
+    for (int i = 0; i < kEnemyDefCount; ++i)
+        if (std::strcmp(kind, kEnemyDefs[i].kind) == 0) return &kEnemyDefs[i];
+    return nullptr;
+}
+
+// ======= Turn-based battle menu (js/activities.js's own executeCombatMove()/
+// _combatEnemyTurn()/combatFlee(), lines ~1109-1790) =======
+// See this section's own big doc comment above (right after the "=======
+// Combat" header) for the full real-time-vs-turn-based coexistence decision
+// and the proximity-vs-explicit trigger design. What follows is the actual
+// state machine.
+//
+// **Scope of this pass, stated explicitly (see PORTING_PLAN.md's own combat
+// row for the full writeup)**: three moves -- Attack (js's own basic Punch,
+// dmgMult 1.0, the EXACT formula/weapon-tier-quantization the old real-time
+// stand-in already used), Defend (a generic +10-Defence-this-turn move,
+// matching the SHAPE of js's own weapon-specific defensive moves --
+// Riposte/Mana Shield/Battle Cry's defBuff half -- without this port's
+// missing equipment-slot system to pick a weapon-specific moveset from), and
+// Flee (js's own real attack-level/enemy-speed flee-chance formula,
+// unchanged). Genuinely deferred, by name, not silently dropped: the entire
+// weapon-specific moveset system (`_getWeaponMoves()` -- Aimed Shot/Rapid
+// Fire/Cleave/Cripple/etc., all of it gated on an equipment-slot system this
+// port has never had for ANY activity); the entire six-element 24-spell
+// SPELL_BOOK and its rune-amplification mechanic; every buff/debuff effect
+// beyond Defend's own flat +10 (burn DOT, freeze/stun, weaken, reflect,
+// multi-turn barrier, Battle Cry's Strength buff); multi-hit moves; miss-
+// chance moves; the in-combat item-use menu (`openCombatItemMenu()`); the
+// auto-attack toggle. A future pass wanting any of these has a real,
+// working turn/menu/HP-bar/freeze scaffold to extend rather than a green
+// field.
+//
+// **Turn order**: strictly alternating (player move -> enemy move -> repeat)
+// exactly like the JS -- never speed-based, matching `_combatEnemyTurn()`'s
+// own unconditional call after every non-victory player move.
+//
+// **What persists across turns**: the engaged agent's index (so overrides/
+// freezes/the next hitbox all target the SAME agent henceforth), a
+// single-turn defence boost (Defend's own +10, consumed on the very next
+// enemy attack -- js's own `_combatTurnDefBoost`), and a short flee/defeat
+// "don't immediately re-engage" cooldown per agent index (see
+// `battleCooldowns()` below) -- ALL of it in ordinary function-local statics,
+// the same "ephemeral UI/session state, not persisted through a save" shape
+// `pendingRightClickAction()`/`rightClickActionLabel()` already establish
+// for the right-click menu further down this file, not the flags/
+// BeFlagUpdate persistence store gameplay state (skills, quest flags, gold)
+// uses.
+constexpr const char* kBattleMenuLayoutName = "BattleMenu";
+constexpr const char* kBattleAttackActionId = "battle_attack";
+constexpr const char* kBattleDefendActionId = "battle_defend";
+constexpr const char* kBattleFleeActionId = "battle_flee";
+constexpr const char* kBattleEnemyNameElementId = "battle_enemy_name";
+constexpr const char* kBattleEnemyHpBarElementId = "battle_enemy_hp_bar";
+constexpr const char* kBattleEnemyHpTextElementId = "battle_enemy_hp_text";
+constexpr const char* kBattlePlayerHpBarElementId = "battle_player_hp_bar";
+constexpr const char* kBattlePlayerHpTextElementId = "battle_player_hp_text";
+constexpr const char* kBattleMessageElementId = "battle_message";
+constexpr const char* kBattleFleeButtonElementId = "battle_btn_flee";
+
+// Same wallet key as kPlayerGoldFlag (defined much further down this file,
+// in the Bank section) -- duplicated here rather than relocating this whole
+// combat section past it, matching this file's own "duplicate a small
+// literal across an ordering-constrained section" precedent
+// (handleRightClickMenu()'s own kRcmCookingFireKinds-etc. doc comment).
+constexpr const char* kCombatPlayerGoldFlag = "player_gold";
+
+// Forward declaration for a function defined later in this file (same
+// ordering-constraint shape queueFlagSet's own forward declaration above
+// already establishes) -- a pure append to shared per-frame scratch state,
+// safe to call from here.
+std::vector<BeUiElementOverride>& uiOverrideBuffer();
+
+enum class BattlePhase {
+    PlayerChoice,
+    ResolvingPlayerAttack,
+    EnemyTurnWait,
+    Ending,
+};
+
+BattlePhase& battlePhase() {
+    static BattlePhase phase = BattlePhase::PlayerChoice;
+    return phase;
+}
+int& battleTargetIndex() {
+    static int idx = -1;
+    return idx;
+}
+float& battleEnemyHpBeforeAttack() {
+    static float hp = 0.0f;
+    return hp;
+}
+double& battleTurnTimer() {
+    static double timer = 0.0;
+    return timer;
+}
+double& battleEndDelaySeconds() {
+    static double delay = 0.0;
+    return delay;
+}
+float& battleDefenceBoost() {
+    static float boost = 0.0f;
+    return boost;
+}
+std::string& battleMessage() {
+    static std::string msg;
+    return msg;
+}
+
+// A short "don't immediately re-open a battle against this same agent"
+// grace period after a flee or a defeat -- js's own `combatFlee()` sets
+// `e.ignoreUntil = Date.now() + 3*60*1000` on a successful flee (line 1747);
+// this port has no per-agent "ignore the player" host primitive to set
+// (only requestedAgentFreezes, which would ALSO stop the agent from doing
+// anything at all, not just re-engaging), so this is a plugin-owned
+// substitute using the SAME 3-minute window, measured against this file's
+// own accumulated `frame->dt`, not wall-clock time (this port has no
+// wall-clock read anywhere in this file either -- every other timer in this
+// section already accumulates `dt` the same way).
+struct BattleCooldown {
+    int agentIndex;
+    double untilSeconds;
+};
+std::vector<BattleCooldown>& battleCooldowns() {
+    static std::vector<BattleCooldown> cooldowns;
+    return cooldowns;
+}
+double& battleElapsedSeconds() {
+    static double elapsed = 0.0;
+    return elapsed;
+}
+constexpr double kBattleFleeCooldownSeconds = 180.0; // js's own 3*60*1000ms
+
+bool battleOnCooldown(int agentIndex) {
+    for (const BattleCooldown& c : battleCooldowns()) {
+        if (c.agentIndex == agentIndex) return c.untilSeconds > battleElapsedSeconds();
+    }
+    return false;
+}
+void battleSetCooldown(int agentIndex) {
+    for (BattleCooldown& c : battleCooldowns()) {
+        if (c.agentIndex == agentIndex) {
+            c.untilSeconds = battleElapsedSeconds() + kBattleFleeCooldownSeconds;
+            return;
+        }
+    }
+    battleCooldowns().push_back({agentIndex, battleElapsedSeconds() + kBattleFleeCooldownSeconds});
+}
+
+bool battleMenuOpen(const BeTileGridFrame* frame) {
+    return frame->activeDialogLayoutName != nullptr &&
+           std::strcmp(frame->activeDialogLayoutName, kBattleMenuLayoutName) == 0;
+}
+
+// js's own executeCombatMove() basic-attack formula (Punch, dmgMult:1.0,
+// line ~1355) -- IDENTICAL formula and weapon-tier-quantization the old
+// real-time-stand-in `handleCombatAttack()` used, just fired from the
+// battle menu's own Attack button instead of an interact press. See this
+// section's own "Judgement call on how damage is applied" doc comment
+// (above kEnemyAgentKinds) for why a discrete weapon tier is the ONLY real
+// way an agent's health can change here.
+void fireBattleAttackHitbox(BeTileGridFrame* frame) {
+    const int strLevel = readSkillLevel(frame, GrimstoneSkill::Strength);
+    double roll;
+    if (frame->randomUint32 != nullptr) {
+        constexpr double kUint32Max = 4294967295.0;
+        const double unit = static_cast<double>(frame->randomUint32()) / kUint32Max;
+        roll = std::floor(unit * static_cast<double>(strLevel * 2 + 4)) + 1.0;
+    } else {
+        roll = static_cast<double>(strLevel) + 2.5; // deterministic fallback: the roll's own mean
+    }
+
+    const CombatWeaponTier* chosen = &kCombatWeaponTiers[0];
+    double bestDiff = std::fabs(kCombatWeaponTiers[0].damage - roll);
+    for (int i = 1; i < kCombatWeaponTierCount; ++i) {
+        const double diff = std::fabs(kCombatWeaponTiers[i].damage - roll);
+        if (diff < bestDiff) {
+            bestDiff = diff;
+            chosen = &kCombatWeaponTiers[i];
+        }
+    }
+
+    queueHitbox(frame->playerWorldX, frame->playerWorldY, /*shape=*/1, kMeleeRangeWorldUnits, 0.0f,
+                chosen->weaponName);
+}
+
+// js's own combatFlee() formula, unchanged (js/activities.js line ~1738):
+// attackBonus caps at +40% by Attack level 99, speedPenalty scales with how
+// much faster than 1.5 the enemy's own speed is, clamped to [0.15, 0.9]
+// overall.
+double battleFleeChance(const BeTileGridFrame* frame, const EnemyDef& def) {
+    const int attackLevel = readSkillLevel(frame, GrimstoneSkill::Attack);
+    const double attackBonus = std::min(0.4, (static_cast<double>(attackLevel) - 1.0) / 98.0 * 0.4);
+    const double speedPenalty = std::max(0.0, (def.speed - 1.5) * 0.08);
+    return std::min(0.9, std::max(0.15, 0.3 + attackBonus - speedPenalty));
+}
+
+double battleRollUnit(BeTileGridFrame* frame) {
+    if (frame->randomUint32 == nullptr) return 0.5; // deterministic fallback, same convention as fireBattleAttackHitbox()
+    constexpr double kUint32Max = 4294967295.0;
+    return static_cast<double>(frame->randomUint32()) / kUint32Max;
+}
+
+// js's own _combatVictory() (js/activities.js lines 1758-1780), minus the
+// bones/xp grant -- handleCombatDeathRewards() already grants those,
+// per-frame, on the SAME agent-health<=0 transition this hitbox produces on
+// some later frame (see that function's own doc comment); duplicating xp/
+// bones here would double-grant them. This function's own job is just the
+// gold half of _combatVictory() that function does NOT grant, plus ending
+// the battle.
+void battleEndVictory(BeTileGridFrame* frame, const EnemyDef& def) {
+    const double gold = readFlag(frame, kCombatPlayerGoldFlag, 0.0);
+    queueFlagSet(kCombatPlayerGoldFlag, gold + def.gold);
+    battleMessage() = std::string("Victory! The ") + def.displayName + " falls. +" +
+                       std::to_string(static_cast<int>(def.gold)) + "g";
+    battlePhase() = BattlePhase::Ending;
+    battleEndDelaySeconds() = 1.6; // js's own setTimeout(_closeCombatPanel, 1600)
+    battleTurnTimer() = 0.0;
+}
+
+// js's own _combatDefeat() (js/activities.js lines 1782-1786) calls
+// respawn() -- this port has no player-death/respawn primitive of ANY kind
+// to hook into (checked: no "respawn" function, no level-reset/teleport-to-
+// spawn mechanism anywhere in this file), and building one is real,
+// separately-scoped work far beyond this pass's own turn-based-combat
+// scope. The honest v1 substitute: the player survives, staggering back to
+// a small fraction of max health (20%) via requestedHealthDelta, instead of
+// silently doing nothing or inventing a half-built respawn flow. Documented
+// here and in PORTING_PLAN.md as a real, deliberate deviation, not an
+// oversight.
+void battleEndDefeat(BeTileGridFrame* frame, const EnemyDef& def) {
+    const float reviveHealth = std::max(1.0f, frame->playerMaxHealth * 0.2f);
+    if (reviveHealth > frame->playerHealth) frame->requestedHealthDelta = reviveHealth - frame->playerHealth;
+    battleMessage() = "You have been slain by the " + std::string(def.displayName) +
+                       "... but stagger back to your feet.";
+    battleSetCooldown(battleTargetIndex()); // same "don't immediately re-engage" grace flee gets
+    battlePhase() = BattlePhase::Ending;
+    battleEndDelaySeconds() = 1.5; // js's own setTimeout(..., 1500)
+    battleTurnTimer() = 0.0;
+}
+
+void battleEndFled(const EnemyDef& def) {
+    battleMessage() = std::string("You create an opening and escape the ") + def.displayName + "!";
+    battleSetCooldown(battleTargetIndex());
+    battlePhase() = BattlePhase::Ending;
+    battleEndDelaySeconds() = 1.0; // js's own setTimeout(_closeCombatPanel, 1000)
+    battleTurnTimer() = 0.0;
+}
+
+// js's own _combatEnemyTurn() damage half (js/activities.js lines
+// 1683-1721), minus every spell-driven effect (burn/stun/weaken/reflect/
+// barrier -- none of this port's SPELL_BOOK exists, see this section's own
+// scope note above) and minus equipment/temp-buff defence bonuses (the same
+// "no equipment-bonus tracking" gap every activity in this file already
+// has). What's left, real and unchanged: `defBonus = max(0, defLevel-3) +
+// battleDefenceBoost()` (Defend's own single-turn boost, consumed here) and
+// a plain `floor(random()*(maxDmg-minDmg+1))+minDmg` roll, applied to
+// `playerHealth` directly via requestedHealthDelta (the ABI's own "exists
+// ONLY for the player's own health" primitive -- see this file's own
+// "Judgement call" doc comment above for the equivalent player->enemy
+// constraint). Unlike a hitbox, this write-back has no documented multi-
+// frame resolution latency, so this function computes and reports the
+// EXPECTED post-delta health itself for the same-frame defeat check, the
+// same "fire and trust the clamp" convention the dev console's own "heal"
+// command already uses (see that command's own doc comment).
+void battleRunEnemyTurn(BeTileGridFrame* frame, const EnemyDef& def) {
+    const int defLevel = readSkillLevel(frame, GrimstoneSkill::Defence);
+    const double defBonus = std::max(0.0, static_cast<double>(defLevel) - 3.0) + battleDefenceBoost();
+    battleDefenceBoost() = 0.0; // single-turn boost, consumed the instant the enemy swings
+
+    const double unit = battleRollUnit(frame);
+    const double rawDmg = def.minDmg + std::floor(unit * (def.maxDmg - def.minDmg + 1.0));
+    const double actualDmg = std::max(0.0, rawDmg - defBonus);
+
+    float expectedHealth = frame->playerHealth;
+    if (actualDmg > 0.0) {
+        const float delta = -static_cast<float>(actualDmg);
+        frame->requestedHealthDelta = delta;
+        expectedHealth = std::clamp(frame->playerHealth + delta, 0.0f, frame->playerMaxHealth);
+        battleMessage() = std::string("The ") + def.displayName + " strikes you for " +
+                           std::to_string(static_cast<int>(actualDmg)) + " damage.";
+    } else {
+        battleMessage() = std::string("The ") + def.displayName + "'s attack glances off your armour.";
+    }
+
+    if (expectedHealth <= 0.0f) {
+        battleEndDefeat(frame, def);
+    } else {
+        battlePhase() = BattlePhase::PlayerChoice;
+        battleTurnTimer() = 0.0;
+    }
+}
+
+constexpr double kBattleAttackResolutionTimeoutSeconds = 1.0; // generous grace past the host's own multi-frame hitbox latency
+constexpr double kBattleEnemyTurnDelaySeconds = 0.9; // js's own setTimeout(_combatEnemyTurn, 800 + random()*300)
+constexpr float kBattleDefendBonus = 10.0f; // js's own generic defBuff moves (Mana Shield/Riposte), +10 Defence this turn
+
+// Builds this frame's live overrides (HP bars/text, the message line, the
+// flee button's own live percentage) into the shared uiOverrideBuffer() and
+// (re-)points frame->requestedUiElementOverrides at its CURRENT data()/
+// size() -- same "append, then re-derive the pointer from the buffer's own
+// current storage" discipline handleRightClickMenu()/updatePlayerHud()
+// establish and document in detail (their own coexistence doc comments,
+// further down this file): appending can reallocate, so the pointer must be
+// taken AFTER every push, never cached.
+void pushBattleOverrides(BeTileGridFrame* frame, const BeAgentState& enemy, const EnemyDef& def, double fleeChance) {
+    auto pushText = [](const char* id, const std::string& text) {
+        BeUiElementOverride ov{};
+        ov.elementId = id;
+        ov.text = internString(text);
+        uiOverrideBuffer().push_back(ov);
+    };
+    auto pushValue = [](const char* id, double value) {
+        BeUiElementOverride ov{};
+        ov.elementId = id;
+        ov.hasValue = 1;
+        ov.value = value;
+        uiOverrideBuffer().push_back(ov);
+    };
+
+    pushText(kBattleEnemyNameElementId, def.displayName);
+    const float enemyMax = enemy.maxHealth > 0.0f ? enemy.maxHealth : 1.0f;
+    pushValue(kBattleEnemyHpBarElementId, std::clamp(enemy.health / enemyMax, 0.0f, 1.0f));
+    pushText(kBattleEnemyHpTextElementId, std::to_string(std::max(0, static_cast<int>(enemy.health))) + " / " +
+                                               std::to_string(static_cast<int>(enemyMax)));
+
+    const float playerMax = frame->playerMaxHealth > 0.0f ? frame->playerMaxHealth : 1.0f;
+    pushValue(kBattlePlayerHpBarElementId, std::clamp(frame->playerHealth / playerMax, 0.0f, 1.0f));
+    pushText(kBattlePlayerHpTextElementId, std::to_string(std::max(0, static_cast<int>(frame->playerHealth))) +
+                                                " / " + std::to_string(static_cast<int>(playerMax)));
+
+    pushText(kBattleMessageElementId, battleMessage());
+    pushText(kBattleFleeButtonElementId,
+             "Flee (" + std::to_string(static_cast<int>(std::round(fleeChance * 100.0))) + "%)");
+
+    frame->requestedUiElementOverrides = uiOverrideBuffer().data();
+    frame->requestedUiElementOverrideCount = static_cast<int>(uiOverrideBuffer().size());
+}
+
+// Drives one already-open battle for one whole frame: freezes the engaged
+// agent, keeps the panel's live overrides current, reacts to a player click
+// during PlayerChoice, and advances the ResolvingPlayerAttack/EnemyTurnWait/
+// Ending timers. Called every frame the battle menu is open, regardless of
+// interactPressed -- this is a click-driven UI, not an interact-gated
+// activity.
+void updateBattleMenu(BeTileGridFrame* frame) {
+    battleElapsedSeconds() += static_cast<double>(frame->dt);
+
+    const int targetIdx = battleTargetIndex();
+    const bool endingPhase = battlePhase() == BattlePhase::Ending;
+
+    // Keep the engaged agent frozen -- see this section's own top-of-file
+    // doc comment for why this is the load-bearing half of the real-time-
+    // vs-turn-based coexistence design. Re-asserted every frame per
+    // requestedAgentFreezes' own "not a fires-once field" contract.
+    if (targetIdx >= 0) {
+        frame->requestedAgentFreezes = &battleTargetIndex();
+        frame->requestedAgentFreezeCount = 1;
+    }
+
+    // Target lost (an out-of-bounds index, or the agent no longer matches a
+    // living enemy kind) is only a real abort BEFORE the battle has already
+    // concluded -- during Ending the enemy is EXPECTED to read dead
+    // (Victory), or the index may already be stale from a defeat/flee
+    // cooldown's own bookkeeping, neither of which should tear the panel
+    // down early.
+    const bool targetStillValid =
+        targetIdx >= 0 && frame->agents != nullptr && targetIdx < frame->agentCount &&
+        findEnemyDef(frame->agents[targetIdx].kind) != nullptr && frame->agents[targetIdx].health > 0.0f;
+    if (!endingPhase && !targetStillValid) {
+        frame->requestedPopDialog = 1;
+        battlePhase() = BattlePhase::PlayerChoice;
+        battleTargetIndex() = -1;
+        return;
+    }
+
+    const BeAgentState& enemy = frame->agents[targetIdx];
+    const EnemyDef* def = findEnemyDef(enemy.kind);
+    if (def == nullptr) def = &kEnemyDefs[0]; // unreachable given targetStillValid above; defensive only
+
+    const double fleeChance = battleFleeChance(frame, *def);
+    pushBattleOverrides(frame, enemy, *def, fleeChance);
+
+    switch (battlePhase()) {
+        case BattlePhase::PlayerChoice: {
+            if (frame->clickedUiActionId == nullptr || frame->clickedUiActionId[0] == '\0') return;
+            if (std::strcmp(frame->clickedUiActionId, kBattleAttackActionId) == 0) {
+                battleEnemyHpBeforeAttack() = enemy.health;
+                fireBattleAttackHitbox(frame);
+                battleMessage() = std::string("You attack the ") + def->displayName + "...";
+                battlePhase() = BattlePhase::ResolvingPlayerAttack;
+                battleTurnTimer() = 0.0;
+            } else if (std::strcmp(frame->clickedUiActionId, kBattleDefendActionId) == 0) {
+                battleDefenceBoost() += kBattleDefendBonus;
+                battleMessage() = "You brace yourself. (+10 Defence this turn)";
+                battlePhase() = BattlePhase::EnemyTurnWait;
+                battleTurnTimer() = 0.0;
+            } else if (std::strcmp(frame->clickedUiActionId, kBattleFleeActionId) == 0) {
+                if (battleRollUnit(frame) < fleeChance) {
+                    battleEndFled(*def);
+                } else {
+                    battleMessage() =
+                        "You couldn't escape! The " + std::string(def->displayName) + " blocks your path.";
+                    battlePhase() = BattlePhase::EnemyTurnWait;
+                    battleTurnTimer() = 0.0;
+                }
+            }
+            return;
+        }
+        case BattlePhase::ResolvingPlayerAttack: {
+            battleTurnTimer() += static_cast<double>(frame->dt);
+            const float before = battleEnemyHpBeforeAttack();
+            if (enemy.health < before - 0.01f) {
+                const double dealt = static_cast<double>(before - enemy.health);
+                battleMessage() = "You hit the " + std::string(def->displayName) + " for " +
+                                   std::to_string(static_cast<int>(dealt)) + " damage.";
+                if (enemy.health <= 0.0f) {
+                    battleEndVictory(frame, *def);
+                } else {
+                    battlePhase() = BattlePhase::EnemyTurnWait;
+                    battleTurnTimer() = 0.0;
+                }
+            } else if (battleTurnTimer() >= kBattleAttackResolutionTimeoutSeconds) {
+                battleMessage() = "Your attack narrowly misses the " + std::string(def->displayName) + ".";
+                battlePhase() = BattlePhase::EnemyTurnWait;
+                battleTurnTimer() = 0.0;
+            }
+            return;
+        }
+        case BattlePhase::EnemyTurnWait: {
+            battleTurnTimer() += static_cast<double>(frame->dt);
+            if (battleTurnTimer() >= kBattleEnemyTurnDelaySeconds) battleRunEnemyTurn(frame, *def);
+            return;
+        }
+        case BattlePhase::Ending: {
+            battleTurnTimer() += static_cast<double>(frame->dt);
+            if (battleTurnTimer() >= battleEndDelaySeconds()) {
+                frame->requestedPopDialog = 1;
+                battlePhase() = BattlePhase::PlayerChoice;
+                battleTargetIndex() = -1;
+            }
+            return;
+        }
+    }
+}
+
+// Opens a new battle against the nearest living enemy agent in melee range
+// -- the one true entry point every trigger funnels through (see this
+// section's own top-of-file doc comment for the proximity-vs-explicit
+// trigger design). `forced` bypasses only the `!interactPressed` gate, the
+// same convention every other menu-driven activity in this file already
+// uses.
+void startCombatEncounter(BeTileGridFrame* frame, bool forced) {
+    if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
+    if (frame->agents == nullptr) return;
+
+    int targetIdx = -1;
+    float bestDistSq = kMeleeRangeWorldUnits * kMeleeRangeWorldUnits;
+    bool anyReactingInRange = false;
+    for (int i = 0; i < frame->agentCount; ++i) {
+        const BeAgentState& agent = frame->agents[i];
+        if (agent.health <= 0.0f) continue; // dead agents stay in the array (index-stable), never a target
+        if (findEnemyDef(agent.kind) == nullptr) continue;
+        if (battleOnCooldown(i)) continue; // recent flee/defeat grace period -- see battleCooldowns()'s own doc comment
+        const float dx = agent.worldX - frame->playerWorldX;
+        const float dy = agent.worldY - frame->playerWorldY;
+        const float distSq = dx * dx + dy * dy;
+        if (distSq > bestDistSq) continue;
+        bestDistSq = distSq;
+        targetIdx = i;
+        anyReactingInRange = agent.reacting != 0;
+    }
+    if (targetIdx < 0) return;
+
+    // The proximity trigger (a reacting/chasing enemy already within melee
+    // range) fires unconditionally, matching js's own triggerEnemyAttack();
+    // the explicit trigger (interactPressed, or a forced right-click
+    // "Attack" choice) additionally requires the interact gate, same as
+    // every other menu-driven activity.
+    if (!anyReactingInRange && !forced && !frame->interactPressed) return;
+
+    battleTargetIndex() = targetIdx;
+    battlePhase() = BattlePhase::PlayerChoice;
+    battleTurnTimer() = 0.0;
+    battleDefenceBoost() = 0.0;
+    const EnemyDef* def = findEnemyDef(frame->agents[targetIdx].kind);
+    battleMessage() =
+        std::string("You face the ") + (def != nullptr ? def->displayName : "enemy") + ". What will you do?";
+    frame->requestedPushDialog = kBattleMenuLayoutName;
+}
+
+// Top-level dispatch: while a battle is already open, run its turn logic
+// every frame regardless of interactPressed (a click-driven menu);
+// otherwise look for a new encounter to start. Replaces the old
+// handleCombatAttack() real-time stand-in entirely -- see this section's
+// own top-of-file doc comment for why there are no longer two combat
+// systems to keep from conflicting.
+void handleCombatEncounter(BeTileGridFrame* frame, bool forced = false) {
+    if (battleMenuOpen(frame)) {
+        updateBattleMenu(frame);
+        return;
+    }
+    startCombatEncounter(frame, forced);
+}
+
+// Runs every frame (not gated on interactPressed) -- detects the
+// health <= 0 transition the host's own hitbox resolution produces on some
+// LATER frame than the one that fired it (BeAgentState::health is a
+// snapshot from BEFORE this frame's own resolution, so a kill can never be
+// observed on the same frame the hitbox that caused it was requested), and
+// grants the JS's own _combatVictory() xp split exactly once per agent
+// (Attack/Strength get the full xp, Defence half, Hitpoints a third,
+// js/activities.js lines 1762-1766) -- gated on a per-agent-index flag,
+// since BeAgentState's own doc comment guarantees agent slots are
+// index-stable and never shrink. Same "gate on a real transition, not every
+// frame" discipline handleFarmGrowthTick() already establishes for its own
+// stage-repaint.
+void handleCombatDeathRewards(BeTileGridFrame* frame) {
+    if (frame->agents == nullptr) return;
+    for (int i = 0; i < frame->agentCount; ++i) {
+        const BeAgentState& agent = frame->agents[i];
+        if (agent.health > 0.0f) continue;
+        const EnemyDef* def = findEnemyDef(agent.kind);
+        if (def == nullptr) continue;
+
+        const std::string rewardedKey = "combat_rewarded_agent_" + std::to_string(i);
+        if (readFlag(frame, rewardedKey.c_str(), 0.0) != 0.0) continue; // already rewarded this death
+
+        queueXpGrant(GrimstoneSkill::Attack, def->xp);
+        queueXpGrant(GrimstoneSkill::Strength, def->xp);
+        queueXpGrant(GrimstoneSkill::Defence, std::floor(def->xp * 0.5));
+        queueXpGrant(GrimstoneSkill::Hitpoints, std::floor(def->xp * 0.33));
+        queueItemGrant("bones", 1); // js's own addToInventory('bones'), always granted on a kill
+
+        BeFlagUpdate rewardedFlag;
+        rewardedFlag.key = internString(rewardedKey);
+        rewardedFlag.value = 1.0;
+        rewardedFlag.mode = 0; // SET
+        flagUpdateBuffer().push_back(rewardedFlag);
+
+        toastScratch() = std::string("You have defeated the ") + def->displayName + "!";
+        frame->requestedToastText = toastScratch().c_str();
+    }
+}
+
+// ======= Zone transitions =======
+//
+// Closes the real, documented gap GrimstoneRuntime.cpp's own dev-console
+// "tp" command used to describe: every zone in GrimstoneGame.h/.cpp is its
+// own in-process buildXLevel()/buildXInterior() C++ function, and
+// BeTileGridFrame::requestedLevelPath (GameModuleApi.h, Milestone 252) is
+// the engine's real "swap the active level" primitive -- but it is
+// resolved by the HOST exactly the way `--level`/loadOrBuildLevel() already
+// resolve it (TileGridHostRunner.cpp: `loadTileGrid(path, tileKinds)`,
+// checked directly, not guessed), i.e. a FILE ON DISK in loadTileGrid()'s
+// own JSON schema. There is no ABI hook for "here is a TileGrid I already
+// built in memory, make it the active one" -- only a path.
+//
+// So the real, honest mechanism (not a workaround; TileGrid.h ships exactly
+// this pair for exactly this purpose) is: build the destination zone's
+// TileGrid in-process (unchanged, existing buildXLevel() functions),
+// saveTileGrid() it out to a file in loadTileGrid()'s own schema under this
+// plugin's asset directory, then point requestedLevelPath at that file --
+// the host loads it back via the identical loadTileGrid() call a `--level`
+// swap already uses. Every zone is regenerated into that file fresh on
+// every transition into it (deterministic given the same seed -- see
+// kPlaceholderWorldSeed below -- so this is not lossy), not pre-exported
+// once at build time, so no new build step or content/*.json asset is
+// needed for this to work.
+//
+// The SECOND real ABI gap this closes: BeTileMarker (the per-frame ABI
+// struct handed to the plugin every frame) carries only `kind`/`worldX`/
+// `worldY` -- TileMarker::properties (where every portal's own
+// "targetZone" string lives) does NOT cross the ABI boundary at all
+// (confirmed by reading BeTileMarker's full field list, GameModuleApi.h --
+// the same gap playerNearAldermast()'s own doc comment above already
+// documents and works around by position). So a portal can't be resolved
+// from frame->markers alone. The fix here is the same position-based
+// workaround, generalized: this file keeps its OWN cached copy of each
+// zone's real, C++-side TileGrid (which DOES still have `properties` --
+// it's the plugin's own in-process object, never round-tripped through the
+// ABI) built by the exact same buildXLevel() call the host's own loaded
+// grid came from, and matches the player's live ABI position against THAT
+// cached grid's own marker positions/properties. Since this plugin is the
+// only thing that ever requests a zone swap, its own idea of "which zone
+// is active" is always exactly right the same frame it requests the swap
+// (see activeZoneId() below) -- a real, complete fix for "no active-zone
+// read field exists on the ABI", not a guess.
+//
+// Real, honestly-documented gap this does NOT close: `activeZoneId()`
+// below defaults to "ashenveil" at process start, assuming the host's own
+// initial `--level` is Ashenveil's own exported level.json (there is no
+// ABI field to confirm this, or any other zone, is what actually loaded
+// before this plugin's first frame) -- if a packaged build is ever
+// launched with a different starting `--level` THIS PLUGIN NEVER ITSELF
+// SAVED, portal detection in that starting zone will silently look at the
+// wrong marker set until the first real transition corrects it. A future
+// pass adding a real "confirm which level actually loaded" ABI field (the
+// same gap handleFishing()'s own doc comment below names from the read
+// side) would close this for good; there is no way to close it from the
+// plugin side alone.
+//
+// UPDATE (save/load investigation, PORTING_PLAN.md's js/save-load.js row):
+// the ONE case above that IS closeable from the plugin side alone -- the
+// host resuming THIS plugin's own prior save (TileGridSaveGame.h's
+// "continue where I left off," the default with no `--level` argument at
+// all) -- now is closed, via resumeActiveZoneFromSaveIfNeeded() below and
+// requestZoneSwap()'s own kActiveZoneStringKey write. The paragraph above
+// remains true and unchanged for the OTHER case it names (an explicit,
+// non-Ashenveil `--level` argument on a fresh launch); that one still has
+// no ABI field to detect at all.
+namespace zonetransition {
+
+// There is still no persisted per-playthrough world seed anywhere in this
+// port (buildStormcragLevel()'s own doc comment names the same gap) -- so
+// every procedurally-seeded zone this plugin ever (re)builds uses this one
+// fixed placeholder, matching that function's own judgement call. A future
+// pass threading a real per-playthrough seed through (see PORTING_PLAN.md)
+// should replace this constant with that seed everywhere it's read below.
+constexpr uint32_t kPlaceholderWorldSeed = 1;
+
+// How close (world units) the player must be to a "portal" TileMarker's own
+// position for stepping onto it to fire a transition -- half a tile plus a
+// little slack, the same "step onto it" spirit js/zones.js's own tile-based
+// EXIT/PORTAL handlers use, ported to this engine's continuous world
+// coordinates. Deliberately proximity-only, NOT gated on interactPressed --
+// every portal in this port is a floor decal the JS always fires by
+// walking over, never an interact prompt.
+constexpr float kPortalTriggerRadiusWorld = 0.65f;
+
+// Suppresses re-triggering a transition for this many frames right after
+// one fires -- guards against the destination zone's own player_spawn
+// marker happening to land within kPortalTriggerRadiusWorld of one of ITS
+// portals (checked: none currently do, but a future zone easily could) and
+// bouncing straight back. ~0.5s at a typical frame rate.
+constexpr int kPostTransitionCooldownFrames = 30;
+
+std::filesystem::path& assetDir() {
+    static std::filesystem::path dir;
+    return dir;
+}
+
+std::string& activeZoneIdRef() {
+    static std::string zone = "ashenveil"; // see this section's own doc comment above
+    return zone;
+}
+
+int& cooldownFrames() {
+    static int frames = 0;
+    return frames;
+}
+
+// Scratch buffer for frame->requestedLevelPath -- same "static buffer,
+// valid across this one call, re-set every time it's needed" convention
+// toastScratch()/stringScratch() etc. already use elsewhere in this file.
+std::string& levelPathScratch() {
+    static std::string path;
+    return path;
+}
+
+std::unordered_map<std::string, TileGrid>& zoneCache() {
+    static std::unordered_map<std::string, TileGrid> cache;
+    return cache;
+}
+
+// Builds (if not already cached) and returns the real, C++-side TileGrid
+// for `slug`, or nullptr if `slug` isn't in zoneSlugToTileGrid()'s own
+// table (GrimstoneGame.h/.cpp) at all.
+const TileGrid* cachedZone(const std::string& slug) {
+    auto& cache = zoneCache();
+    const auto it = cache.find(slug);
+    if (it != cache.end()) return &it->second;
+    TileGrid built;
+    if (!zoneSlugToTileGrid(TileKindRegistry::instance(), slug, kPlaceholderWorldSeed, built)) return nullptr;
+    return &cache.emplace(slug, std::move(built)).first->second;
+}
+
+// Save/resume investigation (PORTING_PLAN.md's js/save-load.js row): the
+// key requestZoneSwap() below writes activeZoneIdRef() to, via the host's
+// generic string store (BeStringUpdate/TileGridStringStore.h) -- persisted
+// through a save/resume exactly like flagStates/inventoryItems already are
+// (TileGridSaveGame.h's stringStates), with zero new save-file format.
+constexpr const char* kActiveZoneStringKey = "active_zone_id";
+
+bool& resumedActiveZoneFromSave() {
+    static bool resumed = false;
+    return resumed;
+}
+
+// Restores activeZoneIdRef() from a resumed save's string store, exactly
+// once, on this plugin's first frame -- called from handleZoneTransition()
+// below before anything else reads activeZoneIdRef(). This closes the
+// RESUME half of this section's own doc comment above ("activeZoneId()
+// below defaults to 'ashenveil' at process start"): the common real case
+// of the host resuming THIS plugin's own prior save (TileGridSaveGame.h's
+// "continue where I left off," on by default with no `--level` argument)
+// now restores the actual last-active zone instead of silently assuming
+// Ashenveil. The OTHER case that same doc comment names -- a packaged
+// build launched with an explicit, non-Ashenveil `--level` this plugin
+// never itself saved -- has no ABI field to detect at all (still true,
+// unchanged by this) and is NOT what this closes: a saved string with an
+// unrecognized/empty value (no prior save, or one written by an older
+// build with no such key) leaves activeZoneIdRef() at its "ashenveil"
+// default, the same as before this existed.
+void resumeActiveZoneFromSaveIfNeeded(const BeTileGridFrame* frame) {
+    if (resumedActiveZoneFromSave()) return;
+    resumedActiveZoneFromSave() = true;
+    const char* saved = readString(frame, kActiveZoneStringKey);
+    if (saved == nullptr || saved[0] == '\0') return;
+    const std::string savedZone = saved;
+    if (cachedZone(savedZone) != nullptr) activeZoneIdRef() = savedZone;
+}
+
+// The first "player_spawn" marker in `grid`, or a small fallback near the
+// origin (documented, not silently wrong) if a destination zone somehow
+// has none -- every buildXLevel()/buildXInterior() function in
+// GrimstoneGame.cpp places exactly one, but this is a real fallback rather
+// than an out-of-bounds read if that ever isn't true.
+glm::vec2 zoneSpawnPosition(const TileGrid& grid) {
+    for (const TileMarker& m : grid.markers) {
+        if (m.kind == "player_spawn") return m.position;
+    }
+    return glm::vec2(1.5f, 1.5f);
+}
+
+// Co-op guard (item N5-COOPGUARD, GameModuleApi.h v37 -> v38): before this,
+// requestZoneSwap() would happily write the destination TileGrid to disk,
+// point requestedLevelPath/requestedWarp at it, and -- critically --
+// mutate THIS plugin's own zone-tracking state (activeZoneIdRef(), the
+// persisted "active_zone_id" string, cooldownFrames()) as if the swap had
+// actually happened, even while a co-op session was active. Per
+// requestedLevelPath's own doc comment, the host's drain site
+// (TileGridHostRunner.cpp) now checks BOTH netHost/netClient and silently
+// DROPS any requestedLevelPath write-back while either is set -- host or
+// client side, no distinction between the two roles. So without this
+// guard the plugin's own idea of "which zone am I in" would have
+// desynced from the host's real, unchanged one the moment a peer was
+// connected: activeZoneIdRef() would say the new zone, the persisted
+// save string would say the new zone, but the host never actually
+// swapped anything and the player is still standing in the old one.
+//
+// The fix mirrors the host's own real behavior exactly rather than
+// guessing at a "safe" policy of its own: BE_NET_ROLE_NONE is the only
+// role this ever proceeds for. A connected HOST is refused exactly like a
+// connected CLIENT -- the host's own guard makes no host/client
+// distinction (an `enter_instance`/zone-link co-op refusal from
+// main.cpp's own enterInstance() this file's doc comments already cite
+// as precedent), so this plugin doesn't invent one either. Returns false
+// (with an honest toast naming co-op as the reason, not "no such zone")
+// and touches NONE of the zone-tracking state above -- the plugin's own
+// idea of the active zone stays exactly what it was, matching "the
+// current zone simply continues exactly as if nothing had been
+// requested."
+bool coopZoneSwapBlocked(BeTileGridFrame* frame) {
+    if (frame->netRole == BE_NET_ROLE_NONE) return false;
+    toastScratch() = "Zone travel is unavailable during co-op.";
+    frame->requestedToastText = toastScratch().c_str();
+    return true;
+}
+
+// The real mechanism, shared by both callers below (a portal the player
+// stepped on, and the dev console's "tp"): build/cache the destination
+// zone, save it to a real file in loadTileGrid()'s own schema, and point
+// requestedLevelPath/requestedWarp at it -- see this section's own doc
+// comment for why a file on disk is the real, non-optional shape this
+// takes. Returns false (and toasts why) on a genuinely unknown slug, a
+// file-write failure, or -- checked FIRST, before either of those -- an
+// active co-op session (see coopZoneSwapBlocked()'s own doc comment
+// immediately above); true on success.
+bool requestZoneSwap(BeTileGridFrame* frame, const std::string& targetZone) {
+    if (coopZoneSwapBlocked(frame)) return false;
+
+    const TileGrid* dest = cachedZone(targetZone);
+    if (dest == nullptr) {
+        toastScratch() = "No such zone: '" + targetZone + "'.";
+        frame->requestedToastText = toastScratch().c_str();
+        return false;
+    }
+
+    const std::filesystem::path outPath = assetDir() / "generated-zones" / (targetZone + "-level.json");
+    try {
+        std::filesystem::create_directories(outPath.parent_path());
+        saveTileGrid(*dest, TileKindRegistry::instance(), outPath);
+    } catch (const std::exception& e) {
+        toastScratch() = std::string("Zone swap failed: ") + e.what();
+        frame->requestedToastText = toastScratch().c_str();
+        return false;
+    }
+
+    const glm::vec2 spawn = zoneSpawnPosition(*dest);
+    levelPathScratch() = outPath.string();
+    frame->requestedLevelPath = levelPathScratch().c_str();
+    frame->requestedWarp = 1;
+    frame->requestedWarpX = spawn.x;
+    frame->requestedWarpY = spawn.y;
+
+    activeZoneIdRef() = targetZone;
+    // Persist it too -- see kActiveZoneStringKey's own doc comment above.
+    // activeZoneIdRef() (not the `targetZone` parameter) is the value
+    // handed to queueStringSet(), since it's the function-static string
+    // whose storage genuinely outlives this frame -- the same lifetime
+    // reasoning every other queue*() helper in this file already relies on
+    // for its own arguments.
+    queueStringSet(kActiveZoneStringKey, activeZoneIdRef().c_str());
+    cooldownFrames() = kPostTransitionCooldownFrames;
+
+    // handleDungeonChestLoot()'s own per-visit dedup (defined further down
+    // this file, near "Dungeon chest loot" -- its doc comment there explains
+    // why this reset exists): a fresh (re)entry into the one dungeon that
+    // pass's void-shard/tome-fragment rolls are gated on gets a fresh
+    // chance at each, the same "at most one per visit" shape
+    // makeDungeonMap()'s own per-object `_voidShardGiven`/`_tomeFragGiven`
+    // fields give the JS every time it rebuilds that dungeon's map. Literal
+    // flag keys here on purpose (not shared constants) -- those constants
+    // are declared after this function in file order; both sides just need
+    // to agree on the same two string keys.
+    if (targetZone == "cultist_catacombs") {
+        queueFlagSet("cc_void_shard_given_visit", 0.0);
+        queueFlagSet("cc_tome_frag_given_visit", 0.0);
+    }
+    return true;
+}
+
+} // namespace zonetransition
+
+// Read by handleFishing()'s FISH_TABLE zone-gating and tillTile()'s
+// homestead-only check below -- both used to treat every zone as eligible/
+// matching because no such read existed anywhere on the ABI (their own doc
+// comments named this exact gap). Real and complete, per this section's
+// own doc comment above: this plugin is the only thing that ever requests
+// a zone swap, so it always knows the destination the same frame it
+// requests it.
+const std::string& activeZoneId() { return zonetransition::activeZoneIdRef(); }
+
+// ======= Character creation (js/character.js) =======
+// PORTING_PLAN.md's own js/character.js row named this exact gap: the
+// classes/origins/appearance screen that runs once, before a fresh
+// character's first playthrough, was never ported -- this port's skill/XP
+// core (xpForLevel()/levelForXp() above, all 11 skills as real flags) has
+// existed since early in this port, but nothing ever drove the one-time
+// choice that seeds it with the JS's own class/origin bonuses.
+//
+// **Read in full before writing any of this, per this pass's own task
+// framing**: js/character.js's CLASSES (7 entries)/ORIGINS (9 entries)
+// arrays are the real, mechanical data -- each grants a real skill-LEVEL
+// bonus (`bonus: {SkillName: N}`, applied via beginAdventure()'s own
+// `p.skills[k].lvl = Math.max(1, (p.skills[k].lvl||1) + v)`, NOT an XP
+// grant), a real starting-item grant (`gear: [...]`), and sometimes a
+// real starting-gold grant (`origin.gold`) or a real `startEquip` weapon/
+// armor item. SKIN_TONES/HAIR_COLORS/HAIR_STYLES and the free-text name
+// field are purely cosmetic -- js/render.js reads `p.appearance` to
+// pixel-paint a canvas avatar every frame, and this port's 2D TileGridHost
+// has no equivalent primitive at all (grepped GameModuleApi.h/
+// TileGridHostRunner.cpp for any player-sprite-tint/color field -- zero
+// hits), so there is no way to make a skin-tone/hair choice actually
+// CHANGE anything the player sees in this engine. Per this pass's own
+// task framing, that's fine: appearance is recorded as flags for
+// completeness/future use (see recordDefaultAppearance() below) rather
+// than faked with a UI this engine can't back.
+//
+// **A REAL, structural gap this pass found and is NOT working around**:
+// js/character.js's mage class and "arcane" origin both grant a `Magic`
+// skill bonus -- but this port's own GrimstoneSkill enum (top of this
+// file, mirrored from js/world.js's SKILL_XP_TABLE) has exactly the 11
+// skills js/world.js's own GAME_DEFAULT_SKILLS actually defines, and
+// Magic is not one of them (grepped: no "Magic"/"magic_xp" flag key
+// anywhere in this file). There is no skill to grant that bonus TO. Per
+// this pass's own task framing ("read carefully, don't assume"), that
+// bonus is simply DROPPED for both the mage class and the arcane origin
+// -- documented here, not silently swallowed -- while every other bonus
+// each one grants (Crafting/Hitpoints for mage, Crafting for arcane)
+// still applies in full.
+//
+// **UI, and why this reuses DialogueTree rather than a new UILayout**:
+// content/ui-layouts.json's existing entries establish a real "author a
+// UILayout, drive it via requestedPushDialog/clickedUiActionId" pattern
+// (DialogueTemplate/DevConsoleTemplate/RightClickMenu/PlayerHUD, read in
+// full before writing this) -- but the Bank system below (startBankDialogue()'s
+// own doc comment) already answered the identical "many fixed choices, no
+// free-text entry primitive on a DialogueChoice" question this screen
+// asks, by building a real, working DialogueTree instead of a bespoke
+// UILayout screen, reusing the ALREADY-authored, already-load-verified
+// "DialogueTemplate" layout every other dialogue tree in this file renders
+// through. A brand-new CharacterCreation UILayout would just be a second,
+// parallel implementation of exactly what DialogueTemplate already does
+// (a speaker Label, a body Label, up to kMaxDialogueChoices=4 choice
+// Labels) for no real gain -- so `content/dialogue-trees.json` gains one
+// new tree, "character_creation", instead. DialogueTree.h's own
+// kMaxDialogueChoices=4 is a real, checked ABI limit (this file's own
+// "no separate Trade entry" note near handleRightClickMenu() below
+// already found the identical limit), which is why 7 classes/9 origins
+// are PAGINATED across several "More paths.../More origins..." nodes
+// rather than offered on one screen -- there is no name-entry step (no
+// ABI field anywhere stores a player NAME at all, checked, zero hits --
+// js/character.js's own name field has nowhere on this ABI to go, so it
+// is not ported).
+//
+// **Gate, and the "first frame ever" signal**: there is no ABI field
+// anywhere naming "this is a fresh save" (checked GameModuleApi.h for
+// anything resembling "newGame"/"freshSave"/"isNewCharacter" -- zero
+// hits, the same kind of gap zonetransition::resumedActiveZoneFromSave()
+// above already worked around with its OWN persisted signal). This
+// reuses that shape but through the FLAG store (not a process-lifetime-
+// only static bool) specifically because "have I created my character
+// yet" has to survive a save/resume, not just this one process's
+// lifetime -- a static bool would re-offer character creation on every
+// relaunch of an already-created save. kCharacterCreatedFlag is this
+// plugin's own signal, set exactly once, on the frame the player
+// finishes the flow.
+namespace cc {
+
+constexpr const char* kCharacterCreatedFlag = "character_created";
+constexpr const char* kDialogueTreeName = "character_creation";
+
+// One skill-level delta -- terminated lists below use amount 0 as "unused
+// slot" rather than a sentinel skill, since GrimstoneSkill has no natural
+// "none" value of its own.
+struct SkillDelta {
+    GrimstoneSkill skill;
+    int amount;
+};
+
+// ---- Class bonuses (js/character.js's CLASSES array, lines 2-64) ----
+// gear[]/startEquip[] are granted IDENTICALLY, both as plain inventory
+// items -- this port has no equipment-slot system of any kind (the same
+// "no equipment-bonus/temp-buff system" gap fireBattleAttackHitbox() above
+// already documents), so there is nowhere else for a "weapon"/"body"
+// startEquip item to go.
+struct ClassDef {
+    const char* nodeId; // matches a cc_class_* node id in content/dialogue-trees.json
+    SkillDelta bonuses[4];
+    int bonusCount;
+    const char* gear[3];
+    int gearCount;
+    const char* startEquip[2]; // nullptr entries skipped -- not every class authors one
+};
+
+constexpr ClassDef kClassDefs[] = {
+    {"cc_class_warrior",
+     {{GrimstoneSkill::Attack, 5}, {GrimstoneSkill::Strength, 5}, {GrimstoneSkill::Defence, 3}, {GrimstoneSkill::Hitpoints, 3}},
+     4,
+     {"bronze_bar", nullptr, nullptr},
+     1,
+     {"bronze_sword", "leather_body"}},
+    {"cc_class_ranger",
+     {{GrimstoneSkill::Attack, 3}, {GrimstoneSkill::Woodcutting, 5}, {GrimstoneSkill::Fishing, 3}, {GrimstoneSkill::Hitpoints, 2}},
+     4,
+     {"normal_log", "raw_fish", nullptr},
+     2,
+     {"crude_bow", "leather_body"}},
+    {"cc_class_miner",
+     {{GrimstoneSkill::Mining, 5}, {GrimstoneSkill::Smithing, 5}, {GrimstoneSkill::Hitpoints, 2}}, // 4th slot zero-inits, unused (bonusCount 3)
+     3,
+     {"copper_ore", "copper_ore", "iron_ore"},
+     3,
+     {"wooden_club", "wooden_shield"}},
+    {"cc_class_rogue",
+     {{GrimstoneSkill::Attack, 4}, {GrimstoneSkill::Strength, 4}, {GrimstoneSkill::Crafting, 4}, {GrimstoneSkill::Hitpoints, 2}},
+     4,
+     {"goblin_hide", "coins", nullptr},
+     2,
+     {nullptr, nullptr}}, // js's own CLASSES entry has no startEquip for this class
+    {"cc_class_cook",
+     {{GrimstoneSkill::Cooking, 6}, {GrimstoneSkill::Fishing, 4}, {GrimstoneSkill::Hitpoints, 5}}, // 4th slot unused
+     3,
+     {"raw_fish", "raw_salmon", nullptr},
+     2,
+     {nullptr, nullptr}},
+    {"cc_class_farmhand",
+     {{GrimstoneSkill::Farming, 8}, {GrimstoneSkill::Cooking, 3}, {GrimstoneSkill::Hitpoints, 4}}, // 4th slot unused
+     3,
+     {"cooked_chicken", "cooked_pork", nullptr},
+     2,
+     {"wooden_club", nullptr}},
+    {"cc_class_mage",
+     // js's own CLASSES entry also grants "Magic: 8" here -- dropped, see
+     // this namespace's own doc comment above for why (no such skill
+     // exists in this port).
+     {{GrimstoneSkill::Crafting, 3}, {GrimstoneSkill::Hitpoints, 2}}, // 3rd/4th slots unused
+     2,
+     {"rune_fire", "rune_fire", "rune_heal"},
+     3,
+     {"old_staff", nullptr}},
+};
+constexpr int kClassDefCount = sizeof(kClassDefs) / sizeof(kClassDefs[0]);
+
+// ---- Origin bonuses (js/character.js's ORIGINS array, lines 66-76) ----
+struct OriginDef {
+    const char* nodeId; // matches a cc_origin_* node id in content/dialogue-trees.json
+    SkillDelta bonuses[2];
+    int bonusCount;
+    int gold; // 0 = none granted
+};
+
+constexpr OriginDef kOriginDefs[] = {
+    {"cc_origin_valley", {{GrimstoneSkill::Fishing, 5}}, 1, 0}, // 2nd slot unused
+    {"cc_origin_highlands", {{GrimstoneSkill::Mining, 5}, {GrimstoneSkill::Strength, 2}}, 2, 0},
+    {"cc_origin_exile", {{GrimstoneSkill::Crafting, 2}}, 1, 30}, // 2nd slot unused
+    {"cc_origin_orphan", {{GrimstoneSkill::Crafting, 5}, {GrimstoneSkill::Attack, 2}}, 2, 0},
+    {"cc_origin_soldier", {{GrimstoneSkill::Attack, 3}, {GrimstoneSkill::Defence, 3}}, 2, 0},
+    {"cc_origin_herbalist", {{GrimstoneSkill::Farming, 4}, {GrimstoneSkill::Cooking, 4}}, 2, 0},
+    {"cc_origin_pilgrim", {{GrimstoneSkill::Woodcutting, 3}, {GrimstoneSkill::Fishing, 3}}, 2, 0},
+    {"cc_origin_cursed", {{GrimstoneSkill::Hitpoints, 6}, {GrimstoneSkill::Attack, 1}}, 2, 0},
+    // js's own ORIGINS entry also grants "Magic: 8" here -- dropped, same
+    // reason as the mage class above; Crafting: 2 still applies.
+    {"cc_origin_arcane", {{GrimstoneSkill::Crafting, 2}}, 1, 0}, // 2nd slot unused
+};
+constexpr int kOriginDefCount = sizeof(kOriginDefs) / sizeof(kOriginDefs[0]);
+
+// Applies one skill-LEVEL bonus (not an xp grant) the same way
+// beginAdventure()'s own `Math.max(1, currLvl + v)` does: reads the
+// CURRENT level (already reflecting any earlier class bonus, since class
+// is always applied on an earlier real frame than origin -- a player
+// click, not this same update -- so the host has already drained and
+// persisted that SET before origin's own applySkillLevelBonus() call
+// ever reads it back), adds the delta, and SETs (not increments) the xp
+// flag to that level's own xpForLevel() -- exact and idempotent, and
+// matches the JS's own level-based (not xp-based) bonus semantics
+// precisely.
+void applySkillLevelBonus(const BeTileGridFrame* frame, GrimstoneSkill skill, int amount) {
+    int newLevel = readSkillLevel(frame, skill) + amount;
+    if (newLevel < 1) newLevel = 1;
+    queueFlagSet(kSkillXpFlagKeys[static_cast<int>(skill)], xpForLevel(newLevel));
+}
+
+void applyClassChoice(BeTileGridFrame* frame, const ClassDef& def) {
+    for (int i = 0; i < def.bonusCount; ++i) applySkillLevelBonus(frame, def.bonuses[i].skill, def.bonuses[i].amount);
+    for (int i = 0; i < def.gearCount; ++i) queueItemGrant(def.gear[i], 1);
+    for (const char* item : def.startEquip)
+        if (item != nullptr) queueItemGrant(item, 1);
+}
+
+void applyOriginChoice(BeTileGridFrame* frame, const OriginDef& def) {
+    for (int i = 0; i < def.bonusCount; ++i) applySkillLevelBonus(frame, def.bonuses[i].skill, def.bonuses[i].amount);
+    if (def.gold > 0) {
+        // kPlayerGoldFlag itself is defined much further down (near the
+        // bank system, which is where the "player_gold" wallet concept
+        // was first introduced -- see its own doc comment there), so this
+        // repeats its exact literal value rather than forward-declaring
+        // it, the same "no dependency worth restructuring the file for"
+        // call this section makes throughout.
+        BeFlagUpdate goldUpdate;
+        goldUpdate.key = "player_gold";
+        goldUpdate.value = static_cast<double>(def.gold);
+        goldUpdate.mode = 1; // INCREMENT
+        flagUpdateBuffer().push_back(goldUpdate);
+    }
+}
+
+// ---- Appearance (js/character.js's SKIN_TONES/HAIR_COLORS/HAIR_STYLES,
+// lines 78-90) ----
+// No UI offers a real choice here (see this namespace's own doc comment
+// above for why) -- recorded as the JS's own real DEFAULT charCreate
+// state (skinIdx:0, hairColorIdx:0, hairStyleIdx:0, matching both
+// js/character.js's initial `charCreate` object AND js/save-load.js's own
+// migration fallback for an old save with none, line 18) purely for
+// completeness/future use, exactly per this pass's own task framing
+// ("record the CHOICE as a flag... without trying to fake a visual
+// change this engine can't render").
+void recordDefaultAppearance() {
+    queueFlagSet("cc_appearance_skin_idx", 0.0);
+    queueFlagSet("cc_appearance_hair_color_idx", 0.0);
+    queueFlagSet("cc_appearance_hair_style_idx", 0.0);
+}
+
+// Heals the player up to whatever new max Hitpoints just produced --
+// mirrors js/character.js's own beginAdventure() closing lines
+// (`p.maxHp = p.skills.Hitpoints.lvl * 3; p.hp = p.maxHp;`).
+// syncHitpointsMaxHealth() (top of this file, runs every frame) already
+// derives playerMaxHealth from the Hitpoints skill level and requests it
+// via requestedSetMaxHealth -- but that write-back only clamps
+// playerHealth DOWN when the max shrinks (its own doc comment,
+// GameModuleApi.h), it never tops health UP when the max grows, so a
+// fresh character's Hitpoints bonus needs its own explicit heal-to-full
+// here, the same way js's own beginAdventure() always sets hp = maxHp
+// unconditionally.
+void healToNewMax(BeTileGridFrame* frame) {
+    const int hpLevel = readSkillLevel(frame, GrimstoneSkill::Hitpoints);
+    const float newMax = static_cast<float>(hpLevel) * 3.0f;
+    if (newMax > frame->playerHealth) frame->requestedHealthDelta = newMax - frame->playerHealth;
+}
+
+const ClassDef* findClassByNodeId(const char* nodeId) {
+    for (int i = 0; i < kClassDefCount; ++i)
+        if (std::strcmp(kClassDefs[i].nodeId, nodeId) == 0) return &kClassDefs[i];
+    return nullptr;
+}
+const OriginDef* findOriginByNodeId(const char* nodeId) {
+    for (int i = 0; i < kOriginDefCount; ++i)
+        if (std::strcmp(kOriginDefs[i].nodeId, nodeId) == 0) return &kOriginDefs[i];
+    return nullptr;
+}
+
+// Same "gate on ARRIVING at a specific destination node while
+// clickedUiActionId is non-empty this exact frame" pattern
+// applyAldermastDialogueSideEffects() below already establishes (see its
+// own doc comment for why -- activeDialogueNodeId already reflects the
+// node the click just advanced TO, not the one it was clicked FROM).
+// Every class/origin leaf node here is only ever reachable via forward
+// navigation (no "back" choice anywhere in content/dialogue-trees.json's
+// "character_creation" tree), so each one fires exactly once by
+// construction -- no extra idempotency guard is needed beyond the outer
+// kCharacterCreatedFlag gate in maybeOfferCharacterCreation() below,
+// which stops this tree from ever being pushed again once it's done.
+void applyCharacterCreationEffects(BeTileGridFrame* frame) {
+    if (frame->activeDialogueTreeName == nullptr || std::strcmp(frame->activeDialogueTreeName, kDialogueTreeName) != 0) return;
+    if (frame->clickedUiActionId == nullptr || frame->clickedUiActionId[0] == '\0') return;
+    if (frame->activeDialogueNodeId == nullptr) return;
+
+    if (const ClassDef* def = findClassByNodeId(frame->activeDialogueNodeId)) {
+        applyClassChoice(frame, *def);
+        return;
+    }
+    if (const OriginDef* def = findOriginByNodeId(frame->activeDialogueNodeId)) {
+        applyOriginChoice(frame, *def);
+        return;
+    }
+    if (std::strcmp(frame->activeDialogueNodeId, "cc_confirm") == 0) {
+        recordDefaultAppearance();
+        healToNewMax(frame);
+        queueFlagSet(kCharacterCreatedFlag, 1.0);
+        toastScratch() = "Your adventure in Ashenveil begins.";
+        frame->requestedToastText = toastScratch().c_str();
+    }
+}
+
+// Pushes the character-creation tree every frame the flag isn't set yet
+// AND nothing else already has the dialog stack -- so closing it early
+// (Escape, same as any other dialogue) simply reopens it next frame,
+// making the flow effectively mandatory before anything else can be
+// done, matching js/character.js's own "you cannot start the game
+// without finishing this screen" flow (goToCharCreate()/beginAdventure()
+// have no "skip" path at all).
+void maybeOfferCharacterCreation(BeTileGridFrame* frame) {
+    if (readFlag(frame, kCharacterCreatedFlag, 0.0) != 0.0) return;
+    if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
+    frame->requestedPushDialog = "dialogue:character_creation";
+}
+
+} // namespace cc
+
+// ======= Day/Night cycle + Weather =======
+// Transcribed from js/world.js's day/night tracking (lines 1-96) and
+// js/effects.js's Weather module (lines 608-888). Both are pure
+// HOST-side-flag state, following this file's own "everything
+// persistent is a flag" convention (syncHitpointsMaxHealth()'s doc
+// comment, updateStockMarket()'s own real-time accumulator) -- there is
+// no persistent-state struct anywhere else in this plugin, and this
+// doesn't add one either.
+namespace daynight {
+
+// js/world.js line 5: "DAY_DURATION_MS = 15*60*1000" -- 15 REAL minutes
+// per in-game day. BeTileGridFrame::dt is real seconds (not ms), so this
+// is that same constant in seconds, matching tickDayNight()'s own
+// `dt = (now - lastFrameTime) / DAY_DURATION_MS` division exactly, just
+// with frame->dt standing in for a wall-clock delta the same way
+// updateStockMarket()'s own doc comment already establishes for a 2D
+// plugin with no wall-clock of its own.
+constexpr double kDayDurationSeconds = 15.0 * 60.0;
+// js/world.js line 6: `let gameTime = 0.22; // start just after dawn`.
+constexpr double kDefaultGameTime = 0.22;
+constexpr double kDefaultGameDay = 1.0;
+
+constexpr const char* kTimeFlag = "daynight_game_time";
+constexpr const char* kDayFlag = "daynight_game_day";
+
+// js/activities.js's startFish() (lines 457-459) -- the ONLY place in
+// the JS that actually classifies a gameTime value as day/night for
+// gameplay purposes (getPeriodLabel()'s own dawn/dusk boundaries, lines
+// 58-64, are a display-only distinction fishing never reads). Both
+// windows deliberately leave a "neither" band (0.2-0.25, 0.75-0.8,
+// matching dawn/dusk in the JS's own comment) where a fish that
+// requires EITHER 'day' or 'night' bites at neither -- a real JS quirk
+// (checked, not smoothed over): timeOfDay:'day'/'night' fish already
+// have a real minLvl/rarity gate too, so this narrow non-biting window
+// is exactly as intentional there as it is here.
+bool isNight(double t) { return t > 0.8 || t < 0.2; }
+bool isDay(double t) { return t >= 0.25 && t <= 0.75; }
+
+double currentGameTime(const BeTileGridFrame* frame) { return readFlag(frame, kTimeFlag, kDefaultGameTime); }
+double currentGameDay(const BeTileGridFrame* frame) { return readFlag(frame, kDayFlag, kDefaultGameDay); }
+
+// js/world.js's tickDayNight() (lines 23-37): advance gameTime by
+// dt/DAY_DURATION_MS, wrapping at 1.0, and bump gameDay on a midnight
+// rollover (prev near 1.0, new value wrapped back near 0.0). Sleep's own
+// fast-forward (sleepUntilMorning(), lines 68-96) isn't ported --
+// there's no sleep/bed-interact activity anywhere else in this port
+// either (checked: no "sleep"/isSleeping-shaped flag exists), so the
+// clock always advances at the plain real-time rate, never
+// fast-forwarded.
+void updateDayNightCycle(BeTileGridFrame* frame) {
+    const double prev = currentGameTime(frame);
+    double day = currentGameDay(frame);
+
+    double next = prev + static_cast<double>(frame->dt) / kDayDurationSeconds;
+    next = next - std::floor(next); // wrap to [0,1), matching JS's `% 1.0`
+
+    if (prev > 0.95 && next < 0.05) day += 1.0;
+
+    queueFlagSet(kTimeFlag, next);
+    queueFlagSet(kDayFlag, day);
+}
+
+// ======= Weather =======
+// js/effects.js's Weather module constants (line 611).
+enum WeatherKind { kClear = 0, kRain = 1, kHeavyRain = 2, kFog = 3, kSnow = 4, kSnowstorm = 5 };
+
+constexpr const char* kCurrentFlag = "weather_current";
+constexpr const char* kTargetFlag = "weather_target";
+constexpr const char* kAlphaFlag = "weather_alpha";
+constexpr const char* kLastDayFlag = "weather_last_day";
+
+// js/effects.js's own seededRand() (lines 625-631) -- a plain xorshift32.
+// JS's `s >> 7` is a SIGNED 32-bit right shift (every JS bitwise op
+// ToInt32-converts its operand first) while `<<`/the final `>>> 0` are
+// unsigned -- reproduced bit-for-bit via an explicit int32_t reinterpret
+// for exactly that one operation, everything else in uint32_t.
+double seededRand(uint32_t seed) {
+    uint32_t s = seed;
+    s = s ^ (s << 13);
+    const int32_t signedS = static_cast<int32_t>(s);
+    s = static_cast<uint32_t>(signedS ^ (signedS >> 7));
+    s = s ^ (s << 17);
+    return static_cast<double>(s) / 4294967295.0;
+}
+
+// There is still no persisted per-playthrough world seed anywhere in
+// this port (zonetransition::kPlaceholderWorldSeed's own doc comment
+// names the same gap) -- reusing that exact constant here, rather than
+// inventing a second placeholder, matches js's own `worldSeed` global
+// this formula reads (js/effects.js line 634).
+constexpr uint32_t kPlaceholderWorldSeed = zonetransition::kPlaceholderWorldSeed;
+
+// js/effects.js's own isIndoor test inside Weather.tick() (lines 681-683):
+// `currentMap.isInterior && (zoneName.includes('CRYPT') ||
+// zoneName.includes('CATACOMB') || zoneName.includes('INN') ||
+// zoneName.includes('IRON DEPTHS'))`. This engine's 2D TileGrid has no
+// `isInterior` field at all (checked TileGrid.h -- no such member), so
+// there is no ABI-level way to ask "is the CURRENT zone an interior."
+// The real, judgement-call substitute: the exact zone slugs this port's
+// own zoneSlugToTileGrid() (GrimstoneGame.cpp) builds as a fully-interior
+// space -- forsaken_library/hidden_vault/cultist_catacombs (dungeon-shaped,
+// matching js's own CRYPT/CATACOMB keyword test) plus forsaken_chapel,
+// which buildForsakenChapelLevel()'s own doc comment says the JS flags
+// `isInterior:true` even though it "reads as outdoor" -- the one
+// explicit exception this file's own comments already document, so it's
+// used here rather than re-guessed.
+bool isIndoorZone(const std::string& slug) {
+    return slug == "forsaken_library" || slug == "hidden_vault" || slug == "cultist_catacombs" ||
+           slug == "forsaken_chapel";
+}
+
+// js/effects.js's pickWeatherForDay() (lines 633-663), transcribed
+// branch-for-branch. The JS keys this off `currentMap.name` (a display
+// string, e.g. "STORMCRAG REACH") -- this port's own activeZoneId()
+// only ever returns a SLUG ("stormcrag_reach"), so each JS zone-name
+// branch below is matched by the slug this port's own
+// zoneSlugToTileGrid() builds for that same zone (checked directly
+// against GrimstoneGame.cpp's own kZoneSlugs/zoneSlugToTileGrid(), not
+// guessed from the name alone). js's own `r2` local (line 636) is
+// computed but never actually read anywhere in pickWeatherForDay() --
+// confirmed by reading the whole function -- so it's dropped here
+// rather than reproducing dead code.
+int pickWeatherForDay(double day, const std::string& zoneSlug) {
+    const uint32_t seed = kPlaceholderWorldSeed * 31u + static_cast<uint32_t>(day) * 1337u;
+    const double r = seededRand(seed);
+
+    if (zoneSlug == "stormcrag_reach" || zoneSlug == "aetheric_spire") {
+        if (r < 0.25) return kSnowstorm;
+        if (r < 0.55) return kSnow;
+        if (r < 0.70) return kHeavyRain;
+        return kClear;
+    }
+    if (zoneSlug == "whisperwood") {
+        if (r < 0.30) return kFog;
+        if (r < 0.50) return kRain;
+        if (r < 0.60) return kHeavyRain;
+        return kClear;
+    }
+    if (zoneSlug == "cursed_marshes" || zoneSlug == "obsidian_depths") {
+        if (r < 0.20) return kFog;
+        if (r < 0.45) return kHeavyRain;
+        if (r < 0.60) return kRain;
+        return kClear;
+    }
+    // Default zones (ashenveil, ashen_moor, iron_peaks, greenfield_pastures,
+    // ashgrove_hollow, western_pass, homestead, and any dungeon-ish slug
+    // not already caught by isIndoorZone() above) -- js's own comment,
+    // "Ashenveil, Ashwood Vale, Iron Peaks, dungeons".
+    if (r < 0.18) return kHeavyRain;
+    if (r < 0.40) return kRain;
+    return kClear;
+}
+
+// js/effects.js's Weather.tick() (lines 678-702): recompute the target
+// once per in-game DAY (or on a zone change, via weather_last_day being
+// reset to -1 below), then blend `weatherAlpha` toward it by a fixed
+// +0.008 every tick -- js's own tick() runs once per requestAnimationFrame,
+// exactly like updateGrimstoneRuntime() runs once per engine frame, so
+// this increments once per call with no dt scaling, matching the JS's
+// own per-RENDER-FRAME (not per-real-second) blend rate exactly.
+void updateWeather(BeTileGridFrame* frame) {
+    const double day = currentGameDay(frame);
+    const std::string& zoneSlug = activeZoneId();
+    const bool isIndoor = isIndoorZone(zoneSlug);
+
+    double current = readFlag(frame, kCurrentFlag, static_cast<double>(kClear));
+    double target = readFlag(frame, kTargetFlag, static_cast<double>(kClear));
+    double alpha = readFlag(frame, kAlphaFlag, 0.0);
+    const double lastDay = readFlag(frame, kLastDayFlag, -1.0);
+
+    if (day != lastDay) {
+        target = isIndoor ? static_cast<double>(kClear) : static_cast<double>(pickWeatherForDay(day, zoneSlug));
+        alpha = 0.0;
+    }
+
+    if (current != target) {
+        alpha += 0.008;
+        if (alpha >= 1.0) {
+            current = target;
+            alpha = 1.0;
+        }
+    } else {
+        alpha = 1.0;
+    }
+
+    if (isIndoor) {
+        current = kClear;
+        alpha = 0.0;
+    }
+
+    queueFlagSet(kCurrentFlag, current);
+    queueFlagSet(kTargetFlag, target);
+    queueFlagSet(kAlphaFlag, alpha);
+    queueFlagSet(kLastDayFlag, day);
+}
+
+int currentWeather(const BeTileGridFrame* frame) {
+    return static_cast<int>(readFlag(frame, kCurrentFlag, static_cast<double>(kClear)));
+}
+
+// js/effects.js's Weather.forceChange() (lines 868-871) -- called on a
+// zone transition so the newly-entered zone's own weather is
+// (re)computed against ITS zone name/isIndoor state on the very next
+// updateWeather() call, instead of waiting for the next in-game day.
+void forceChange() { queueFlagSet(kLastDayFlag, -1.0); }
+
+// ======= Weather particle bursts =======
+// GameModuleApi.h's requestedParticleEffect/X/Y (v9, widened v18->v19
+// with requestedParticleDirX/Y/Scale/ColorR/G/B/A) fires exactly ONE
+// particle burst per onTileGridUpdate() call it's set on -- confirmed by
+// reading TileGridHostRunner.cpp's own onTileGridUpdate consumer (grep
+// for "requestedParticleEffect"): each call that fires it constructs a
+// brand-new ParticleEmitterInstance from content/particle-effects.json's
+// named recipe (BeTileGridFrame's own doc comment, "GameModuleApi.h") and
+// appends it to the host's particleBursts list, which is exactly the
+// mechanism js/effects.js's Weather.draw() approximates continuously
+// with a persistent, host-owned particle pool. There is NO persistent
+// "ambient weather density" primitive on this ABI (checked: no
+// requestedAmbientParticle/requestedWeatherDensity field of any shape
+// exists) -- so continuous-looking weather is hand-driven here by firing
+// one fresh burst EVERY frame the weather is active, each one scattered
+// around the player's own position (the only camera-relative point this
+// ABI's read side exposes -- see handleZoneTransition()'s own doc
+// comment on the missing viewport-bounds read for the matching gap on
+// that side) with content/particle-effects.json's own Box emission shape
+// spreading each burst across a wide band so consecutive bursts overlap
+// into a continuous-reading effect rather than visible discrete puffs.
+constexpr const char* kRainEffect = "grimstone_rain";
+constexpr const char* kHeavyRainEffect = "grimstone_heavy_rain";
+constexpr const char* kSnowEffect = "grimstone_snow";
+constexpr const char* kSnowstormEffect = "grimstone_snowstorm";
+constexpr const char* kFogEffect = "grimstone_fog";
+
+const char* effectNameForWeather(int weather) {
+    switch (weather) {
+        case kRain:
+            return kRainEffect;
+        case kHeavyRain:
+            return kHeavyRainEffect;
+        case kFog:
+            return kFogEffect;
+        case kSnow:
+            return kSnowEffect;
+        case kSnowstorm:
+            return kSnowstormEffect;
+        default:
+            return nullptr;
+    }
+}
+
+void fireWeatherParticles(BeTileGridFrame* frame) {
+    const int weather = currentWeather(frame);
+    const char* effectName = effectNameForWeather(weather);
+    if (effectName == nullptr) return; // kClear, or isIndoorZone() already forced kClear this frame
+
+    // Spread bursts around the player rather than always at the exact
+    // same point -- frame->randomUint32 (the same seeded stream every
+    // other weighted roll in this file already draws from) stands in
+    // for js/effects.js's own Math.random()-seeded particle scatter.
+    // ~6 world units either side of the player, well past this file's
+    // own kMeleeRangeWorldUnits/kPortalTriggerRadiusWorld small radii --
+    // there is no viewport-bounds read on this ABI to size this exactly
+    // to "what's on screen" (see this namespace's own top-of-section
+    // doc comment), so this is a documented approximation, not a
+    // measured one.
+    constexpr float kScatterRadius = 6.0f;
+    float offsetX = 0.0f;
+    float offsetY = -4.0f; // bias upward/"north" so a fresh burst has room to fall/drift into view
+    if (frame->randomUint32 != nullptr) {
+        constexpr double kUint32Max = 4294967295.0;
+        const double unitX = static_cast<double>(frame->randomUint32()) / kUint32Max;
+        const double unitY = static_cast<double>(frame->randomUint32()) / kUint32Max;
+        offsetX = static_cast<float>((unitX - 0.5) * 2.0 * kScatterRadius);
+        offsetY = static_cast<float>(-3.0 - unitY * 3.0);
+    }
+
+    frame->requestedParticleEffect = effectName;
+    frame->requestedParticleX = frame->playerWorldX + offsetX;
+    frame->requestedParticleY = frame->playerWorldY + offsetY;
+}
+
+// ======= Color grade (day/night + weather tint) =======
+// GameModuleApi.h v36 -> v37 (item N4-GRADE) added a real per-frame
+// scene-lighting write field -- BeTileGridFrame::hasRequestedGradeTemperature/
+// requestedGradeTemperature, hasRequestedGradeTint/requestedGradeTint,
+// hasRequestedGradeSaturation/requestedGradeSaturation (see that struct's
+// own doc comment). Before this, updateDayNightCycle()/updateWeather()
+// tracked real day/night + weather state but had nowhere on the ABI to
+// actually tint the rendered scene with it -- PORTING_PLAN.md's own
+// js/world.js row named exactly this gap. This closes it by driving the
+// three new fields FROM the day/night flag state above, every frame.
+//
+// js/render.js's own night treatment (lines ~2735-2754, "Day/Night
+// lighting with proper light source cutouts") is a screen-space alpha
+// overlay: a `rgba(5,8,28, nightAlpha*0.82)` fill blended over the whole
+// canvas (then punched with light-source cutouts, which this pass does
+// not attempt to reproduce -- see the doc comment below). `nightAlpha`
+// is js/world.js's own getNightAlpha() (lines 38-45): 0 across the whole
+// day window (0.2-0.8), a SMOOTH linear fade across dusk (0.8-0.867) and
+// dawn (0.133-0.2), and 1 through full night -- transcribed here as
+// nightAlpha(), rather than reusing daynight::isNight()/isDay() (whose
+// own doc comment already explains those two functions encode
+// activities.js's fishing gate, a DIFFERENT, deliberately-narrower pair
+// of boundaries with a "neither" band -- the wrong boundaries for a
+// smoothly-blended visual tint).
+//
+// (5,8,28) has no meaningful red/green split (5 vs 8) but is heavily
+// blue-dominant -- i.e. "cooler" in exactly the sense this ABI's own
+// `temperature` knob (-1 cool/blue, +1 warm/orange) describes, so
+// nightAlpha drives `temperature` negative. There is no ABI knob for
+// "blend toward an arbitrary flat color" (see GameModuleApi.h's own
+// v36->v37 comment: three knobs -- temperature/tint/saturation -- not a
+// LUT or a lift/gamma/gain corrector), so the alpha-overlay's darkening
+// itself is NOT reproduced here -- only its color cast is. `tint`
+// (-1 green/+1 magenta) is left at a small, fixed negative (green) lean,
+// since G(8) is slightly above R(5) in the source color; the effect is
+// minor next to the dominant blue shift. `saturation` is pulled down
+// moderately at night (real night vision reads as less saturated,
+// scotopic-vision desaturation being the closest real-world analogue to
+// "dark blue overlay" a pure color-balance knob can express).
+//
+// Weather (fog specifically, per this item's own scope note) adds a
+// small additional desaturation on top -- js/effects.js's own fog
+// treatment is a separate screen-space haze layer this ABI has no
+// equivalent primitive for either, so (matching the day/night tint
+// above) only a modest color-grade approximation is attempted, not a
+// reproduction of the haze itself.
+constexpr double kNightTemperature = -0.55;
+constexpr double kNightTint = -0.08;
+constexpr double kNightSaturationDrop = 0.30;
+constexpr double kFogSaturationDrop = 0.15;
+
+// js/world.js's getNightAlpha() (lines 38-45), transcribed exactly --
+// see this section's own doc comment above for why isNight()/isDay()
+// (this file's OTHER day/night boundary pair, for fishing) aren't reused.
+double nightAlpha(double t) {
+    if (t >= 0.2 && t <= 0.8) return 0.0;                          // full day
+    if (t > 0.8 && t <= 0.867) return (t - 0.8) / 0.067;           // dusk fade in
+    if (t > 0.867 || t <= 0.133) return 1.0;                       // full night
+    if (t > 0.133 && t < 0.2) return 1.0 - (t - 0.133) / 0.067;    // dawn fade out
+    return 0.0;
+}
+
+void updateColorGrade(BeTileGridFrame* frame) {
+    const double alpha = nightAlpha(currentGameTime(frame));
+
+    double saturation = 1.0 - kNightSaturationDrop * alpha;
+    if (currentWeather(frame) == kFog) saturation -= kFogSaturationDrop;
+    saturation = std::fmax(0.0, std::fmin(1.0, saturation));
+
+    frame->hasRequestedGradeTemperature = 1;
+    frame->requestedGradeTemperature = static_cast<float>(kNightTemperature * alpha);
+    frame->hasRequestedGradeTint = 1;
+    frame->requestedGradeTint = static_cast<float>(kNightTint * alpha);
+    frame->hasRequestedGradeSaturation = 1;
+    frame->requestedGradeSaturation = static_cast<float>(saturation);
+}
+
+// ======= Night overlay (real screen-space darkening + light cutouts) =======
+// GameModuleApi.h v39 -> v40 (item N7-NIGHT2D) added the real primitive
+// updateColorGrade()'s own doc comment above says this ABI was missing:
+// BeTileGridFrame::hasRequestedNightOverlayStrength/
+// requestedNightOverlayStrength -- a live, sticky strength knob that
+// drives TileGrid::nightOverlayColor's flat screen-space blend, with
+// per-TileGrid::pointLights cutouts fading it back to zero near an
+// authored light (see NightOverlay.h's own doc comment for the exact
+// mix()/cutout math). This is the sibling of updateColorGrade() above,
+// not a replacement -- that pass still approximates the night TINT via
+// the grade ABI (temperature/tint/saturation), and now this pass adds
+// the actual DARKENING js/render.js's own night treatment always paired
+// with it.
+//
+// js/render.js lines ~2739-2754 ("Day/Night lighting with proper light
+// source cutouts"): `nightA = getNightAlpha()` (this file's own
+// nightAlpha(), confirmed transcribed exactly above), then
+// `lx.fillStyle = rgba(5,8,28, nightA*0.82)` filled over the whole
+// canvas before the light-source cutouts are punched in via
+// destination-out. NightOverlay.h's own apply() is exactly
+// `mix(color, nightColor, strength * mask)` -- i.e. `strength` IS the
+// fill's own alpha -- so reproducing the JS exactly means driving
+// `requestedNightOverlayStrength` as `nightAlpha(t) * 0.82`, matching
+// the JS's own literal constant, and authoring TileGrid::nightOverlayColor
+// as (5,8,28)/255 once per zone (see zoneSlugToTileGrid() in
+// GrimstoneGame.cpp, the same central funnel point PlayerHUD's own
+// hudLayoutName already uses).
+//
+// Two deliberate judgement calls, stated so a future pass can find them
+// rather than re-deriving them:
+//
+// 1. Weather is NOT folded into the overlay strength here, unlike
+//    updateColorGrade()'s own kFogSaturationDrop term just above. Read
+//    js/render.js's whole night block (and js/effects.js's own fog/haze
+//    layer) end to end first: the JS's nightA is driven ONLY by
+//    getNightAlpha() (plus a dungeon-always-dark override and a
+//    "brighterNights" accessibility toggle, neither reproduced here --
+//    see judgement call 2 below) -- fog is a SEPARATE screen-space haze
+//    layer with no relationship to the night overlay's own alpha at
+//    all. updateColorGrade()'s fog desaturation exists specifically
+//    because THAT pass has no haze primitive to approximate fog with,
+//    so it borrows the saturation knob instead; this pass has the real
+//    darkening primitive already, and mixing weather into it would not
+//    be replicating anything the JS actually does -- it would be a new,
+//    invented behavior. Left out on purpose, not overlooked.
+// 2. js's own isDungeon override (nightA = 0.92 flat, ignoring time of
+//    day entirely, for a zone named THE ASHWOOD CRYPTS/THE IRON
+//    DEPTHS/THE CULTIST CATACOMBS) is NOT reproduced this pass. Checked
+//    before deferring, not assumed: of those three, only
+//    buildCultistCatacombs() ("THE CULTIST CATACOMBS") is reachable via
+//    zoneSlugToTileGrid() at all today -- buildAshenDungeon()/
+//    buildIronPeaksDungeon() carry no slug in that table yet (see its
+//    own doc comment on why). Reusing this file's own isIndoorZone()
+//    would be wrong: that set (forsaken_library/hidden_vault/
+//    cultist_catacombs/forsaken_chapel) is this port's OWN "interior"
+//    substitute for a different JS check (INN/CATACOMB/DEPTHS keyword
+//    match on the zone's display name) and includes two zones
+//    (forsaken_library, forsaken_chapel) the JS's own isDungeon test
+//    does NOT flag. A real fixed-darkness override for
+//    cultist_catacombs alone would need its own new, single-zone
+//    special case for one reachable slug -- deferred as a documented
+//    future authoring pass rather than added speculatively here; every
+//    zone (including cultist_catacombs) gets the time-driven
+//    nightAlpha() strength this v1.
+constexpr float kNightOverlayJsAlphaScale = 0.82f;
+
+void updateNightOverlay(BeTileGridFrame* frame) {
+    const double alpha = nightAlpha(currentGameTime(frame));
+
+    frame->hasRequestedNightOverlayStrength = 1;
+    frame->requestedNightOverlayStrength = static_cast<float>(alpha) * kNightOverlayJsAlphaScale;
+}
+
+} // namespace daynight
+
+// Walks the player's own live ABI position against the CURRENT zone's real
+// (cached, C++-side) portal markers every frame, and fires a real
+// requestedLevelPath swap the moment one matches -- see the
+// "======= Zone transitions =======" section's own doc comment above for
+// the full mechanism.
+//
+// "dungeon_stair_down"-kinded markers are treated identically to "portal"
+// ones here -- buildProceduralZone()'s own zoneIndex 1/2 dungeon-entrance
+// markers (GrimstoneGame.cpp) now carry a real "targetZone" property
+// (pointing at buildAshenDungeon()/buildIronPeaksDungeon() via the
+// "ashen_dungeon"/"iron_dungeon" slugs, see zoneSlugToTileGrid()'s own doc
+// comment) but were deliberately kept at their original, descriptive
+// "dungeon_stair_down" kind rather than relabeled "portal" -- nothing else
+// in this codebase reads that kind for anything (checked: grep for
+// "dungeon_stair_down" across src/*.cpp turns up only where it's placed),
+// so widening the check here is strictly additive and keeps the marker's
+// own kind meaningful for a future consumer (e.g. a distinct stair icon)
+// instead of overloading it onto "portal" just to make it swappable.
+void handleZoneTransition(BeTileGridFrame* frame) {
+    using namespace zonetransition;
+
+    resumeActiveZoneFromSaveIfNeeded(frame); // first frame only -- see its own doc comment above
+
+    if (cooldownFrames() > 0) {
+        --cooldownFrames();
+        return;
+    }
+
+    const TileGrid* current = cachedZone(activeZoneIdRef());
+    if (current == nullptr) return; // activeZoneIdRef() itself is always a known slug; defensive only
+
+    const float px = frame->playerWorldX;
+    const float py = frame->playerWorldY;
+    for (const TileMarker& m : current->markers) {
+        if (m.kind != "portal" && m.kind != "dungeon_stair_down") continue;
+        const float dx = px - m.position.x;
+        const float dy = py - m.position.y;
+        if (dx * dx + dy * dy > kPortalTriggerRadiusWorld * kPortalTriggerRadiusWorld) continue;
+
+        const std::string targetZone = m.properties.value("targetZone", std::string());
+        if (targetZone.empty()) continue; // a portal authored with no targetZone yet -- nothing to do
+
+        if (requestZoneSwap(frame, targetZone)) {
+            toastScratch() = m.name.empty() ? ("Entering " + targetZone + "...") : (m.name + "...");
+            frame->requestedToastText = toastScratch().c_str();
+            // js/effects.js's Weather.forceChange() is called on every
+            // zone entry (js/zones.js's own enterZone()) so the new
+            // zone's weather is recomputed against ITS OWN name/isIndoor
+            // state right away rather than carrying over whatever the
+            // PREVIOUS zone happened to be showing until the next
+            // in-game day rolls over.
+            daynight::forceChange();
+        }
+        return; // at most one transition per frame
+    }
+}
+
+// Homestead Sigil -- js/activities.js's getItemActions() (lines 249-256):
+// right-clicking a "home_sigil" inventory item shows a single "Teleport to
+// Homestead" action that (re)sets questFlags.homestead_rewarded and calls
+// enterInterior(makeHomeMap, ...) unconditionally -- there is no gate
+// checked AT USE TIME beyond already carrying the item; the real gate is
+// upstream, at the point Bertram HANDS OUT the sigil (js/npcs.js lines
+// 458-497, questFlags.homestead_quest_accepted -> homestead_rewarded +
+// addToInventory('home_sigil'), see js/activities.js's own doc comment a
+// few lines above this one). That upstream quest (Bertram's "A Place to
+// Call Home") is NOT ported here -- checked, zero hits for
+// homestead_rewarded/homestead_quest_accepted/home_sigil anywhere in this
+// port before this change (see the Dorin "Old Bones" dialogue section's
+// own doc comment above, which already documented this exact gap) -- so
+// this function intentionally mirrors the JS's OWN use-time behavior
+// (possession is the only real check) rather than inventing a quest-flag
+// gate the JS itself doesn't have. A player who reaches "home_sigil" any
+// other way this port allows (the "give" dev-console command, following
+// the same pattern as every other item id -- see runDevConsoleCommand()'s
+// own "give" handler below) can use it exactly as the JS's own action
+// would let them.
+//
+// This port has no generic "right-click an inventory item for a context
+// menu" primitive at all (checked -- see this function's own doc comment
+// on GameModuleApi.h's v14->v15 hotbar-use notification for the closest
+// real substitute this ABI actually offers), so rather than fake one,
+// this uses the ABI's own hotbar-use hook exactly as designed: pressing a
+// hotbar number key (1-8) that holds an item both selects AND immediately
+// "uses" it (BeTileGridFrame::hotbarUsedSlot/hotbarUsedItemId, read-only,
+// -1/"" every frame except the one such a key was freshly pressed over a
+// non-empty slot). The host does NOT consume the item itself (same doc
+// comment), and neither does this -- matching the JS, which never removes
+// "home_sigil" from inventory either (it's a reusable teleport, not a
+// one-shot consumable).
+void handleHomesteadSigilUse(BeTileGridFrame* frame) {
+    if (frame->hotbarUsedSlot < 0) return;
+    if (frame->hotbarUsedItemId == nullptr || std::strcmp(frame->hotbarUsedItemId, "home_sigil") != 0) return;
+
+    if (zonetransition::requestZoneSwap(frame, "homestead")) {
+        // js/activities.js line 253's own log() message, verbatim.
+        toastScratch() = "The sigil pulses with warm light. You feel the homestead calling...";
+        frame->requestedToastText = toastScratch().c_str();
+        daynight::forceChange(); // same "recompute weather for the new zone right away" as a real portal
+    }
+}
+
+// ======= Fishing =======
+// Transcribed from js/activities.js's FISH_TABLE (lines 99-139) and
+// startFish()/catchFish() (lines 447-500, 700-717), and js/input.js's own
+// tackle-menu wiring (lines 482-486, openFishingMenu() at
+// js/activities.js line 430).
+//
+// `timeOfDay`/`weather` columns USED to be a real, documented gap ("no
+// day/night or weather state is tracked anywhere in this port," treating
+// every fish as always in season) -- CLOSED now that the
+// "======= Day/Night cycle + Weather =======" section above tracks both
+// as real host-flag state. `timeOfDay` transcribes js's own
+// 'day'/'night'/unset-means-any column (js/activities.js lines 111-138)
+// via daynight::isDay()/isNight() on the SAME gameTime flag the cycle
+// above advances; `weatherMask` transcribes js's own `weather:[...]`
+// array (same lines) as a bitmask over daynight::WeatherKind, 0 meaning
+// "no weather key in the JS, i.e. any weather" -- matching
+// `!f.weather || f.weather.includes(currentWeatherType)`'s own OR-with-
+// unset shape (js/activities.js line 471) exactly. Everything else --
+// minLvl, tackle, zones, xp, rarity -- is real, transcribed from the
+// JS's own numbers, unchanged from before.
+//
+// FISH_TABLE's own `zones` column USED to be a second real gap (there was
+// no way to read which zone/level is currently active from
+// BeTileGridFrame) -- closed now that activeZoneId() (see the
+// "======= Zone transitions =======" section above) gives this plugin a
+// real answer. `zones` transcribes js/activities.js's own array 1:1 as a
+// bitmask, where bit i is js's own full `zoneIndex` i (0=Ashenveil,
+// 1=Ashwood Vale/this port's "ashen_moor", 2=Iron Peaks/"iron_peaks",
+// 3=Cursed Marshes/"cursed_marshes" -- matching `f.zones.includes(zoneIndex)`,
+// js/activities.js line 466, and js/quests.js's own "z=1->Ashwood Vale"
+// comment). Zone 4 (Obsidian Depths/"obsidian_depths") never appears in
+// ANY fish's own `zones` array in the JS source (checked) -- a real JS
+// quirk (that biome has no fish at all), preserved rather than "fixed".
+enum FishTackle {
+    kTackleBait = 1 << 0,
+    kTackleFly = 1 << 1,
+    kTackleHarpoon = 1 << 2,
+};
+
+enum FishZone {
+    kZoneAshenveil = 1 << 0,
+    kZoneAshenMoor = 1 << 1,   // js zoneIndex 1, "Ashwood Vale"
+    kZoneIronPeaks = 1 << 2,   // js zoneIndex 2
+    kZoneCursedMarshes = 1 << 3, // js zoneIndex 3
+    kZoneAllFour = kZoneAshenveil | kZoneAshenMoor | kZoneIronPeaks | kZoneCursedMarshes,
+};
+
+// js's own `timeOfDay` column values (js/activities.js's own doc comment,
+// line 96: "'any'|'day'|'night' (default 'any')").
+enum FishTimeOfDay { kFishTimeAny = 0, kFishTimeDay = 1, kFishTimeNight = 2 };
+
+struct FishEntry {
+    const char* rawItemId;
+    const char* cookedItemId; // js/activities.js's own COOKED map (line 141)
+    int minLevel;
+    int tackleMask;
+    int zoneMask; // FishZone bits -- js/activities.js FISH_TABLE's own "zones" column
+    double xp;
+    double rarity;
+    int timeOfDay = kFishTimeAny;    // js's own `timeOfDay` column
+    int weatherMask = 0;             // bitmask over daynight::WeatherKind; 0 = js's own unset "any weather"
+};
+
+constexpr FishEntry kFishTable[] = {
+    // Standard fish (any time, any weather) -- js/activities.js lines 101-108
+    {"raw_shrimp", "cooked_shrimp", 1, kTackleBait, kZoneAllFour, 10.0, 1.0},
+    {"raw_trout", "cooked_trout", 5, kTackleBait | kTackleFly, kZoneAllFour, 50.0, 0.75},
+    {"raw_salmon", "cooked_salmon", 10, kTackleFly, kZoneAllFour, 70.0, 0.65},
+    {"raw_pike", "cooked_pike", 15, kTackleBait | kTackleFly, kZoneAshenMoor | kZoneIronPeaks | kZoneCursedMarshes,
+     90.0, 0.55},
+    {"raw_tuna", "cooked_tuna", 20, kTackleHarpoon, kZoneIronPeaks | kZoneCursedMarshes, 115.0, 0.45},
+    {"raw_swordfish", "cooked_swordfish", 35, kTackleHarpoon, kZoneIronPeaks | kZoneCursedMarshes, 155.0, 0.30},
+    {"raw_shark", "cooked_shark", 50, kTackleHarpoon, kZoneCursedMarshes, 220.0, 0.15},
+    {"raw_leviathan", "cooked_leviathan", 60, kTackleHarpoon, kZoneCursedMarshes, 300.0, 0.08},
+    // Day-only fish -- lines 111-114. weather:[0] / weather:[0,1] ->
+    // W_CLEAR / W_CLEAR|W_RAIN, matching this file's own header comment's
+    // W_* bit values.
+    {"raw_sunscale", "cooked_sunscale", 5, kTackleBait | kTackleFly, kZoneAshenveil | kZoneAshenMoor | kZoneIronPeaks,
+     45.0, 0.70, kFishTimeDay, 1 << daynight::kClear},
+    {"raw_gilded_carp", "cooked_gilded_carp", 22, kTackleFly, kZoneAllFour, 100.0, 0.40, kFishTimeDay,
+     (1 << daynight::kClear) | (1 << daynight::kRain)},
+    // Night-only fish -- lines 117-122
+    {"raw_moonshadow", "cooked_moonshadow", 25, kTackleFly, kZoneAshenMoor | kZoneIronPeaks | kZoneCursedMarshes,
+     130.0, 0.35, kFishTimeNight, (1 << daynight::kClear) | (1 << daynight::kFog)},
+    {"raw_ghostfin", "cooked_ghostfin", 40, kTackleBait, kZoneIronPeaks | kZoneCursedMarshes, 175.0, 0.20,
+     kFishTimeNight, (1 << daynight::kClear) | (1 << daynight::kRain) | (1 << daynight::kHeavyRain)},
+    {"raw_shadowcrawler", "cooked_shadowcrawler", 55, kTackleHarpoon, kZoneCursedMarshes, 260.0, 0.10, kFishTimeNight},
+    // Rain fish -- lines 125-130
+    {"raw_stormcatch", "cooked_stormcatch", 18, kTackleBait | kTackleFly,
+     kZoneAshenveil | kZoneAshenMoor | kZoneIronPeaks, 95.0, 0.45, kFishTimeAny,
+     (1 << daynight::kRain) | (1 << daynight::kHeavyRain)},
+    {"raw_raindrop_dace", "cooked_raindrop_dace", 8, kTackleBait, kZoneAllFour, 60.0, 0.65, kFishTimeAny,
+     (1 << daynight::kRain) | (1 << daynight::kHeavyRain)},
+    {"raw_torrent_fin", "cooked_torrent_fin", 45, kTackleHarpoon, kZoneIronPeaks | kZoneCursedMarshes, 195.0, 0.18,
+     kFishTimeAny, 1 << daynight::kHeavyRain},
+    // Fog fish -- lines 133-138
+    {"raw_mistwalker", "cooked_mistwalker", 12, kTackleFly, kZoneAshenveil | kZoneAshenMoor | kZoneIronPeaks, 80.0,
+     0.50, kFishTimeAny, 1 << daynight::kFog},
+    {"raw_phantom_crab", "cooked_phantom_crab", 30, kTackleBait, kZoneAshenMoor | kZoneIronPeaks | kZoneCursedMarshes,
+     145.0, 0.28, kFishTimeAny, 1 << daynight::kFog},
+    {"raw_veilfish", "cooked_veilfish", 50, kTackleHarpoon | kTackleFly, kZoneCursedMarshes, 240.0, 0.12,
+     kFishTimeNight, 1 << daynight::kFog},
+};
+constexpr int kFishTableSize = sizeof(kFishTable) / sizeof(kFishTable[0]);
+
+// activeZoneId() -> FishZone bit, or 0 for a zone with no fish at all
+// (Obsidian Depths, every interior/dungeon) -- see this section's own doc
+// comment above.
+int currentFishZoneMask() {
+    const std::string& zone = activeZoneId();
+    if (zone == "ashenveil") return kZoneAshenveil;
+    if (zone == "ashen_moor") return kZoneAshenMoor;
+    if (zone == "iron_peaks") return kZoneIronPeaks;
+    if (zone == "cursed_marshes") return kZoneCursedMarshes;
+    return 0;
+}
+
+const char* const kFishingSpotKinds[] = {"fishing_spot", "fishing_spot_2"};
+
+void handleFishing(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
+    if (!findAdjacentTileOfKind(frame, kFishingSpotKinds, 2, nullptr, nullptr, nullptr)) return;
+
+    // Tackle: the JS shows a 3-option context menu (Fish (Bait)/(Fly)/
+    // (Harpoon), js/input.js lines 482-486), each gated on carrying that
+    // tackle ITEM (openFishingMenu(), js/activities.js line 430 -- checked,
+    // never consumed). No menu primitive exists here, so this checks all
+    // three in the JS's own menu order and fishes with the first one
+    // actually in the player's inventory.
+    int tackleMask = 0;
+    if (countInInventory(frame, "bait") > 0)
+        tackleMask = kTackleBait;
+    else if (countInInventory(frame, "fly_lure") > 0)
+        tackleMask = kTackleFly;
+    else if (countInInventory(frame, "harpoon") > 0)
+        tackleMask = kTackleHarpoon;
+    if (tackleMask == 0) {
+        toastScratch() = "You need bait, a fly lure, or a harpoon to fish here.";
+        frame->requestedToastText = toastScratch().c_str();
+        return;
+    }
+
+    const int fishLevel = readSkillLevel(frame, GrimstoneSkill::Fishing);
+    const int zoneMask = currentFishZoneMask();
+    // js/activities.js's startFish() own time-of-day classification
+    // (lines 457-459) -- reused via daynight::isNight()/isDay() rather
+    // than reimplemented, and the SAME gameTime flag
+    // daynight::updateDayNightCycle() advances every frame above.
+    const double gameTime = daynight::currentGameTime(frame);
+    const bool isNight = daynight::isNight(gameTime);
+    const bool isDay = daynight::isDay(gameTime);
+    const int weatherNow = daynight::currentWeather(frame);
+
+    // Eligible = level + tackle + zone + time-of-day + weather -- both
+    // gaps this function's own doc comment above used to name are now
+    // real.
+    int eligibleIdx[kFishTableSize];
+    int eligibleCount = 0;
+    double totalWeight = 0.0;
+    for (int i = 0; i < kFishTableSize; ++i) {
+        const FishEntry& f = kFishTable[i];
+        if (fishLevel < f.minLevel) continue;
+        if ((f.tackleMask & tackleMask) == 0) continue;
+        if ((f.zoneMask & zoneMask) == 0) continue;
+        if (f.timeOfDay == kFishTimeNight && !isNight) continue;
+        if (f.timeOfDay == kFishTimeDay && !isDay) continue;
+        if (f.weatherMask != 0 && ((f.weatherMask >> weatherNow) & 1) == 0) continue;
+        eligibleIdx[eligibleCount++] = i;
+        totalWeight += f.rarity * (1.0 + fishLevel * 0.01); // js startFish() line 489
+    }
+    if (eligibleCount == 0) {
+        toastScratch() = "Nothing is biting here with that tackle.";
+        frame->requestedToastText = toastScratch().c_str();
+        return;
+    }
+
+    // Weighted random pick -- js/activities.js's own startFish() (lines
+    // 489-495): roll a uniform value over totalWeight, walk the eligible
+    // list subtracting each entry's own weight. frame->randomUint32 (v27->
+    // v28 ABI) draws from the SAME seeded stream game.lua's own be.random()
+    // would, in place of the JS's Math.random() -- not std::rand().
+    double roll = totalWeight;
+    if (frame->randomUint32 != nullptr) {
+        constexpr double kUint32Max = 4294967295.0;
+        const double unit = static_cast<double>(frame->randomUint32()) / kUint32Max;
+        roll = unit * totalWeight;
+    }
+    int chosen = eligibleIdx[0];
+    for (int k = 0; k < eligibleCount; ++k) {
+        const FishEntry& f = kFishTable[eligibleIdx[k]];
+        roll -= f.rarity * (1.0 + fishLevel * 0.01);
+        if (roll <= 0.0) {
+            chosen = eligibleIdx[k];
+            break;
+        }
+    }
+
+    const FishEntry& caught = kFishTable[chosen];
+    queueItemGrant(caught.rawItemId, 1);
+    queueXpGrant(GrimstoneSkill::Fishing, caught.xp);
+    toastScratch() = std::string("You catch a ") + caught.rawItemId + ".";
+    frame->requestedToastText = toastScratch().c_str();
+    // Deliberate simplification, same spirit as
+    // handleMiningAndWoodcutting()'s own doc comment above: the JS runs a
+    // full reel-in minigame (a tension bar, a moving catch zone, a bite
+    // timeout) plus a 25% chance to temporarily deplete the fishing spot
+    // (catchFish(), js/activities.js lines 700-717) before granting
+    // anything. Neither the minigame UI nor a per-spot depletion timer
+    // exist here, so a qualifying interact press grants the catch directly
+    // -- a timed/depletion variant is a straightforward follow-up via the
+    // host's own timer store, noted here rather than silently dropped.
+}
+
+// ======= Cooking =======
+// Transcribed from js/activities.js's openCooker() (lines 2396-2452).
+void handleCooking(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
+    const char* const kCookingFireKinds[] = {"cooking_fire"};
+    if (!findAdjacentTileOfKind(frame, kCookingFireKinds, 1, nullptr, nullptr, nullptr)) return;
+
+    const int cookLevel = readSkillLevel(frame, GrimstoneSkill::Cooking);
+
+    // Fish recipes: openCooker() builds these FROM FISH_TABLE directly
+    // (Math.floor(f.xp*1.2) xp, Math.max(1, f.minLvl-2) reqLvl) rather than
+    // a second hand-authored table -- this reproduces that exactly off the
+    // SAME kFishTable above instead of duplicating fish data a second time.
+    // Deliberate simplification versus the JS's own menu (which lists every
+    // craftable recipe at once): this cooks the FIRST fish (kFishTable's own
+    // order) the player is both carrying and level-qualified to cook, one
+    // per interact press -- matching handleMiningAndWoodcutting()'s own
+    // "one grant per press" rule.
+    for (int i = 0; i < kFishTableSize; ++i) {
+        const FishEntry& f = kFishTable[i];
+        if (countInInventory(frame, f.rawItemId) < 1) continue;
+        const int reqLvl = (f.minLevel - 2 > 1) ? (f.minLevel - 2) : 1;
+        if (cookLevel < reqLvl) continue;
+        const double cookXp = std::floor(f.xp * 1.2);
+        queueItemGrant(f.rawItemId, -1);
+        queueItemGrant(f.cookedItemId, 1);
+        queueXpGrant(GrimstoneSkill::Cooking, cookXp);
+        toastScratch() = std::string("You cook a ") + f.cookedItemId + ".";
+        frame->requestedToastText = toastScratch().c_str();
+        return;
+    }
+
+    // Meat/egg recipes -- js/activities.js's own hand-authored meatRecipes
+    // array (lines 2413-2419). CookRecipe supports up to 2 required
+    // ingredients (Hard Boiled Egg needs egg + water_bucket) and an optional
+    // "extraReturn" item (the emptied water_bucket comes back as a
+    // wooden_bucket).
+    struct CookRecipe {
+        const char* input1;
+        int qty1;
+        const char* input2; // "" if unused
+        int qty2;
+        const char* output;
+        double xp;
+        int reqLvl;
+        const char* extraReturnItemId; // "" if none
+    };
+    constexpr CookRecipe kMeatCookRecipes[] = {
+        {"raw_chicken", 1, "", 0, "cooked_chicken", 12.0, 1, ""},
+        {"raw_pork", 1, "", 0, "cooked_pork", 16.0, 5, ""},
+        {"raw_beef", 1, "", 0, "cooked_beef", 22.0, 10, ""},
+        {"egg", 1, "water_bucket", 1, "hard_boiled_egg", 10.0, 1, "wooden_bucket"},
+    };
+    constexpr int kMeatCookRecipeCount = sizeof(kMeatCookRecipes) / sizeof(kMeatCookRecipes[0]);
+
+    for (int i = 0; i < kMeatCookRecipeCount; ++i) {
+        const CookRecipe& r = kMeatCookRecipes[i];
+        if (countInInventory(frame, r.input1) < r.qty1) continue;
+        if (r.input2[0] != '\0' && countInInventory(frame, r.input2) < r.qty2) continue;
+        if (cookLevel < r.reqLvl) continue;
+        queueItemGrant(r.input1, -r.qty1);
+        if (r.input2[0] != '\0') queueItemGrant(r.input2, -r.qty2);
+        queueItemGrant(r.output, 1);
+        if (r.extraReturnItemId[0] != '\0') queueItemGrant(r.extraReturnItemId, 1);
+        queueXpGrant(GrimstoneSkill::Cooking, r.xp);
+        toastScratch() = std::string("You cook a ") + r.output + ".";
+        frame->requestedToastText = toastScratch().c_str();
+        return;
+    }
+
+    toastScratch() = "You have nothing to cook here.";
+    frame->requestedToastText = toastScratch().c_str();
+}
+
+// ======= Smithing: Smelting (ore -> bar) =======
+// Transcribed from js/activities.js's openSmelter() (lines 2349-2395).
+// Deliberate simplification versus the JS's own menu: this smelts the
+// FIRST recipe (table order below, lowest tier first) whose ingredients
+// and level are both satisfied, one per interact press -- same "one grant
+// per press, no recipe-picker UI" rule handleCooking() above already
+// applies.
+struct SmeltRecipe {
+    const char* input1;
+    int qty1;
+    const char* input2; // "" if unused
+    int qty2;
+    const char* output;
+    double xp;
+    int reqLvl;
+};
+constexpr SmeltRecipe kSmeltRecipes[] = {
+    {"copper_ore", 1, "", 0, "bronze_bar", 6.2, 1},
+    {"iron_ore", 1, "coal", 1, "iron_bar", 12.5, 15},
+    {"iron_bar", 1, "coal", 3, "steel_bar", 35.0, 30},
+    {"gold_ore", 1, "coal", 2, "gold_bar", 22.5, 40},
+    {"mithril_ore", 1, "coal", 4, "mithril_bar", 50.0, 55},
+};
+constexpr int kSmeltRecipeCount = sizeof(kSmeltRecipes) / sizeof(kSmeltRecipes[0]);
+
+void handleSmelting(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
+    const char* const kSmelterKinds[] = {"smelter"};
+    if (!findAdjacentTileOfKind(frame, kSmelterKinds, 1, nullptr, nullptr, nullptr)) return;
+
+    const int smithLevel = readSkillLevel(frame, GrimstoneSkill::Smithing);
+    for (int i = 0; i < kSmeltRecipeCount; ++i) {
+        const SmeltRecipe& r = kSmeltRecipes[i];
+        if (countInInventory(frame, r.input1) < r.qty1) continue;
+        if (r.input2[0] != '\0' && countInInventory(frame, r.input2) < r.qty2) continue;
+        if (smithLevel < r.reqLvl) continue;
+        queueItemGrant(r.input1, -r.qty1);
+        if (r.input2[0] != '\0') queueItemGrant(r.input2, -r.qty2);
+        queueItemGrant(r.output, 1);
+        queueXpGrant(GrimstoneSkill::Smithing, r.xp);
+        toastScratch() = std::string("You smelt a ") + r.output + ".";
+        frame->requestedToastText = toastScratch().c_str();
+        return;
+    }
+    toastScratch() = "You don't have the materials to smelt anything here.";
+    frame->requestedToastText = toastScratch().c_str();
+}
+
+// ======= Smithing: Forging (bars -> equipment) =======
+// Transcribed from js/activities.js's openAnvil() (lines 2515-2590) --
+// same "first satisfied recipe in table order, one per press" rule as
+// handleSmelting() above. `outputQty` carries the JS's own arrows-craft-in-
+// stacks-of-20 special case (line 2576: `r.output.endsWith('_arrows') ?
+// 20 : 1`).
+struct ForgeRecipe {
+    const char* input1;
+    int qty1;
+    const char* input2; // "" if unused
+    int qty2;
+    const char* output;
+    int outputQty;
+    double xp;
+    int reqLvl;
+};
+constexpr ForgeRecipe kForgeRecipes[] = {
+    // Weapons
+    {"bronze_bar", 2, "", 0, "bronze_sword", 1, 25.0, 1},
+    {"bones", 4, "", 0, "bone_dagger", 1, 15.0, 5},
+    {"bronze_bar", 3, "", 0, "war_axe", 1, 35.0, 10},
+    {"iron_bar", 2, "", 0, "iron_sword", 1, 60.0, 20},
+    {"steel_bar", 2, "", 0, "steel_sword", 1, 100.0, 40},
+    {"mithril_bar", 2, "", 0, "mithril_sword", 1, 160.0, 60},
+    // Shields
+    {"bronze_bar", 2, "", 0, "bronze_shield", 1, 24.0, 5},
+    {"iron_bar", 2, "", 0, "iron_shield", 1, 55.0, 22},
+    {"steel_bar", 3, "", 0, "kite_shield", 1, 90.0, 45},
+    // Helmets
+    {"bronze_bar", 2, "", 0, "bronze_helm", 1, 22.0, 3},
+    {"iron_bar", 2, "", 0, "iron_helm", 1, 50.0, 18},
+    {"steel_bar", 2, "", 0, "steel_helm", 1, 85.0, 35},
+    // Body armour
+    {"bronze_bar", 4, "", 0, "bronze_plate", 1, 40.0, 6},
+    {"iron_bar", 4, "", 0, "iron_plate", 1, 80.0, 24},
+    {"steel_bar", 4, "", 0, "steel_plate", 1, 130.0, 42},
+    {"mithril_bar", 4, "", 0, "mithril_plate", 1, 200.0, 62},
+    // Legs
+    {"bronze_bar", 3, "", 0, "bronze_legs", 1, 32.0, 4},
+    {"iron_bar", 3, "", 0, "iron_legs", 1, 65.0, 20},
+    {"steel_bar", 3, "", 0, "steel_legs", 1, 105.0, 38},
+    // Ammo (crafted x20 per the JS's own special case, see above)
+    {"bronze_bar", 1, "oak_log", 1, "bronze_arrows", 20, 18.0, 1},
+    {"iron_bar", 1, "oak_log", 1, "iron_arrows", 20, 32.0, 16},
+};
+constexpr int kForgeRecipeCount = sizeof(kForgeRecipes) / sizeof(kForgeRecipes[0]);
+
+void handleForging(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
+    const char* const kAnvilKinds[] = {"anvil"};
+    if (!findAdjacentTileOfKind(frame, kAnvilKinds, 1, nullptr, nullptr, nullptr)) return;
+
+    const int smithLevel = readSkillLevel(frame, GrimstoneSkill::Smithing);
+    for (int i = 0; i < kForgeRecipeCount; ++i) {
+        const ForgeRecipe& r = kForgeRecipes[i];
+        if (countInInventory(frame, r.input1) < r.qty1) continue;
+        if (r.input2[0] != '\0' && countInInventory(frame, r.input2) < r.qty2) continue;
+        if (smithLevel < r.reqLvl) continue;
+        queueItemGrant(r.input1, -r.qty1);
+        if (r.input2[0] != '\0') queueItemGrant(r.input2, -r.qty2);
+        queueItemGrant(r.output, r.outputQty);
+        queueXpGrant(GrimstoneSkill::Smithing, r.xp);
+        toastScratch() = std::string("You forge a ") + r.output + ".";
+        frame->requestedToastText = toastScratch().c_str();
+        return;
+    }
+    toastScratch() = "You don't have the materials to forge anything here.";
+    frame->requestedToastText = toastScratch().c_str();
+}
+
+// ======= Farming =======
+// Transcribed from js/activities.js's tillTile()/plantSeed()/
+// harvestHomeCrop() (lines 2048-2110) and js/zones.js's own farm-plot
+// growth-stage derivation (makeHomeMap()'s saved-plot restore, lines
+// 2576-2597, and startHomeGrowthTick(), lines 2644-2662) plus js/world.js's
+// own seed ITEMS entries (lines 453-457) for the real per-crop grow times.
+//
+// Unlike mining/woodcutting/fishing/cooking/smithing, farming is
+// STATEFUL OVER TIME (a plot progresses tilled -> seedling -> (halfway)
+// growing -> grown across real minutes, not on a single interact press),
+// which is exactly what BeTileGridFrame::timers/requestedTimerStarts (v25
+// -> v26 ABI, TileGridTimerStore.h) exists for -- this file's first use of
+// it. Each planted plot gets its own host-ticked timer keyed
+// "farmplot_grow_<cellX>_<cellY>", started for the seed's own growTime in
+// SECONDS (the JS's own ITEMS[...].growTime is milliseconds, converted
+// once in kSeedTable below). Since there is no plugin-owned persistent
+// struct anywhere in this file (every other system reads host flags
+// per-frame and keeps no state of its own), the total grow time, WHICH
+// seed was planted, and the plot's own last-painted stage are each kept as
+// their own flag ("farmplot_growtime_<cell>"/"farmplot_crop_<cell>"/
+// "farmplot_stage_<cell>") so a stage change only repaints the tile when
+// the DERIVED stage (from timer.remainingSeconds vs growTime) actually
+// differs from the last one painted -- not every single frame.
+struct SeedEntry {
+    const char* seedItemId;
+    const char* cropItemId;
+    const char* cropTileKindId; // registerGrimstoneTileKinds(), GrimstoneGame.cpp
+    double growTimeSeconds;     // js/world.js's own ITEMS[...].growTime / 1000
+};
+constexpr SeedEntry kSeedTable[] = {
+    {"wheat_seed", "wheat", "home_wheat", 5.0 * 60.0},
+    {"turnip_seed", "turnip", "home_turnip", 4.0 * 60.0},
+    {"carrot_seed", "carrot", "home_carrot", 6.0 * 60.0},
+    {"potato_seed", "potato", "home_potato", 8.0 * 60.0},
+    {"onion_seed", "onion", "home_onion", 5.0 * 60.0},
+};
+constexpr int kSeedTableCount = sizeof(kSeedTable) / sizeof(kSeedTable[0]);
+
+constexpr double kFarmStageTilled = 0.0;
+constexpr double kFarmStageSeedling = 1.0;
+constexpr double kFarmStageGrowing = 2.0;
+constexpr double kFarmStageGrown = 3.0;
+
+std::string farmCellKey(int cellX, int cellY) {
+    return std::to_string(cellX) + "_" + std::to_string(cellY);
+}
+
+void handleTilling(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
+    // js's own tillTile() (line 2055): currentMap.name === 'YOUR HOMESTEAD'.
+    // Real fix, not a simplification any more -- activeZoneId() (see the
+    // "======= Zone transitions =======" section above) is a real read of
+    // which zone this plugin last swapped into, closing the gap this
+    // comment used to document (no current-zone/level-name read existed on
+    // BeTileGridFrame at all).
+    if (activeZoneId() != "homestead") return;
+    int cx, cy;
+    const char* const kDirtKinds[] = {"dirt"};
+    if (!findAdjacentTileOfKind(frame, kDirtKinds, 1, &cx, &cy, nullptr)) return;
+
+    // js's own tillTile() (line 2050): requires a "hoe" in inventory.
+    if (countInInventory(frame, "hoe") < 1) {
+        toastScratch() = "You need a Farmer's Hoe to till the soil.";
+        frame->requestedToastText = toastScratch().c_str();
+        return;
+    }
+    queueTileEdit(0, cx, cy, "tilled_soil");
+    queueXpGrant(GrimstoneSkill::Farming, 3.0);
+    toastScratch() = "You till the soil, preparing it for planting.";
+    frame->requestedToastText = toastScratch().c_str();
+}
+
+void handlePlanting(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
+    int cx, cy;
+    const char* const kTilledSoilKinds[] = {"tilled_soil"};
+    if (!findAdjacentTileOfKind(frame, kTilledSoilKinds, 1, &cx, &cy, nullptr)) return;
+
+    // js's own plantSeed() (line 2076): "find any seed in inventory" --
+    // just uses the first one found. Mirrored here as "first seed id in
+    // kSeedTable's own order the player is carrying at least one of."
+    int seedIdx = -1;
+    for (int i = 0; i < kSeedTableCount; ++i) {
+        if (countInInventory(frame, kSeedTable[i].seedItemId) > 0) {
+            seedIdx = i;
+            break;
+        }
+    }
+    if (seedIdx < 0) {
+        toastScratch() = "You have no seeds to plant.";
+        frame->requestedToastText = toastScratch().c_str();
+        return;
+    }
+
+    const SeedEntry& seed = kSeedTable[seedIdx];
+    const std::string cellKey = farmCellKey(cx, cy);
+
+    queueItemGrant(seed.seedItemId, -1);
+    queueTileEdit(0, cx, cy, "seedling");
+    queueTimerStart(internString("farmplot_grow_" + cellKey), seed.growTimeSeconds);
+
+    BeFlagUpdate growTimeFlag;
+    growTimeFlag.key = internString("farmplot_growtime_" + cellKey);
+    growTimeFlag.value = seed.growTimeSeconds;
+    growTimeFlag.mode = 0; // SET
+    flagUpdateBuffer().push_back(growTimeFlag);
+
+    BeFlagUpdate cropFlag;
+    cropFlag.key = internString("farmplot_crop_" + cellKey);
+    cropFlag.value = static_cast<double>(seedIdx);
+    cropFlag.mode = 0;
+    flagUpdateBuffer().push_back(cropFlag);
+
+    BeFlagUpdate stageFlag;
+    stageFlag.key = internString("farmplot_stage_" + cellKey);
+    stageFlag.value = kFarmStageSeedling;
+    stageFlag.mode = 0;
+    flagUpdateBuffer().push_back(stageFlag);
+
+    queueXpGrant(GrimstoneSkill::Farming, 5.0);
+    toastScratch() = std::string("You plant ") + seed.cropItemId + " seeds in the tilled soil.";
+    frame->requestedToastText = toastScratch().c_str();
+}
+
+// Runs every frame (not gated on interactPressed): derives each active
+// plot's own growth stage from its timer's remainingSeconds vs its stored
+// growTime, and repaints the tile ONLY when that derived stage differs
+// from the last one this system painted (the "farmplot_stage_<cell>"
+// flag) -- mirrors js/zones.js's own startHomeGrowthTick() (lines
+// 2644-2662) and the saved-plot restore's own two-threshold derivation
+// (growTime/2 -> "growing", growTime -> fully grown, lines 2586-2592).
+void handleFarmGrowthTick(BeTileGridFrame* frame) {
+    static const std::string kGrowKeyPrefix = "farmplot_grow_";
+
+    for (int i = 0; i < frame->timerCount; ++i) {
+        const BeTimerState& timer = frame->timers[i];
+        if (timer.key == nullptr) continue;
+        const std::string key(timer.key);
+        if (key.rfind(kGrowKeyPrefix, 0) != 0) continue; // not one of ours
+
+        const std::string cellPart = key.substr(kGrowKeyPrefix.size());
+        const size_t sep = cellPart.find('_');
+        if (sep == std::string::npos) continue;
+        const int cx = std::atoi(cellPart.substr(0, sep).c_str());
+        const int cy = std::atoi(cellPart.substr(sep + 1).c_str());
+        const std::string cellKey = farmCellKey(cx, cy);
+
+        const double growTime = readFlag(frame, ("farmplot_growtime_" + cellKey).c_str(), 0.0);
+        if (growTime <= 0.0) continue;
+        const double elapsed = growTime - timer.remainingSeconds;
+
+        double desiredStage = kFarmStageSeedling;
+        if (elapsed >= growTime)
+            desiredStage = kFarmStageGrown;
+        else if (elapsed >= growTime * 0.5)
+            desiredStage = kFarmStageGrowing;
+
+        const double storedStage = readFlag(frame, ("farmplot_stage_" + cellKey).c_str(), kFarmStageSeedling);
+        if (storedStage == desiredStage) continue;
+
+        if (desiredStage == kFarmStageGrowing) {
+            queueTileEdit(0, cx, cy, "crop_growing");
+        } else if (desiredStage == kFarmStageGrown) {
+            const int seedIdx = static_cast<int>(readFlag(frame, ("farmplot_crop_" + cellKey).c_str(), -1.0));
+            if (seedIdx >= 0 && seedIdx < kSeedTableCount) {
+                queueTileEdit(0, cx, cy, kSeedTable[seedIdx].cropTileKindId);
+            }
+        }
+
+        BeFlagUpdate stageUpdate;
+        stageUpdate.key = internString("farmplot_stage_" + cellKey);
+        stageUpdate.value = desiredStage;
+        stageUpdate.mode = 0;
+        flagUpdateBuffer().push_back(stageUpdate);
+    }
+}
+
+void handleHarvesting(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
+    int cx, cy;
+    const char* matchedKind = nullptr;
+    const char* const kHomeCropKinds[] = {"home_wheat", "home_turnip", "home_carrot", "home_potato",
+                                           "home_onion"};
+    if (!findAdjacentTileOfKind(frame, kHomeCropKinds, 5, &cx, &cy, &matchedKind)) return;
+
+    int seedIdx = -1;
+    for (int i = 0; i < kSeedTableCount; ++i) {
+        if (std::strcmp(matchedKind, kSeedTable[i].cropTileKindId) == 0) {
+            seedIdx = i;
+            break;
+        }
+    }
+    if (seedIdx < 0) return; // shouldn't happen -- every kHomeCropKinds entry has a kSeedTable match
+    const SeedEntry& seed = kSeedTable[seedIdx];
+
+    // js's own harvestHomeCrop() (line 2100): grants the crop item, +15
+    // Farming xp, and resets the plot straight back to tilled soil (ready
+    // to replant) rather than back to bare dirt.
+    queueItemGrant(seed.cropItemId, 1);
+    queueXpGrant(GrimstoneSkill::Farming, 15.0);
+    queueTileEdit(0, cx, cy, "tilled_soil");
+
+    BeFlagUpdate stageUpdate;
+    stageUpdate.key = internString("farmplot_stage_" + farmCellKey(cx, cy));
+    stageUpdate.value = kFarmStageTilled;
+    stageUpdate.mode = 0;
+    flagUpdateBuffer().push_back(stageUpdate);
+
+    toastScratch() = std::string("You harvest some ") + seed.cropItemId + ".";
+    frame->requestedToastText = toastScratch().c_str();
+}
+
+// ======= Aldermast's quest chain: "The Ashen Seal" / "The Void Shards" /
+// "The Fractured Grimoire" =======
+// Transcribed from js/zones.js's openWizardDialogue()/openWizardConstellationOffer()
+// (lines 6-246, read in full). A real, working proof-of-concept for the
+// quest/dialogue system covering all three of Aldermast's quests plus his
+// always-available lore Q&A/idle chat -- see this function group's own doc
+// comments below and PORTING_PLAN.md's own js/quests.js row for exactly
+// which JS branches this covers.
+//
+// State: every JS `questFlags.X` boolean this pass touches becomes a host
+// flag (same "1.0/0.0 for true/false" convention skill XP already uses in
+// this file). `void_shards_found` (0-4) and `tome_fragments_found` (0-3) are
+// transcribed as NUMBERS, not booleans, matching the JS's own
+// `questFlags.void_shards_found || 0` / `questFlags.tome_fragments_found ||
+// 0` usage (js/zones.js lines 114, 152).
+//
+// UPDATE (dungeon-chest-loot pass): at the time this section was first
+// written, nothing in this port incremented either flag -- no dungeon-
+// chest-loot system existed anywhere in this file/GrimstoneGame.cpp. That
+// gap is now closed by handleDungeonChestLoot() (this file, "======= Dungeon
+// chest loot" section, further down) -- both flags are real, live counters
+// now, not just correctly-displayed dead state.
+//
+// Aldermast's own real Grimstone location: js/npcs.js line 670-673 calls
+// openWizardDialogue() for T.NPC_WIZARD, and js/zones.js line 476 places
+// that tile ONLY inside makeWizardTowerInterior() (the "AETHERIC SPIRE"
+// interior reached from Stormcrag Reach) -- NOT Ashenveil. This port's own
+// buildWizardTowerInterior() (GrimstoneGame.cpp) already authors this as an
+// "npc_spawn" TileMarker rather than a painted tile (the same convention
+// buildAshenveilLevel() uses for every named NPC), at a fixed, known world
+// position this file hardcodes below.
+
+// js's own three-skill combat average (js/zones.js line 39/216:
+// `Math.floor((Attack+Defence+Strength)/3)`), reused for the Void Shards
+// offer's own level gate (openWizardConstellationOffer(), line 230).
+int aldermastCombatAvg(const BeTileGridFrame* frame) {
+    const int atk = readSkillLevel(frame, GrimstoneSkill::Attack);
+    const int def = readSkillLevel(frame, GrimstoneSkill::Defence);
+    const int str = readSkillLevel(frame, GrimstoneSkill::Strength);
+    return (atk + def + str) / 3;
+}
+
+// **Real, documented gap**: BeTileMarker (GameModuleApi.h) exposes only
+// `kind`/`worldX`/`worldY` -- no name/id survives from TileMarker::name or
+// TileMarker::properties across the ABI boundary. So this can't ask "is
+// this npc_spawn marker actually Aldermast" by name the way the JS's own
+// dialogue dispatch (keyed off which NPC tile the player clicked) can --
+// there are several OTHER "npc_spawn" markers in this port (guards/Mira/
+// Aldric in Ashenveil, Greta/Aldous/Bertram in Greenfield, GrimstoneGame.cpp
+// addNpcMarker()/addNpcSpawnMarker() call sites), each in ITS OWN separate
+// level. This matches on the EXACT world position
+// buildWizardTowerInterior() places its own marker at (W=22, H=26, mid=11,
+// midDividerY=floor(26*0.45)=11, tf=10, cRow=6 -> marker at
+// (mid+2+0.5, cRow-1+0.5) = (13.5, 5.5), GrimstoneGame.cpp) -- correct as
+// long as no other zone's own npc_spawn marker happens to land on that
+// exact float coordinate (checked every add*NpcMarker() call site in
+// GrimstoneGame.cpp; none do). A real, position-based workaround for a real
+// ABI gap, not a guess -- same "real gap, found while wiring this up, not a
+// simplification this port can paper over" spirit as startCombatEncounter()'s
+// own doc comment above.
+constexpr float kAldermastMarkerWorldX = 13.5f;
+constexpr float kAldermastMarkerWorldY = 5.5f;
+constexpr float kAldermastInteractRadius = 1.5f; // same adjacency spirit as kMeleeRangeWorldUnits
+
+bool playerNearAldermast(const BeTileGridFrame* frame) {
+    bool markerPresent = false;
+    for (int i = 0; i < frame->markerCount; ++i) {
+        const BeTileMarker& m = frame->markers[i];
+        if (m.kind == nullptr || std::strcmp(m.kind, "npc_spawn") != 0) continue;
+        if (std::fabs(m.worldX - kAldermastMarkerWorldX) > 0.01f) continue;
+        if (std::fabs(m.worldY - kAldermastMarkerWorldY) > 0.01f) continue;
+        markerPresent = true;
+        break;
+    }
+    if (!markerPresent) return false; // not currently in the Wizard Tower interior at all
+
+    const float dx = frame->playerWorldX - kAldermastMarkerWorldX;
+    const float dy = frame->playerWorldY - kAldermastMarkerWorldY;
+    return (dx * dx + dy * dy) <= kAldermastInteractRadius * kAldermastInteractRadius;
+}
+
+void queueFlagSet(const char* key, double value) {
+    BeFlagUpdate update;
+    update.key = key;
+    update.value = value;
+    update.mode = 0; // SET
+    flagUpdateBuffer().push_back(update);
+}
+
+// ======= Objectives (Part 2) =======
+// Drained into frame->requestedObjectiveUpdates at the end of
+// updateGrimstoneRuntime(), same array-write-back shape every other system
+// in this file already uses for its own scratch buffer.
+std::vector<BeObjectiveState>& objectiveUpdateBuffer() {
+    static std::vector<BeObjectiveState> buf;
+    return buf;
+}
+void queueObjectiveUpdate(const char* id, const std::string& text, bool complete) {
+    BeObjectiveState obj;
+    obj.id = id;
+    obj.text = internString(text);
+    obj.complete = complete ? 1 : 0;
+    objectiveUpdateBuffer().push_back(obj);
+}
+
+// Live text-override scratch (Part 3's own "requestedDialogueTextOverride-
+// style live state" hook) -- separate from toastScratch() above since a
+// frame that both toasts AND has an active Aldermast dialogue node open
+// would otherwise stomp one buffer with the other.
+std::string& dialogueOverrideScratch() {
+    static std::string buf;
+    return buf;
+}
+
+// Updates the "ashen_seal"/"void_shards" TileGridObjectiveLog entries only
+// when the DERIVED stage/count actually changed since the last frame this
+// function updated them -- same "gate on a real transition, not every
+// frame" discipline handleFarmGrowthTick() already establishes above,
+// tracked via its own small set of "aldermast_obj_*" flags (same store,
+// just used as this function's own scratch instead of player-visible
+// state -- no different from farming's "farmplot_stage_<cell>" flags).
+void updateAldermastObjectives(BeTileGridFrame* frame) {
+    const bool accepted = readFlag(frame, "ashen_seal_accepted", 0.0) != 0.0;
+    const bool found = readFlag(frame, "ashen_seal_found", 0.0) != 0.0;
+    const bool returned = readFlag(frame, "ashen_seal_returned", 0.0) != 0.0;
+
+    int sealStage = 0; // 0 = not tracked yet (quest not accepted)
+    if (returned) sealStage = 3;
+    else if (found) sealStage = 2;
+    else if (accepted) sealStage = 1;
+
+    if (sealStage != 0) {
+        const double storedStage = readFlag(frame, "aldermast_obj_seal_stage", -1.0);
+        if (static_cast<double>(sealStage) != storedStage) {
+            if (sealStage == 1) {
+                queueObjectiveUpdate("ashen_seal", "Retrieve the Ashen Seal from the Catacombs", false);
+            } else if (sealStage == 2) {
+                queueObjectiveUpdate("ashen_seal", "Return the Seal to Aldermast", false);
+            } else {
+                queueObjectiveUpdate("ashen_seal", "The Ashen Seal has been returned to Aldermast.", true);
+            }
+            queueFlagSet("aldermast_obj_seal_stage", static_cast<double>(sealStage));
+        }
+    }
+
+    const bool constellationAccepted = readFlag(frame, "constellation_accepted", 0.0) != 0.0;
+    if (constellationAccepted) {
+        const bool done = readFlag(frame, "constellation_done", 0.0) != 0.0;
+        const int found4 = done ? 4 : static_cast<int>(readFlag(frame, "void_shards_found", 0.0));
+        const double storedCount = readFlag(frame, "aldermast_obj_void_count", -1.0);
+        const double storedDone = readFlag(frame, "aldermast_obj_void_done", 0.0);
+        const bool doneChanged = (done ? 1.0 : 0.0) != storedDone;
+        if (static_cast<double>(found4) != storedCount || doneChanged) {
+            if (done) {
+                queueObjectiveUpdate("void_shards", "The Void Shards have been returned to Aldermast.", true);
+            } else {
+                queueObjectiveUpdate("void_shards", "Find the Void Shards (" + std::to_string(found4) + "/4)", false);
+            }
+            queueFlagSet("aldermast_obj_void_count", static_cast<double>(found4));
+            queueFlagSet("aldermast_obj_void_done", done ? 1.0 : 0.0);
+        }
+    }
+
+    // ---- QUEST 3: The Fractured Grimoire (js/zones.js lines 131-184) ----
+    // Same "stage transition, not every frame" gating as the two objectives
+    // above -- a third `TileGridObjectiveLog` entry, warranted because the
+    // JS treats this as a real, independently tracked third quest (its own
+    // accept line, its own `tome_fragments_found` progress counter, its own
+    // hand-in and reward), not a footnote on the Void Shards objective.
+    const bool grimoireAccepted = readFlag(frame, "grimoire_accepted", 0.0) != 0.0;
+    if (grimoireAccepted) {
+        const bool grimoireDone = readFlag(frame, "grimoire_done", 0.0) != 0.0;
+        const int frags3 = grimoireDone ? 3 : static_cast<int>(readFlag(frame, "tome_fragments_found", 0.0));
+        const double storedFragCount = readFlag(frame, "aldermast_obj_grimoire_count", -1.0);
+        const double storedGrimoireDone = readFlag(frame, "aldermast_obj_grimoire_done", 0.0);
+        const bool grimoireDoneChanged = (grimoireDone ? 1.0 : 0.0) != storedGrimoireDone;
+        if (static_cast<double>(frags3) != storedFragCount || grimoireDoneChanged) {
+            if (grimoireDone) {
+                queueObjectiveUpdate("grimoire", "The Fractured Grimoire has been made whole again.", true);
+            } else {
+                queueObjectiveUpdate("grimoire", "Find the Grimoire Fragments (" + std::to_string(frags3) + "/3)", false);
+            }
+            queueFlagSet("aldermast_obj_grimoire_count", static_cast<double>(frags3));
+            queueFlagSet("aldermast_obj_grimoire_done", grimoireDone ? 1.0 : 0.0);
+        }
+    }
+}
+
+// ======= Dialogue start (Part 4 wiring) =======
+// On interactPressed near Aldermast's own marker, with no dialog already
+// showing (activeDialogLayoutName check -- the v24->v25 DIALOGLAYER field,
+// covers ANY dialog source, not just tree-driven ones), pushes exactly the
+// tree that matches the JS's own top-level if-chain in openWizardDialogue()/
+// openWizardConstellationOffer() for the player's CURRENT quest state.
+// Real, hand-authored branch coverage, per PORTING_PLAN.md: the initial
+// offer (3 choices), the accepted-not-found reminder, the found-it hand-in
+// (grants ring_of_warding), the found-but-lost-it fallback, the Void Shards
+// offer (both the undertrained refusal and the real accept/not-yet offer),
+// the in-progress reminder, the 4/4-found-not-yet-handed-in branch (JS
+// lines 118-145 -- hand-in when the player still holds all 4 shards,
+// "I'm gathering them" when they don't), the Fractured Grimoire quest (JS
+// lines 130-184: progress/"what's in it", hand-in granting
+// staff_of_aldermast, and the found-but-not-carrying-all-3 fallback), and
+// the always-available lore Q&A/idle chat (JS lines 186-208).
+//
+// **Reachability proof for the idle-chat branch**, checked by tracing every
+// guard above it in openWizardDialogue(): every earlier `if`-block returns
+// early, so falling through to the idle-chat code at JS line 186 requires
+// `ashen_seal_returned && constellation_accepted && constellation_done` to
+// ALL be true already (each is the negated condition of the block above it
+// that would otherwise have returned first) -- meaning the JS's own third
+// idle-chat variant ("The tower is quiet today...", line 192, guarding on
+// neither `grimoire_done` nor `constellation_done`) is genuinely
+// unreachable dead code in the original: `constellation_done` is already
+// guaranteed true by the time control gets there. This port's dispatch
+// below and `overrideAldermastLiveDialogueText()`'s idle-text override
+// therefore only implement the two REACHABLE variants
+// (`grimoire_done` / `!grimoire_done`), matching real JS behavior exactly
+// rather than adding a branch the original game can never show.
+//
+// **Real JS quirk, transcribed faithfully rather than "fixed"**: the
+// Fractured Grimoire offer only ever appears inline, as a follow-up inside
+// the Void Shards hand-in flow (`aldermast_void_handin`'s own
+// "void_epilogue" node) -- there is no separate top-level re-offer. So if
+// the player picks "Perhaps later." there, `grimoire_accepted` stays false
+// forever with `constellation_done` already true, and every future visit
+// falls straight to idle chat with no way back to that offer. That is what
+// the real JS does (checked: `openWizardDialogue()`'s own `constellation_
+// done`-gated block, JS line 113, is the ONLY place the Grimoire offer is
+// reachable, and it only fires while `!constellation_done`) -- this port's
+// dispatch below reproduces the same dead end rather than inventing a new
+// way back in.
+void startAldermastDialogue(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
+    if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
+    if (!playerNearAldermast(frame)) return;
+
+    if (readFlag(frame, "aldermast_met", 0.0) == 0.0) {
+        queueFlagSet("aldermast_met", 1.0);
+        toastScratch() = "You have met Aldermast, the Aetheric Wizard.";
+        frame->requestedToastText = toastScratch().c_str();
+    }
+
+    const bool sealAccepted = readFlag(frame, "ashen_seal_accepted", 0.0) != 0.0;
+    const bool sealFound = readFlag(frame, "ashen_seal_found", 0.0) != 0.0;
+    const bool sealReturned = readFlag(frame, "ashen_seal_returned", 0.0) != 0.0;
+    const bool constellationAccepted = readFlag(frame, "constellation_accepted", 0.0) != 0.0;
+    const bool constellationDone = readFlag(frame, "constellation_done", 0.0) != 0.0;
+
+    if (!sealAccepted) {
+        frame->requestedPushDialog = "dialogue:aldermast_seal_offer";
+    } else if (!sealFound) {
+        frame->requestedPushDialog = "dialogue:aldermast_seal_reminder";
+    } else if (!sealReturned) {
+        frame->requestedPushDialog =
+            (countInInventory(frame, "ashen_seal") > 0) ? "dialogue:aldermast_seal_handin" : "dialogue:aldermast_seal_missing";
+    } else if (!constellationAccepted) {
+        frame->requestedPushDialog =
+            (aldermastCombatAvg(frame) < 30) ? "dialogue:aldermast_void_offer_undertrained" : "dialogue:aldermast_void_offer";
+    } else if (!constellationDone) {
+        const int voidFound = static_cast<int>(readFlag(frame, "void_shards_found", 0.0));
+        if (voidFound < 4) {
+            frame->requestedPushDialog = "dialogue:aldermast_void_progress";
+        } else {
+            frame->requestedPushDialog = (countInInventory(frame, "void_shard") >= 4)
+                                              ? "dialogue:aldermast_void_handin"
+                                              : "dialogue:aldermast_void_gathering";
+        }
+    } else {
+        // constellation_done: either mid-Grimoire, done-with-Grimoire, or
+        // (the real JS dead end documented above) never-offered-again.
+        const bool grimoireAccepted = readFlag(frame, "grimoire_accepted", 0.0) != 0.0;
+        const bool grimoireDone = readFlag(frame, "grimoire_done", 0.0) != 0.0;
+        if (grimoireAccepted && !grimoireDone) {
+            const int fragsFound = static_cast<int>(readFlag(frame, "tome_fragments_found", 0.0));
+            if (fragsFound < 3) {
+                frame->requestedPushDialog = "dialogue:aldermast_grimoire_progress";
+            } else {
+                const bool hasAllFragments = countInInventory(frame, "tome_fragment_1") > 0 &&
+                                              countInInventory(frame, "tome_fragment_2") > 0 &&
+                                              countInInventory(frame, "tome_fragment_3") > 0;
+                frame->requestedPushDialog = hasAllFragments ? "dialogue:aldermast_grimoire_handin"
+                                                               : "dialogue:aldermast_grimoire_missing";
+            }
+        } else {
+            frame->requestedPushDialog = "dialogue:aldermast_lore_chat";
+        }
+    }
+}
+
+// ======= Dialogue choice side effects the action vocabulary can't express
+// (Part 3's own "belongs in GrimstoneRuntime.cpp" split) =======
+// tileTriggerActionKinds() (TileGrid.h) has no "set_flag"/"remove_item"
+// action -- give_item can only ADD (TileGridHostRunner.cpp's own
+// fireTriggerAction() calls inventory.addItem() directly for it), and
+// nothing in the vocabulary can touch the flag store at all. Accepting a
+// quest and handing in the Ashen Seal (removing it, marking the quest
+// returned) therefore has to be real GrimstoneRuntime.cpp logic, reacting
+// to the SAME (tree, node, clickedUiActionId) triple TileGridHostRunner.cpp
+// itself uses to resolve a click.
+//
+// **Ordering subtlety this had to be written around**: by the time a
+// plugin's onTileGridUpdate() runs, activeDialogueTreeName/NodeId already
+// reflect the NODE THE CLICK JUST ADVANCED TO, not the node the choice was
+// clicked FROM (TileGridHostRunner.cpp resolves the click -- firing the
+// choice's own `action` and advancing `activeDialogueNode` -- BEFORE
+// copying either field into the plugin frame). So this can't gate on "the
+// player clicked choice 0 while node X was showing" directly; instead it
+// gates on ARRIVING at a specific destination node while clickedUiActionId
+// is non-empty this exact frame (a real click just landed one, as opposed
+// to sitting on that node an idle frame later, when clickedUiActionId is
+// "" again) -- which is why every choice below routes to its OWN named
+// node instead of ending the conversation directly.
+void applyAldermastDialogueSideEffects(BeTileGridFrame* frame) {
+    if (frame->activeDialogueTreeName == nullptr || frame->activeDialogueTreeName[0] == '\0') return;
+    if (frame->clickedUiActionId == nullptr || frame->clickedUiActionId[0] == '\0') return;
+    if (frame->activeDialogueNodeId == nullptr) return;
+
+    if (std::strcmp(frame->activeDialogueTreeName, "aldermast_seal_offer") == 0 &&
+        std::strcmp(frame->activeDialogueNodeId, "accepted_confirm") == 0) {
+        if (readFlag(frame, "ashen_seal_accepted", 0.0) == 0.0) queueFlagSet("ashen_seal_accepted", 1.0);
+    } else if (std::strcmp(frame->activeDialogueTreeName, "aldermast_seal_handin") == 0 &&
+               std::strcmp(frame->activeDialogueNodeId, "handin_thanks") == 0) {
+        if (readFlag(frame, "ashen_seal_returned", 0.0) == 0.0) {
+            queueItemGrant("ashen_seal", -1); // the seal itself is consumed on hand-in, same as the JS's removeFromInventory()
+            queueFlagSet("ashen_seal_returned", 1.0);
+        }
+    } else if (std::strcmp(frame->activeDialogueTreeName, "aldermast_void_offer") == 0 &&
+               std::strcmp(frame->activeDialogueNodeId, "accepted") == 0) {
+        if (readFlag(frame, "constellation_accepted", 0.0) == 0.0) queueFlagSet("constellation_accepted", 1.0);
+    } else if (std::strcmp(frame->activeDialogueTreeName, "aldermast_void_handin") == 0) {
+        if (std::strcmp(frame->activeDialogueNodeId, "handin_thanks") == 0) {
+            if (readFlag(frame, "constellation_done", 0.0) == 0.0) {
+                queueItemGrant("void_shard", -4); // consumed on hand-in, same as the JS's removeFromInventory('void_shard', 4)
+                queueFlagSet("constellation_done", 1.0);
+            }
+        } else if (std::strcmp(frame->activeDialogueNodeId, "grimoire_accepted_confirm") == 0) {
+            if (readFlag(frame, "grimoire_accepted", 0.0) == 0.0) queueFlagSet("grimoire_accepted", 1.0);
+        }
+    } else if (std::strcmp(frame->activeDialogueTreeName, "aldermast_grimoire_handin") == 0 &&
+               std::strcmp(frame->activeDialogueNodeId, "handin_thanks") == 0) {
+        if (readFlag(frame, "grimoire_done", 0.0) == 0.0) {
+            // Consumed on hand-in, same as the JS's own three removeFromInventory() calls.
+            queueItemGrant("tome_fragment_1", -1);
+            queueItemGrant("tome_fragment_2", -1);
+            queueItemGrant("tome_fragment_3", -1);
+            queueFlagSet("grimoire_done", 1.0);
+        }
+    }
+}
+
+// ======= Live dialogue text overrides (Part 3, the requestedDialogueTextOverride
+// mechanism) =======
+// Two of the authored nodes above are deliberately static placeholders in
+// the JSON -- the live NUMBER each one needs (the player's own combat
+// average, the running Void Shards count) is plugin-computed state the
+// engine has no business knowing about (DialogueTree.h's own doc comment:
+// "the engine has no business knowing what a game's live values even
+// ARE"), so this overrides the rendered body text every frame the matching
+// node is showing, exactly the mechanism that field exists for.
+void overrideAldermastLiveDialogueText(BeTileGridFrame* frame) {
+    if (frame->activeDialogueTreeName == nullptr || frame->activeDialogueTreeName[0] == '\0') return;
+
+    if (std::strcmp(frame->activeDialogueTreeName, "aldermast_void_offer_undertrained") == 0) {
+        dialogueOverrideScratch() = "Four Void Shards, scattered across the deepest dungeon chambers. The things "
+                                     "guarding them are not goblins. You need seasoned combat skills -- an average "
+                                     "of level 30 across Attack, Defence, and Strength -- before I'd send you in. "
+                                     "You are currently at " +
+                                     std::to_string(aldermastCombatAvg(frame)) + ". Come back when you're ready.";
+        frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+    } else if (std::strcmp(frame->activeDialogueTreeName, "aldermast_void_progress") == 0) {
+        const int found = static_cast<int>(readFlag(frame, "void_shards_found", 0.0));
+        dialogueOverrideScratch() = "You have found " + std::to_string(found) +
+                                     " of the four Void Shards. Search the deepest chests in every dungeon -- the "
+                                     "Ashwood Crypts, the Iron Depths, and the Cultist Catacombs. The shards are "
+                                     "drawn to darkness.";
+        frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+    } else if (std::strcmp(frame->activeDialogueTreeName, "aldermast_grimoire_progress") == 0 &&
+               frame->activeDialogueNodeId != nullptr && std::strcmp(frame->activeDialogueNodeId, "progress") == 0) {
+        const int frags = static_cast<int>(readFlag(frame, "tome_fragments_found", 0.0));
+        dialogueOverrideScratch() = "You have found " + std::to_string(frags) +
+                                     " of the three Grimoire Fragments. Search dungeon chests across the Ashwood "
+                                     "Crypts, Iron Depths, and Cultist Catacombs. The pages still carry a faint "
+                                     "aetheric signature -- they glow.";
+        frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+    } else if (std::strcmp(frame->activeDialogueTreeName, "aldermast_lore_chat") == 0 &&
+               frame->activeDialogueNodeId != nullptr &&
+               (std::strcmp(frame->activeDialogueNodeId, "idle") == 0 ||
+                std::strcmp(frame->activeDialogueNodeId, "idle_more") == 0)) {
+        // Only the two REACHABLE idle-chat variants (see startAldermastDialogue()'s
+        // own doc comment on why the JS's third "tower is quiet" variant is dead code).
+        const bool grimoireDone = readFlag(frame, "grimoire_done", 0.0) != 0.0;
+        dialogueOverrideScratch() =
+            grimoireDone ? "The Grimoire is whole again. I have re-inscribed the void rune recipe into it -- that "
+                            "knowledge is safe now. Come back if you find anything else. I suspect you will."
+                         : "The constellation burns bright again. Whatever is happening below that chapel -- the "
+                           "surges will slow, for a time. Though I suspect the calm won't last. Come back if you "
+                           "find anything else interesting.";
+        frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+    } else if (std::strcmp(frame->activeDialogueTreeName, "aldermast_lore_chat") == 0 &&
+               frame->activeDialogueNodeId != nullptr && std::strcmp(frame->activeDialogueNodeId, "lore_runecraft") == 0) {
+        // Live per JS's own `questFlags.magic_intro_seen` ternary (js/zones.js line
+        // 203-205) -- nothing in this port sets that flag yet (no Spell Tome/rune-
+        // crafting system is ported), so this always shows the "not yet seen" variant
+        // today, but stays correct if/when a future pass ports what sets it.
+        const bool magicIntroSeen = readFlag(frame, "magic_intro_seen", 0.0) != 0.0;
+        dialogueOverrideScratch() =
+            magicIntroSeen
+                ? "Runes are crystallised intent. The Arcane Dust forms the substrate -- coal gives the spark, "
+                  "copper ore the vessel. From there the elemental shape depends on what you bind into the dust. "
+                  "The Spell Tome upstairs has the full catalogue. Your Magic level governs what you can attempt "
+                  "without the rune... rebounding."
+                : "Rune crafting? A worthy pursuit. Find the Spell Tome in this very tower -- it will guide you. "
+                  "Start with Arcane Dust before you attempt anything more ambitious. The tome is upstairs.";
+        frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+    }
+}
+
+// ======= The Grimstone Savings Bank (js/bank.js) =======
+// Transcribed from js/bank.js's STOCKS/BOND_TIERS/ensureBankState()/
+// updateStockPrices()/checkBondMaturity() plus renderMarketTab()'s own
+// buy/sell handlers and renderBondsTab()'s own bond-purchase handler
+// (lines 6-49, 160-230, 233-310) -- read in full before writing any of
+// this, per this pass's own task framing.
+//
+// **Real, deliberate simplification, documented as such (same spirit as
+// handleMiningAndWoodcutting()'s own progress-bar note above)**: the JS's
+// own bank panel is a hand-typed-quantity UI (`qtyInput`/`amtInput`, a free-
+// form number field) -- no such text-entry primitive exists on a
+// DialogueTree choice (DialogueChoice.h: a fixed label + an optional fixed
+// action/actionParam, nothing reads a live player-typed number), and
+// PORTING_PLAN.md's own js/quests.js row already documents that no
+// DialogueTemplate UILayout exists in content/ yet either, so there is no
+// UI primitive here beyond the SAME requestedPushDialog/DialogueTree
+// mechanism the Aldermast quest-chain pass above just established. This
+// ports the bank as a real, working dialogue-tree hookup on Willa's own
+// npc_spawn marker (buildBankInterior(), GrimstoneGame.cpp) instead: FIXED
+// quantities -- 1 share per buy/sell click, a fixed 100g/200g/400g stake
+// per bond tier -- rather than the JS's arbitrary typed amount. A future
+// pass with a real number-entry UI primitive could restore free-form
+// amounts without changing anything below except the fixed constants.
+//
+// **Judgement call, not in the JS at all**: js/bank.js keeps a player's
+// "gold" (in hand) separate from "p.bank.gold" (the vault) -- deposit/
+// withdraw between the two, with stock/bond purchases spending ONLY
+// vault gold. This port has no existing gold/wallet concept anywhere yet
+// (checked, same as handleCombatDeathRewards()'s own doc comment above),
+// so rather than inventing a second parallel "vault" flag with no
+// deposit/withdraw UI to move money between the two (which would just
+// strand the player's gold in whichever bucket it landed in), this ports
+// a SINGLE wallet flag ("player_gold") that stock/bond purchases spend
+// and payouts credit directly -- the vault/in-hand split collapses to
+// one number, documented here as the reason rather than silently
+// dropped.
+constexpr const char* kPlayerGoldFlag = "player_gold";
+
+struct BankStock {
+    const char* id;          // js/bank.js's own STOCKS key
+    const char* displayName; // js/bank.js's own STOCKS[id].name
+    double basePrice;        // js/bank.js's own STOCKS[id].basePrice
+    const char* priceFlagKey;
+    const char* heldFlagKey;
+};
+constexpr BankStock kBankStocks[] = {
+    {"grimco", "Grimco Mining Co.", 12.0, "stock_price_grimco", "stock_held_grimco"},
+    {"ironvale", "Ironvale Smelters", 25.0, "stock_price_ironvale", "stock_held_ironvale"},
+    {"ashgold", "Ashenveil Gold Trust", 45.0, "stock_price_ashgold", "stock_held_ashgold"},
+    {"verdant", "Verdant Farms Ltd.", 8.0, "stock_price_verdant", "stock_held_verdant"},
+};
+constexpr int kBankStockCount = sizeof(kBankStocks) / sizeof(kBankStocks[0]);
+
+const BankStock* findBankStock(const char* id) {
+    for (int i = 0; i < kBankStockCount; ++i)
+        if (std::strcmp(kBankStocks[i].id, id) == 0) return &kBankStocks[i];
+    return nullptr;
+}
+
+// js/bank.js's own updateStockPrices() (lines 33-49): a 30-REAL-second
+// random walk, +/-13%, clamped to [0.4x, 2.5x] of each stock's own
+// basePrice. There is no wall-clock available to a 2D plugin
+// (BeTileGridFrame only offers a per-frame `dt`), so the 30-second
+// interval is accumulated in its own flag ("stock_market_elapsed",
+// incremented by frame->dt every frame, same "own the accumulator as a
+// flag since this file keeps no persistent struct of its own" discipline
+// handleFarmGrowthTick()'s own doc comment already establishes) and reset
+// + rerolled once it crosses 30.0 -- mirrors the JS's own
+// `now - state.stockMarket.lastUpdate < 30000` gate exactly, just in
+// accumulated-dt seconds instead of Date.now() milliseconds.
+// frame->randomUint32 (the SAME seeded stream every other weighted-roll
+// system in this file already draws from) stands in for the JS's own
+// Math.random(), matching handleFishing()/fireBattleAttackHitbox()'s own
+// convention.
+constexpr double kStockMarketTickSeconds = 30.0;
+
+void updateStockMarket(BeTileGridFrame* frame) {
+    const double elapsed = readFlag(frame, "stock_market_elapsed", 0.0) + static_cast<double>(frame->dt);
+    if (elapsed < kStockMarketTickSeconds) {
+        queueFlagSet("stock_market_elapsed", elapsed);
+        return;
+    }
+
+    queueFlagSet("stock_market_elapsed", 0.0);
+    for (int i = 0; i < kBankStockCount; ++i) {
+        const BankStock& stock = kBankStocks[i];
+        const double current = readFlag(frame, stock.priceFlagKey, stock.basePrice);
+
+        double unit = 0.5; // deterministic fallback, same convention as fireBattleAttackHitbox() above
+        if (frame->randomUint32 != nullptr) {
+            constexpr double kUint32Max = 4294967295.0;
+            unit = static_cast<double>(frame->randomUint32()) / kUint32Max;
+        }
+        const double factor = 0.88 + unit * 0.26; // js's own "+/-13% random walk"
+
+        const double lowClamp = std::round(stock.basePrice * 0.4);
+        const double highClamp = std::round(stock.basePrice * 2.5);
+        double next = std::round(current * factor);
+        if (next < lowClamp) next = lowClamp;
+        if (next > highClamp) next = highClamp;
+        queueFlagSet(stock.priceFlagKey, next);
+    }
+}
+
+// js/bank.js's own BOND_TIERS (lines 14-18) -- durations/rates transcribed
+// exactly (5/15/30 real minutes, +10%/+25%/+50% return). `fixedAmount` is
+// this port's own judgement call, replacing the JS's free-form typed
+// amount (see this section's own top-of-file doc comment) -- chosen to
+// scale with the tier the same way the JS's own numbers imply a bigger
+// commitment for a longer lockup, without inventing an amount-entry UI.
+struct BankBondTier {
+    const char* id;   // used to build this bond instance's own unique timer key
+    const char* displayName;
+    double durationSeconds;
+    double rate;
+    double fixedAmount;
+};
+constexpr BankBondTier kBankBondTiers[] = {
+    {"short", "Short Bond", 5.0 * 60.0, 0.10, 100.0},
+    {"medium", "Medium Bond", 15.0 * 60.0, 0.25, 200.0},
+    {"long", "Long Bond", 30.0 * 60.0, 0.50, 400.0},
+};
+constexpr int kBankBondTierCount = sizeof(kBankBondTiers) / sizeof(kBankBondTiers[0]);
+
+// js/bank.js's own checkBondMaturity() (lines 52-67): pays out
+// floor(amount * (1 + rate)) once a bond's matureAt passes. Here that's
+// the host timer's own "just expired" transition (BeTimerState::
+// remainingSeconds <= 0.0 for exactly one frame, GameModuleApi.h's own
+// v25->v26 doc comment) on any "bond_<tier>_<n>" timer -- <tier> is
+// parsed back out of the key to look up that tier's own fixedAmount/rate
+// (both are the SAME fixed constants used to start the timer, not
+// per-instance state, since this port's own bonds carry no free-form
+// amount to remember -- see kBankBondTiers's own doc comment above).
+// Multiple simultaneous bonds of the same tier get distinct keys via
+// "bond_counter" (a plain incrementing flag), matching this pass's own
+// task framing.
+void handleBondMaturity(BeTileGridFrame* frame) {
+    for (int i = 0; i < frame->timerCount; ++i) {
+        const BeTimerState& timer = frame->timers[i];
+        if (timer.key == nullptr) continue;
+        if (timer.remainingSeconds > 0.0) continue; // not the "just expired" frame
+
+        const std::string key(timer.key);
+        const BankBondTier* tier = nullptr;
+        for (int t = 0; t < kBankBondTierCount; ++t) {
+            const std::string prefix = std::string("bond_") + kBankBondTiers[t].id + "_";
+            if (key.rfind(prefix, 0) == 0) {
+                tier = &kBankBondTiers[t];
+                break;
+            }
+        }
+        if (tier == nullptr) continue; // not one of ours
+
+        const double payout = std::floor(tier->fixedAmount * (1.0 + tier->rate));
+        BeFlagUpdate goldUpdate;
+        goldUpdate.key = kPlayerGoldFlag;
+        goldUpdate.value = payout;
+        goldUpdate.mode = 1; // INCREMENT
+        flagUpdateBuffer().push_back(goldUpdate);
+
+        toastScratch() = std::string("Your ") + tier->displayName + " has matured! You received " +
+                          std::to_string(static_cast<int>(payout)) + "g.";
+        frame->requestedToastText = toastScratch().c_str();
+    }
+}
+
+// **Real, documented gap, same shape as playerNearAldermast()'s own doc
+// comment above**: BeTileMarker has no name/id crossing the ABI, so this
+// matches Willa's OWN npc_spawn marker by the exact world position
+// buildBankInterior() places it at -- addNpcSpawnMarker(grid, "Willa",
+// 6.0f, 3.0f) offsets both coordinates by +0.5 (GrimstoneGame.cpp's own
+// addNpcSpawnMarker()), landing at (6.5, 3.5). Checked against every
+// other addNpcSpawnMarker()/marker.position call site in
+// GrimstoneGame.cpp; none other lands on this exact float pair.
+constexpr float kWillaMarkerWorldX = 6.5f;
+constexpr float kWillaMarkerWorldY = 3.5f;
+constexpr float kWillaInteractRadius = 1.5f; // same adjacency spirit as kAldermastInteractRadius
+
+bool playerNearWilla(const BeTileGridFrame* frame) {
+    bool markerPresent = false;
+    for (int i = 0; i < frame->markerCount; ++i) {
+        const BeTileMarker& m = frame->markers[i];
+        if (m.kind == nullptr || std::strcmp(m.kind, "npc_spawn") != 0) continue;
+        if (std::fabs(m.worldX - kWillaMarkerWorldX) > 0.01f) continue;
+        if (std::fabs(m.worldY - kWillaMarkerWorldY) > 0.01f) continue;
+        markerPresent = true;
+        break;
+    }
+    if (!markerPresent) return false; // not currently in the Bank interior at all
+
+    const float dx = frame->playerWorldX - kWillaMarkerWorldX;
+    const float dy = frame->playerWorldY - kWillaMarkerWorldY;
+    return (dx * dx + dy * dy) <= kWillaInteractRadius * kWillaInteractRadius;
+}
+
+void startBankDialogue(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
+    if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
+    if (!playerNearWilla(frame)) return;
+    frame->requestedPushDialog = "dialogue:willa_bank";
+}
+
+// ======= Dialogue side effects the action vocabulary can't express (bank
+// half) ======= Same "belongs in GrimstoneRuntime.cpp, not the DialogueChoice
+// action vocabulary" reasoning applyAldermastDialogueSideEffects() already
+// documents above, including the same ordering subtlety: activeDialogueNodeId
+// already reflects the destination the click just advanced TO by the time
+// this runs, so every stock/bond choice above routes to its own named result
+// node rather than acting on the node the choice was clicked FROM.
+//
+// **Accepted, one-frame-stale display, same category as
+// handleCombatDeathRewards()'s own "detected on a later frame" doc comment
+// above**: the result text for a JUST-clicked buy/sell/bond choice is
+// computed INLINE from the pre-transaction flags this same function reads
+// (so the message it writes to requestedDialogueTextOverride this frame is
+// accurate for the click that just landed), but a flag this function queues
+// via requestedFlagUpdates (e.g. the new gold total) isn't visible via
+// frame->flags until the FOLLOWING frame -- so an idle frame sitting on the
+// same result node before the player clicks "All right." recomputes its own
+// status text from flags that, for exactly one frame, still show the
+// pre-transaction numbers. The dialogue box is on screen for far longer than
+// one frame before a human reacts, so this is imperceptible in practice, and
+// it is the same category of one-frame lag this file already accepts
+// elsewhere rather than a new kind of bug.
+void applyBankStockSideEffect(BeTileGridFrame* frame, const BankStock& stock, bool isBuy) {
+    const double gold = readFlag(frame, kPlayerGoldFlag, 0.0);
+    const double price = readFlag(frame, stock.priceFlagKey, stock.basePrice);
+    const double held = readFlag(frame, stock.heldFlagKey, 0.0);
+
+    if (isBuy) {
+        if (gold < price) {
+            dialogueOverrideScratch() =
+                std::string("You don't have enough gold in hand to buy a share of ") + stock.displayName + " (" +
+                std::to_string(static_cast<int>(price)) + "g).";
+        } else {
+            BeFlagUpdate goldUpdate;
+            goldUpdate.key = kPlayerGoldFlag;
+            goldUpdate.value = -price;
+            goldUpdate.mode = 1; // INCREMENT
+            flagUpdateBuffer().push_back(goldUpdate);
+            queueFlagSet(stock.heldFlagKey, held + 1.0); // SET: this file's own read-modify-write flag idiom
+            dialogueOverrideScratch() = std::string("Bought 1 share of ") + stock.displayName + " for " +
+                                         std::to_string(static_cast<int>(price)) + "g. You now own " +
+                                         std::to_string(static_cast<int>(held) + 1) + ".";
+        }
+    } else {
+        if (held < 1.0) {
+            dialogueOverrideScratch() = std::string("You don't own any shares of ") + stock.displayName + " to sell.";
+        } else {
+            BeFlagUpdate goldUpdate;
+            goldUpdate.key = kPlayerGoldFlag;
+            goldUpdate.value = price;
+            goldUpdate.mode = 1; // INCREMENT
+            flagUpdateBuffer().push_back(goldUpdate);
+            queueFlagSet(stock.heldFlagKey, held - 1.0);
+            dialogueOverrideScratch() = std::string("Sold 1 share of ") + stock.displayName + " for " +
+                                         std::to_string(static_cast<int>(price)) + "g. You now own " +
+                                         std::to_string(static_cast<int>(held) - 1) + ".";
+        }
+    }
+    frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+}
+
+void applyBankBondSideEffect(BeTileGridFrame* frame, const BankBondTier& tier) {
+    const double gold = readFlag(frame, kPlayerGoldFlag, 0.0);
+    if (gold < tier.fixedAmount) {
+        dialogueOverrideScratch() = std::string("You don't have enough gold in hand to lock in a ") +
+                                     tier.displayName + " (" + std::to_string(static_cast<int>(tier.fixedAmount)) +
+                                     "g).";
+        frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+        return;
+    }
+
+    BeFlagUpdate goldUpdate;
+    goldUpdate.key = kPlayerGoldFlag;
+    goldUpdate.value = -tier.fixedAmount;
+    goldUpdate.mode = 1; // INCREMENT
+    flagUpdateBuffer().push_back(goldUpdate);
+
+    const double counter = readFlag(frame, "bond_counter", 0.0);
+    queueFlagSet("bond_counter", counter + 1.0);
+    const std::string timerKey =
+        std::string("bond_") + tier.id + "_" + std::to_string(static_cast<long long>(counter));
+    queueTimerStart(internString(timerKey), tier.durationSeconds);
+
+    const double payout = std::floor(tier.fixedAmount * (1.0 + tier.rate));
+    dialogueOverrideScratch() = std::string("Locked ") + std::to_string(static_cast<int>(tier.fixedAmount)) +
+                                 "g into a " + tier.displayName + ". Matures in " +
+                                 std::to_string(static_cast<int>(tier.durationSeconds / 60.0)) +
+                                 " min -- you'll receive " + std::to_string(static_cast<int>(payout)) + "g.";
+    frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+}
+
+void applyBankDialogueSideEffects(BeTileGridFrame* frame) {
+    if (frame->activeDialogueTreeName == nullptr || std::strcmp(frame->activeDialogueTreeName, "willa_bank") != 0)
+        return;
+    if (frame->clickedUiActionId == nullptr || frame->clickedUiActionId[0] == '\0') return;
+    if (frame->activeDialogueNodeId == nullptr) return;
+
+    const std::string node(frame->activeDialogueNodeId);
+    for (int i = 0; i < kBankStockCount; ++i) {
+        const BankStock& stock = kBankStocks[i];
+        if (node == std::string(stock.id) + "_buy_result") {
+            applyBankStockSideEffect(frame, stock, /*isBuy=*/true);
+            return;
+        }
+        if (node == std::string(stock.id) + "_sell_result") {
+            applyBankStockSideEffect(frame, stock, /*isBuy=*/false);
+            return;
+        }
+    }
+    for (int i = 0; i < kBankBondTierCount; ++i) {
+        const BankBondTier& tier = kBankBondTiers[i];
+        if (node == std::string("bond_") + tier.id + "_result") {
+            applyBankBondSideEffect(frame, tier);
+            return;
+        }
+    }
+}
+
+// ======= Live dialogue text for the bank's own read-only menu nodes =======
+// Separate from applyBankDialogueSideEffects() above on purpose: the
+// "market"/"<stock>_menu"/"bonds" nodes never fire a side effect (browsing
+// costs nothing), so their own live prices/holdings/gold are read straight
+// from frame->flags with none of the same-frame staleness the result nodes
+// above have to work around -- same split
+// applyAldermastDialogueSideEffects()/overrideAldermastLiveDialogueText()
+// already establish.
+void overrideBankMenuLiveDialogueText(BeTileGridFrame* frame) {
+    if (frame->activeDialogueTreeName == nullptr || std::strcmp(frame->activeDialogueTreeName, "willa_bank") != 0)
+        return;
+    if (frame->activeDialogueNodeId == nullptr) return;
+    // Don't stomp a same-frame transaction message applyBankDialogueSideEffects()
+    // above may have just written -- only fill in text for the browse-only nodes.
+    if (frame->clickedUiActionId != nullptr && frame->clickedUiActionId[0] != '\0') return;
+
+    const std::string node(frame->activeDialogueNodeId);
+    const double gold = readFlag(frame, kPlayerGoldFlag, 0.0);
+
+    if (node == "market") {
+        std::string text = "Gold in hand: " + std::to_string(static_cast<int>(gold)) + "g.\n";
+        for (int i = 0; i < kBankStockCount; ++i) {
+            const BankStock& stock = kBankStocks[i];
+            const double price = readFlag(frame, stock.priceFlagKey, stock.basePrice);
+            text += std::string(stock.displayName) + ": " + std::to_string(static_cast<int>(price)) + "g/share\n";
+        }
+        dialogueOverrideScratch() = text;
+        frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+        return;
+    }
+
+    for (int i = 0; i < kBankStockCount; ++i) {
+        const BankStock& stock = kBankStocks[i];
+        if (node != std::string(stock.id) + "_menu") continue;
+        const double price = readFlag(frame, stock.priceFlagKey, stock.basePrice);
+        const double held = readFlag(frame, stock.heldFlagKey, 0.0);
+        dialogueOverrideScratch() = std::string(stock.displayName) + " is trading at " +
+                                     std::to_string(static_cast<int>(price)) + "g/share. You own " +
+                                     std::to_string(static_cast<int>(held)) + " (worth " +
+                                     std::to_string(static_cast<int>(held * price)) + "g). Gold in hand: " +
+                                     std::to_string(static_cast<int>(gold)) + "g.";
+        frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+        return;
+    }
+
+    if (node == "bonds") {
+        dialogueOverrideScratch() =
+            std::string("Gold in hand: ") + std::to_string(static_cast<int>(gold)) +
+            "g. Bonds lock a fixed sum away and return it with interest -- Short: 100g -> 110g in 5 min; "
+            "Medium: 200g -> 250g in 15 min; Long: 400g -> 600g in 30 min.";
+        frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+    }
+}
+
+// ======= Dungeon chest loot ("void_shards_found"/"tome_fragments_found" gap) =======
+// Transcribed from js/activities.js's searchChest() dungeon branch (read in
+// full, lines 2190-2316) plus js/zones.js's own DUNGEON_LOOT table (lines
+// 1774-1795) and rollDungeonLoot() (lines 1797-1802). This is the real
+// mechanism the Aldermast quest-chain pass above (see its own doc comment,
+// "======= Aldermast's quest chain" above) explicitly named as missing:
+// "nothing in this port increments void_shards_found/tome_fragments_found
+// yet... a real, separate gap." This closes it.
+//
+// **Which dungeons**: searchChest()'s own `inDungeon` check (line 2227-2228)
+// matches FOUR zone display names -- THE ASHWOOD CRYPTS, THE IRON DEPTHS,
+// THE CULTIST CATACOMBS, AETHERIC SPIRE. Checked against this port's own
+// zoneSlugToTileGrid() (GrimstoneGame.cpp) before writing anything: only
+// "cultist_catacombs" is wired to a reachable slug there today --
+// buildAshenDungeon()/buildIronPeaksDungeon() carry no slug in that table
+// yet (daynight::updateNightOverlay()'s own doc comment above documents the
+// same gap), and AETHERIC SPIRE is buildWizardTowerInterior(), a hand-
+// authored interior never built via buildDungeonMap() at all (its own
+// "chest" tiles are Aldermast's own dressing, not dungeon-loot chests in
+// the JS -- searchChest()'s isSpecialChest/Dorin's-ledger/caravan-manifest
+// branches would take priority there anyway, none of which exist in this
+// port's Wizard Tower). So this gates on activeZoneId() ==
+// "cultist_catacombs" alone, the real currently-reachable subset, rather
+// than silently gating on all four or invisibly no-oping in the other
+// three.
+//
+// **Per-visit dedup**: the JS's `currentMap._voidShardGiven`/
+// `_tomeFragGiven` (lines 2252, 2254, 2269, 2272) are fields on the
+// per-entry `currentMap` object makeDungeonMap() rebuilds FRESH -- a brand
+// new random layout, `_voidShardGiven` unset again -- every time the
+// player re-enters that dungeon, capping each VISIT to at most one
+// shard/fragment, no matter how many of that visit's chests are opened.
+// This port's own zonetransition::cachedZone() builds "cultist_catacombs"'s
+// TileGrid ONCE and reuses it forever (no fresh regeneration per visit), so
+// the JS's per-object field has no direct equivalent. The nearest faithful
+// stand-in: a host flag reset every time requestZoneSwap() actually
+// (re)enters "cultist_catacombs" (see that function's own new reset lines,
+// zonetransition namespace above) -- the same "at most one per visit, a
+// fresh chance on the next visit" shape the JS's own quest design leans on
+// (four total shards needed, but only one dungeon reachable here, so
+// revisiting it repeatedly is the only way to gather all four).
+constexpr const char* kCcVoidShardVisitFlag = "cc_void_shard_given_visit";
+constexpr const char* kCcTomeFragVisitFlag = "cc_tome_frag_given_visit";
+
+// js/zones.js lines 1774-1795 -- id/weight pairs transcribed exactly.
+// Total weight is 94 (checked by hand against this exact list, not
+// recomputed at runtime the way the JS's own `.reduce()` does, since this
+// table never changes at runtime).
+struct DungeonLootEntry {
+    const char* itemId;
+    int weight;
+};
+constexpr DungeonLootEntry kDungeonLootTable[] = {
+    {"iron_sword", 4},    {"iron_helm", 4},     {"iron_plate", 3},    {"iron_legs", 3},
+    {"iron_shield", 3},   {"bronze_sword", 6},  {"bronze_helm", 6},   {"bronze_plate", 5},
+    {"bronze_legs", 5},   {"wheat", 6},         {"turnip", 6},        {"egg", 4},
+    {"bones", 10},        {"coins", 8},         {"goblin_hide", 7},   {"iron_arrows", 5},
+    {"bronze_arrows", 7}, {"steel_sword", 1},   {"mithril_sword", 1},
+};
+constexpr int kDungeonLootTableCount = sizeof(kDungeonLootTable) / sizeof(kDungeonLootTable[0]);
+constexpr int kDungeonLootTotalWeight = 94;
+
+constexpr const char* kDungeonChestKind[] = {"chest"};
+
+// **Deliberately NOT transcribed**: searchChest()'s own blueprint drop
+// (lines 2282-2293, `!currentMap._blueprintGiven && Math.random() < 0.22`,
+// picking from `state.homeBlueprintsLearned`). This port has no
+// home-blueprint/home-building system at all yet -- grep this whole file
+// for "blueprint" outside this comment and there are zero hits, matching
+// searchChest()'s OWN blueprint-buildable-furniture code path
+// (buildFurniture(), js/activities.js line 2160-ish) having no port either.
+// A real, separate, smaller future-authoring-pass gap, named here rather
+// than silently dropped -- NOT invented around by e.g. granting a
+// substitute item.
+void handleDungeonChestLoot(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
+    if (activeZoneId() != "cultist_catacombs") return; // see this function's own doc comment above
+    if (frame->randomUint32 == nullptr) return; // no real rng stream this build -- same guard fishing's own roll uses
+
+    int cx = 0, cy = 0;
+    if (!findAdjacentTileOfKind(frame, kDungeonChestKind, 1, &cx, &cy, nullptr)) return;
+
+    // js/activities.js startFish()'s own weighted-roll pattern (read via
+    // frame->randomUint32, the SAME seeded stream game.lua's own be.random()
+    // draws from, in place of the JS's Math.random() -- not std::rand()).
+    constexpr double kUint32Max = 4294967295.0;
+    auto rollUnit = [&]() -> double { return static_cast<double>(frame->randomUint32()) / kUint32Max; };
+
+    toastScratch() = "You pry open the ancient chest...";
+    frame->requestedToastText = toastScratch().c_str();
+
+    // Ashen Seal -- one guaranteed-chance chest once the quest is accepted
+    // (js/activities.js lines 2237-2245).
+    if (readFlag(frame, "ashen_seal_accepted", 0.0) != 0.0 && readFlag(frame, "ashen_seal_found", 0.0) == 0.0 &&
+        rollUnit() < 0.6) {
+        queueItemGrant("ashen_seal", 1);
+        queueFlagSet("ashen_seal_found", 1.0);
+    }
+
+    // Void Shards -- at most one per dungeon VISIT, capped at 4 total
+    // (js/activities.js lines 2247-2262).
+    const double shardsFound = readFlag(frame, "void_shards_found", 0.0);
+    if (readFlag(frame, "constellation_accepted", 0.0) != 0.0 && readFlag(frame, "constellation_done", 0.0) == 0.0 &&
+        shardsFound < 4.0 && readFlag(frame, kCcVoidShardVisitFlag, 0.0) == 0.0 && rollUnit() < 0.45) {
+        queueItemGrant("void_shard", 1);
+        queueFlagSet(kCcVoidShardVisitFlag, 1.0);
+        queueFlagSet("void_shards_found", shardsFound + 1.0);
+    }
+
+    // Tome Fragments -- at most one per dungeon VISIT, capped at 3 total,
+    // each a distinct itemId in found order (js/activities.js lines
+    // 2264-2280).
+    const double fragsFound = readFlag(frame, "tome_fragments_found", 0.0);
+    if (readFlag(frame, "grimoire_accepted", 0.0) != 0.0 && readFlag(frame, "grimoire_done", 0.0) == 0.0 &&
+        fragsFound < 3.0 && readFlag(frame, kCcTomeFragVisitFlag, 0.0) == 0.0 && rollUnit() < 0.55) {
+        constexpr const char* kFragItemIds[] = {"tome_fragment_1", "tome_fragment_2", "tome_fragment_3"};
+        const int fragIdx = static_cast<int>(fragsFound); // 0, 1, or 2 -- js's own `[shardsFound]` index pattern
+        queueItemGrant(kFragItemIds[fragIdx], 1);
+        queueFlagSet(kCcTomeFragVisitFlag, 1.0);
+        queueFlagSet("tome_fragments_found", fragsFound + 1.0);
+    }
+
+    // Generic loot -- 1-3 items via the weighted DUNGEON_LOOT table above,
+    // plus 10-49 gold whenever the roll lands on "coins" (js/activities.js
+    // lines 2231-2232, 2295-2299; js/zones.js lines 1797-1802).
+    const int numItems = 1 + static_cast<int>(rollUnit() * 3.0);
+    const int goldAmount = 10 + static_cast<int>(rollUnit() * 40.0);
+    for (int i = 0; i < numItems; ++i) {
+        double roll = rollUnit() * static_cast<double>(kDungeonLootTotalWeight);
+        const char* pickedId = "bones"; // rollDungeonLoot()'s own fallback (js/zones.js line 1801)
+        for (int t = 0; t < kDungeonLootTableCount; ++t) {
+            roll -= static_cast<double>(kDungeonLootTable[t].weight);
+            if (roll <= 0.0) {
+                pickedId = kDungeonLootTable[t].itemId;
+                break;
+            }
+        }
+        if (std::strcmp(pickedId, "coins") == 0) {
+            const double currentGold = readFlag(frame, kPlayerGoldFlag, 0.0);
+            queueFlagSet(kPlayerGoldFlag, currentGold + static_cast<double>(goldAmount));
+        } else {
+            queueItemGrant(pickedId, 1);
+        }
+    }
+
+    // Chest removed after searching, permanently for this visit's map --
+    // js/activities.js line 2302: `currentMap.tiles[y][x] =
+    // currentMap.floor[y][x]||T.DUNGEON_FLOOR` (no respawn, no re-search).
+    // buildDungeonMap() (GrimstoneGame.cpp) paints "chest" onto the Overlay
+    // layer (1) wherever it differs from the floor snapshot -- the SAME
+    // Floor/Overlay split its own doc comment describes -- so clearing
+    // Overlay back to empty (kindId "") reveals the plain dungeon_floor
+    // already sitting on Floor (0) underneath, matching the JS exactly.
+    queueTileEdit(1, cx, cy, "");
+}
+
+// ======= The five inert `npc_spawn` proof-of-concept NPCs (Grimward,
+// Bram, Oswin, Thessaly, Dorin) =======
+// Transcribed from js/npcs.js in full (NPC_DIALOGUE/NAMED_NPCS/
+// VILLAGER_RUMOURS/getDynamicGreet()/openDialogue()'s own nameLines table)
+// plus js/zones.js's NAMED_NPCS-position table (lines 2468-2495) that
+// assigns each of these a real name, and INNKEEPER_SHOP_CONFIG/
+// MERCHANT_SHOP_CONFIG (this file, lines 918-1113) for the two who carry
+// `hasTrade: true`. Same exact shape as playerNearAldermast()/
+// startAldermastDialogue()/applyAldermastDialogueSideEffects() and
+// playerNearWilla()/startBankDialogue()/applyBankDialogueSideEffects()
+// above: BeTileMarker has no name/id crossing the ABI (same doc comment),
+// so each NPC is matched by the EXACT world position its own
+// addNpcSpawnMarker() call in GrimstoneGame.cpp places it at (+0.5/+0.5
+// offset, that helper's own doc comment) -- checked against every other
+// addNpcSpawnMarker() call site; none of the five below collide with each
+// other, with Aldermast (13.5, 5.5), or with Willa (6.5, 3.5).
+//
+// **What's real vs. deferred, per NPC (see PORTING_PLAN.md's own
+// js/npcs.js row for the fuller writeup)**:
+// - **Grimward** (forge:5,11 in the JS): the JS NEVER gives him real
+//   authored dialogue -- his `tiles[5][11] = T.NPC_GUARD` placement
+//   (js/zones.js line 1441, "re-using guard tile for now, named below") means
+//   `openDialogue()` would actually show him the GUARD typeId's "Halt!
+//   State your business" pool, a placeholder-tile artifact, not authored
+//   Grimward content. That pool is deliberately NOT ported (porting a
+//   town guard's lines as a blacksmith's own dialogue would be inventing
+//   content, not porting it). What IS real and ported: his
+//   VILLAGER_RUMOURS line and the generic name-fallback blurb
+//   `openDialogue()`'s own `nameLines[npc.npcName] || "${npc.npcName}. A
+//   resident of Ashenveil."` produces for him (he has no `nameLines` entry).
+//   No `hasTrade` anywhere for him in the JS -- no smithing/trade content
+//   to port, so none is added here.
+// - **Bram** (innkeeper, `hasTrade: true`): his 4 real topic lines, his
+//   `nameLines.Bram` blurb, and a curated 3-of-10 subset of
+//   INNKEEPER_SHOP_CONFIG.buyStock (pale_ale/ashenveil_mead/inn_stew) --
+//   the remaining 7 real menu items are a real, deliberately deferred cut
+//   (documented, not silently dropped) to keep this pass's own dialogue-
+//   tree size manageable; every item actually offered is real JS content,
+//   not invented. His dynamic, quest-aware greeting (ashen_seal_returned)
+//   is ported since that flag is real, already-ported state
+//   (updateAldermastObjectives() above); his OTHER dynamic branches
+//   (mystery_key_given, weather/Grimtide) are deferred -- the mystery quest
+//   chain was never ported to this file (checked: no "mystery_" flag
+//   anywhere in this file) and weather/time-of-day gating on a greeting is
+//   real but lower-value scope this pass didn't reach.
+// - **Oswin**/**Thessaly** (villagers, no `hasTrade`): their real rumour
+//   line, `nameLines` blurb, and the 2 generic NPC_VILLAGER topic lines.
+//   Oswin's one dynamic (ashen_seal_returned) branch is ported for the
+//   same reason Bram's is; Thessaly's OWN dynamic branches all key off the
+//   unported mystery quest chain (mystery_met/mystery_key_given) or
+//   Grimtide-night time-of-day, so none of them are reachable here --
+//   deferred, not faked.
+// - **Dorin** (merchant, `hasTrade: true`, inside his own Trading Post
+//   interior): his 2 real topic lines, `nameLines.Dorin` blurb, dynamic
+//   ashen_seal_returned greeting, and a curated 3-buy/3-sell subset of
+//   MERCHANT_SHOP_CONFIG's buyStock/sellAccepts (60+ real entries total)
+//   -- same "curated, documented, real items only" cut as Bram's, and for
+//   the same reason (DialogueChoice.h's own `kMaxDialogueChoices = 4` --
+//   the full catalog would need many more paginated menu screens than this
+//   pass's own scope covers). Dorin's own "Old Bones, New Debts" quest
+//   (js/npcs.js lines 499-535, 686-734 -- a forged-ledger side quest
+//   reached by sneaking into his shop after dark) remains explicitly
+//   **deferred**, re-audited in a later pass rather than left on its
+//   original (now partly stale) reasoning: the night-only sneak-in
+//   mechanic is NOT blocked on a missing time-of-day primitive any more
+//   -- daynight::isNight()/nightAlpha() below are real and already gate
+//   other content (handleFishing()'s night-only fish) -- but the
+//   quest's own gate, questFlags.old_bones_accepted, requires
+//   qf.homestead_rewarded (js/npcs.js line 499), which is the
+//   completion flag of an entirely separate, unported prior quest
+//   (Bertram's own "A Place to Call Home", js/npcs.js lines 458-497: 3
+//   wheat handed to Bertram for a home_sigil + homestead access) that
+//   never sets it anywhere in this port (grepped: zero hits for
+//   homestead_rewarded/homestead_quest_accepted across src/*.cpp), so
+//   old_bones_accepted can never become true here. Bertram himself is
+//   only an npc_spawn marker in this port (GrimstoneGame.cpp, "Old
+//   Bertram, outside the barn") with no dialogue function of his own;
+//   Vayne has no presence in this port at all, and Edwyn is only one of
+//   three generic, unnamed "guard" markers this dispatch can't address
+//   individually. Porting "Old Bones" for real means porting that whole
+//   second, unrelated homestead-sigil quest first -- out of scope for a
+//   Dorin-dialogue pass -- so it stays deferred; see PORTING_PLAN.md's
+//   own note on this quest for the full chain. No "getting caught"
+//   failure state exists in the JS (the hidden-chest reveal in
+//   js/activities.js's searchChest() never penalizes the player), so
+//   none is invented here either.
+//
+// **NPC "schedules" (movement between named locations by time of day):
+// checked, and there simply is none to port.** grep for "schedule" across
+// every js/*.js file (js/activities.js's own scheduleKeyMove()/
+// scheduleP2KeyMove() are unrelated input-repeat helpers) turns up nothing
+// NPC-related, and every one of the five NAMED_NPCS entries above is a
+// single static `"zone:y,x"` position, never touched again after
+// spawnNpcsFromMap() places it -- none of them ever moves in the JS at
+// all. So unlike the "real primitive exists, just needs exposing" shape
+// this repo's own NEUTRAL-lens standing instruction usually looks for,
+// there is no JS behavior here to approximate with TileAgentSpawn's own
+// waypoint-route primitive (TileAgentSim.h) -- building NPC movement these
+// five never had would be inventing content, not porting it, so nothing
+// route/waypoint-based is added for any of them.
+constexpr float kNpcInteractRadius = 1.5f; // same adjacency spirit as kAldermastInteractRadius/kWillaInteractRadius
+
+bool playerNearMarkerAt(const BeTileGridFrame* frame, float markerX, float markerY) {
+    bool markerPresent = false;
+    for (int i = 0; i < frame->markerCount; ++i) {
+        const BeTileMarker& m = frame->markers[i];
+        if (m.kind == nullptr || std::strcmp(m.kind, "npc_spawn") != 0) continue;
+        if (std::fabs(m.worldX - markerX) > 0.01f) continue;
+        if (std::fabs(m.worldY - markerY) > 0.01f) continue;
+        markerPresent = true;
+        break;
+    }
+    if (!markerPresent) return false; // not currently in that interior/zone at all
+
+    const float dx = frame->playerWorldX - markerX;
+    const float dy = frame->playerWorldY - markerY;
+    return (dx * dx + dy * dy) <= kNpcInteractRadius * kNpcInteractRadius;
+}
+
+// ---- Grimward (forge:5,11 -> addNpcSpawnMarker(grid, "Grimward", 11.0f, 5.0f)) ----
+constexpr float kGrimwardMarkerWorldX = 11.5f;
+constexpr float kGrimwardMarkerWorldY = 5.5f;
+bool playerNearGrimward(const BeTileGridFrame* frame) { return playerNearMarkerAt(frame, kGrimwardMarkerWorldX, kGrimwardMarkerWorldY); }
+void startGrimwardDialogue(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
+    if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
+    if (!playerNearGrimward(frame)) return;
+    frame->requestedPushDialog = "dialogue:grimward_greeting";
+}
+
+// ---- Bram (inn:10,17 -> addNpcSpawnMarker(grid, "Bram", 17.0f, 10.0f)) ----
+constexpr float kBramMarkerWorldX = 17.5f;
+constexpr float kBramMarkerWorldY = 10.5f;
+bool playerNearBram(const BeTileGridFrame* frame) { return playerNearMarkerAt(frame, kBramMarkerWorldX, kBramMarkerWorldY); }
+void startBramDialogue(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
+    if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
+    if (!playerNearBram(frame)) return;
+    frame->requestedPushDialog = "dialogue:bram_greeting";
+}
+// Dynamic greeting override (js/npcs.js getDynamicGreet(), the `name ===
+// 'Bram'` branch, line 200-213) -- only the ashen_seal_returned line, per
+// this section's own doc comment on what's real vs. deferred. Same
+// "browse-only node, gate on no click this exact frame" split
+// overrideBankMenuLiveDialogueText() already establishes.
+void overrideBramLiveDialogueText(BeTileGridFrame* frame) {
+    if (frame->activeDialogueTreeName == nullptr || std::strcmp(frame->activeDialogueTreeName, "bram_greeting") != 0) return;
+    if (frame->activeDialogueNodeId == nullptr || std::strcmp(frame->activeDialogueNodeId, "greet") != 0) return;
+    if (frame->clickedUiActionId != nullptr && frame->clickedUiActionId[0] != '\0') return;
+    if (readFlag(frame, "ashen_seal_returned", 0.0) != 0.0) {
+        frame->requestedDialogueTextOverride =
+            "You're the one who went into the catacombs. I heard. Drink's on me tonight -- just this once. "
+            "Bram Hollowtap. Sit down.";
+    }
+}
+
+// ---- Oswin (inn:9,6 -> addNpcSpawnMarker(grid, "Oswin", 6.0f, 9.0f)) ----
+constexpr float kOswinMarkerWorldX = 6.5f;
+constexpr float kOswinMarkerWorldY = 9.5f;
+bool playerNearOswin(const BeTileGridFrame* frame) { return playerNearMarkerAt(frame, kOswinMarkerWorldX, kOswinMarkerWorldY); }
+void startOswinDialogue(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
+    if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
+    if (!playerNearOswin(frame)) return;
+    frame->requestedPushDialog = "dialogue:oswin_greeting";
+}
+// js/npcs.js getDynamicGreet(), the `name === 'Oswin'` branch, line 226-234.
+void overrideOswinLiveDialogueText(BeTileGridFrame* frame) {
+    if (frame->activeDialogueTreeName == nullptr || std::strcmp(frame->activeDialogueTreeName, "oswin_greeting") != 0) return;
+    if (frame->activeDialogueNodeId == nullptr || std::strcmp(frame->activeDialogueNodeId, "greet") != 0) return;
+    if (frame->clickedUiActionId != nullptr && frame->clickedUiActionId[0] != '\0') return;
+    if (readFlag(frame, "ashen_seal_returned", 0.0) != 0.0) {
+        frame->requestedDialogueTextOverride =
+            "Ashenveil's full of heroes all of a sudden. Oswin -- I'm still waiting on that caravan, but at least "
+            "the company's interesting.";
+    }
+}
+
+// ---- Thessaly (inn:12,7 -> addNpcSpawnMarker(grid, "Thessaly", 7.0f, 12.0f)) ----
+constexpr float kThessalyMarkerWorldX = 7.5f;
+constexpr float kThessalyMarkerWorldY = 12.5f;
+bool playerNearThessaly(const BeTileGridFrame* frame) { return playerNearMarkerAt(frame, kThessalyMarkerWorldX, kThessalyMarkerWorldY); }
+void startThessalyDialogue(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
+    if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
+    if (!playerNearThessaly(frame)) return;
+    frame->requestedPushDialog = "dialogue:thessaly_greeting";
+}
+// No live override for Thessaly -- every one of her OWN dynamic branches
+// (js/npcs.js lines 236-246) keys off mystery_met/mystery_key_given (the
+// unported mystery quest chain) or Grimtide-night time-of-day; see this
+// section's own doc comment above.
+
+// ---- Dorin (shop:2,6 -> addNpcSpawnMarker(grid, "Dorin", 6.0f, 2.0f)) ----
+constexpr float kDorinMarkerWorldX = 6.5f;
+constexpr float kDorinMarkerWorldY = 2.5f;
+bool playerNearDorin(const BeTileGridFrame* frame) { return playerNearMarkerAt(frame, kDorinMarkerWorldX, kDorinMarkerWorldY); }
+void startDorinDialogue(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
+    if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
+    if (!playerNearDorin(frame)) return;
+    frame->requestedPushDialog = "dialogue:dorin_greeting";
+}
+// js/npcs.js getDynamicGreet(), the `name === 'Dorin'` branch, line 303-315
+// (ashen_seal_returned only -- same real-vs-deferred split as Bram's).
+void overrideDorinLiveDialogueText(BeTileGridFrame* frame) {
+    if (frame->activeDialogueTreeName == nullptr || std::strcmp(frame->activeDialogueTreeName, "dorin_greeting") != 0) return;
+    if (frame->activeDialogueNodeId == nullptr || std::strcmp(frame->activeDialogueNodeId, "greet") != 0) return;
+    if (frame->clickedUiActionId != nullptr && frame->clickedUiActionId[0] != '\0') return;
+    if (readFlag(frame, "ashen_seal_returned", 0.0) != 0.0) {
+        frame->requestedDialogueTextOverride =
+            "Word from the south road -- a catacomb got cleared out. That was you? Dorin. Forty years trading "
+            "these roads. First time I've heard that done.";
+    }
+}
+
+// ---- Shared buy/sell side-effect helper for Bram/Dorin's curated menus --
+// same gold-check/grant/text-override shape applyBankStockSideEffect()
+// already establishes above, generalized to a plain (itemId, displayName,
+// price) triple since neither NPC's menu needs a held-share count. ----
+struct NpcShopItem {
+    const char* id;
+    const char* displayName;
+    double price;
+};
+
+void applyNpcBuySideEffect(BeTileGridFrame* frame, const NpcShopItem& item) {
+    const double gold = readFlag(frame, kPlayerGoldFlag, 0.0);
+    if (gold < item.price) {
+        dialogueOverrideScratch() = std::string("You don't have enough gold in hand for the ") + item.displayName +
+                                     " (" + std::to_string(static_cast<int>(item.price)) + "g).";
+    } else {
+        BeFlagUpdate goldUpdate;
+        goldUpdate.key = kPlayerGoldFlag;
+        goldUpdate.value = -item.price;
+        goldUpdate.mode = 1; // INCREMENT
+        flagUpdateBuffer().push_back(goldUpdate);
+        queueItemGrant(item.id, 1);
+        dialogueOverrideScratch() =
+            std::string("Bought the ") + item.displayName + " for " + std::to_string(static_cast<int>(item.price)) + "g.";
+    }
+    frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+}
+
+void applyNpcSellSideEffect(BeTileGridFrame* frame, const NpcShopItem& item) {
+    if (countInInventory(frame, item.id) < 1) {
+        dialogueOverrideScratch() = std::string("You don't have a ") + item.displayName + " to sell.";
+    } else {
+        queueItemGrant(item.id, -1);
+        BeFlagUpdate goldUpdate;
+        goldUpdate.key = kPlayerGoldFlag;
+        goldUpdate.value = item.price;
+        goldUpdate.mode = 1; // INCREMENT
+        flagUpdateBuffer().push_back(goldUpdate);
+        dialogueOverrideScratch() =
+            std::string("Sold the ") + item.displayName + " for " + std::to_string(static_cast<int>(item.price)) + "g.";
+    }
+    frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+}
+
+// Bram's FULL INNKEEPER_SHOP_CONFIG.buyStock (js/npcs.js lines 1092-1113,
+// all 10 real buyStock entries) -- was a curated 3-of-10 subset; now
+// paginated across bram_menu/bram_menu_page2/3/4 (3 per page, matching
+// this port's own established character-creation pagination pattern,
+// kMaxDialogueChoices=4 per node) per this pass's own scope decision
+// (see PORTING_PLAN.md).
+constexpr NpcShopItem kBramShopItems[] = {
+    {"pale_ale", "Pale Ale", 4.0},
+    {"dark_stout", "Dark Stout", 7.0},
+    {"ashenveil_mead", "Ashenveil Mead", 10.0},
+    {"witchwood_brew", "Witchwood Brew", 14.0},
+    {"ironpeak_lager", "Ironpeak Lager", 9.0},
+    {"inn_stew", "Inn Stew", 8.0},
+    {"roast_leg", "Roast Leg", 12.0},
+    {"ash_bread", "Ash Bread", 3.0},
+    {"smoked_fish", "Smoked Fish", 6.0},
+    {"mushroom_pie", "Mushroom Pie", 11.0},
+};
+constexpr int kBramShopItemCount = sizeof(kBramShopItems) / sizeof(kBramShopItems[0]);
+
+void applyBramDialogueSideEffects(BeTileGridFrame* frame) {
+    if (frame->activeDialogueTreeName == nullptr || std::strcmp(frame->activeDialogueTreeName, "bram_greeting") != 0)
+        return;
+    if (frame->clickedUiActionId == nullptr || frame->clickedUiActionId[0] == '\0') return;
+    if (frame->activeDialogueNodeId == nullptr) return;
+    const std::string node(frame->activeDialogueNodeId);
+    for (int i = 0; i < kBramShopItemCount; ++i) {
+        if (node == std::string(kBramShopItems[i].id) + "_buy_result") {
+            applyNpcBuySideEffect(frame, kBramShopItems[i]);
+            return;
+        }
+    }
+}
+
+// Dorin's expanded MERCHANT_SHOP_CONFIG subset (js/npcs.js lines 947-1024)
+// -- was a curated 3-buy/3-sell subset out of 60+ real entries; now the
+// FULL Weapons/Shields/Helmets/Body Armour/Legs/Food buy categories (22
+// gear items, lines 955-980, + 2 food items, line 985-986 -- 24 total,
+// paginated 3-per-page across dorin_buy_menu/_page2../_page8) and a full
+// "raw materials" sell category (bones/hides/bars/ores/logs, lines
+// 996-1007 -- 12 items, paginated across dorin_sell_menu/_page2/3/4).
+// Ammo (2, bulk arrow bundles) and Farming (6, hoe+seeds) on the buy side,
+// and fish/crops (15) on the sell side, are still a deliberate cut for
+// dialogue-tree-size scope -- see PORTING_PLAN.md for the judgement call
+// and line citations.
+constexpr NpcShopItem kDorinBuyItems[] = {
+    {"wooden_club", "Wooden Club", 8.0},
+    {"bronze_sword", "Bronze Sword", 40.0},
+    {"iron_sword", "Iron Sword", 120.0},
+    {"war_axe", "War Axe", 95.0},
+    {"steel_sword", "Steel Sword", 280.0},
+    {"bone_dagger", "Bone Dagger", 60.0},
+    {"wooden_shield", "Wooden Shield", 15.0},
+    {"bronze_shield", "Bronze Shield", 55.0},
+    {"iron_shield", "Iron Shield", 140.0},
+    {"kite_shield", "Kite Shield", 320.0},
+    {"leather_coif", "Leather Coif", 20.0},
+    {"bronze_helm", "Bronze Helm", 50.0},
+    {"iron_helm", "Iron Helm", 130.0},
+    {"steel_helm", "Steel Helm", 300.0},
+    {"leather_body", "Leather Body", 30.0},
+    {"bronze_plate", "Bronze Plate", 80.0},
+    {"iron_plate", "Iron Plate", 200.0},
+    {"steel_plate", "Steel Plate", 450.0},
+    {"leather_legs", "Leather Legs", 25.0},
+    {"bronze_legs", "Bronze Legs", 65.0},
+    {"iron_legs", "Iron Legs", 160.0},
+    {"steel_legs", "Steel Legs", 360.0},
+    {"cooked_trout", "Cooked Trout", 12.0},
+    {"cooked_salmon", "Cooked Salmon", 20.0},
+};
+constexpr int kDorinBuyItemCount = sizeof(kDorinBuyItems) / sizeof(kDorinBuyItems[0]);
+constexpr NpcShopItem kDorinSellItems[] = {
+    {"bones", "Bones", 5.0},
+    {"goblin_hide", "Goblin Hide", 8.0},
+    {"bronze_bar", "Bronze Bar", 20.0},
+    {"iron_bar", "Iron Bar", 30.0},
+    {"gold_bar", "Gold Bar", 55.0},
+    {"mithril_bar", "Mithril Bar", 90.0},
+    {"coal", "Coal", 8.0},
+    {"copper_ore", "Copper Ore", 4.0},
+    {"iron_ore", "Iron Ore", 7.0},
+    {"normal_log", "Normal Log", 3.0},
+    {"oak_log", "Oak Log", 6.0},
+    {"willow_log", "Willow Log", 12.0},
+};
+constexpr int kDorinSellItemCount = sizeof(kDorinSellItems) / sizeof(kDorinSellItems[0]);
+
+void applyDorinDialogueSideEffects(BeTileGridFrame* frame) {
+    if (frame->activeDialogueTreeName == nullptr || std::strcmp(frame->activeDialogueTreeName, "dorin_greeting") != 0)
+        return;
+    if (frame->clickedUiActionId == nullptr || frame->clickedUiActionId[0] == '\0') return;
+    if (frame->activeDialogueNodeId == nullptr) return;
+    const std::string node(frame->activeDialogueNodeId);
+    for (int i = 0; i < kDorinBuyItemCount; ++i) {
+        if (node == std::string(kDorinBuyItems[i].id) + "_buy_result") {
+            applyNpcBuySideEffect(frame, kDorinBuyItems[i]);
+            return;
+        }
+    }
+    for (int i = 0; i < kDorinSellItemCount; ++i) {
+        if (node == std::string(kDorinSellItems[i].id) + "_sell_result") {
+            applyNpcSellSideEffect(frame, kDorinSellItems[i]);
+            return;
+        }
+    }
+}
+
+// ======= Right-click context menu (js/input.js) =======
+// PORTING_PLAN.md's own js/input.js row previously said this was
+// "structurally impossible" -- true against the ABI at the time (a full
+// grep of GameModuleApi.h found zero mouse/click fields at all). Item
+// N6-MOUSE2D (v38->v39) closed that specific gap by adding
+// BeTileGridFrame::mouseX/mouseY (float, normalized [0,1] SCREEN position,
+// top-left origin, Y-down -- the exact convention the host's own internal
+// HUD hit-testing already uses) and mouseRightPressed (int, edge-detected
+// exactly like interactPressed -- nonzero only the single frame the button
+// was first pressed). Both read directly from that field's own doc
+// comment in GameModuleApi.h, not guessed.
+//
+// **What the bump does NOT close, checked rather than assumed**: there is
+// still no way to turn mouseX/mouseY into a WORLD position. Grepped the
+// whole header again for "camera"/"zoom"/"viewport"/"screenWidth" -- the
+// 2D host's Camera2D exists (TileGridHostRunner.cpp reads real cursor
+// state every frame for its own HUD hit-testing) but its position/zoom/
+// viewport size never crosses the ABI boundary at all; every camera field
+// on this struct is write-only "juice" (shake/zoom-punch/pan), nothing a
+// plugin can read back. worldToCell takes a WORLD position, and there is
+// no primitive anywhere that projects a normalized screen point into one.
+// So a true cursor-precise "what's under the pointer" picker -- the thing
+// js/input.js's own contextmenu handler actually does -- is still not
+// buildable against this ABI version, bump or no bump.
+//
+// **What IS built instead**: right-click opens a small choice menu over
+// whatever is already adjacent to the PLAYER -- the exact same
+// "adjacency, not facing/pointing" interaction model this whole file
+// already uses for interactPressed (handleMiningAndWoodcutting()'s own
+// doc comment). It reuses the JS's own real priority order (NPC -> enemy
+// -> a real tile action; ground-bag pickup is the JS's own FIRST branch
+// and is skipped -- no groundBags-equivalent state exists anywhere in this
+// file, grepped, zero hits, unchanged since PORTING_PLAN.md's own prior
+// investigation), and every menu choice fires the exact SAME handler
+// direct interact already calls -- each relevant handle*()/start*Dialogue()
+// function above now takes an additional `forced` parameter (default
+// false) that bypasses its own `!frame->interactPressed` gate while
+// leaving every other real gate (level/zone/inventory/adjacency check)
+// untouched -- matching walkThenDo()'s own "every menu action just calls
+// the real handler" shape exactly, not a second copy of any grant logic.
+//
+// **No separate "Trade" entry, even for Bram/Dorin (both `hasTrade:
+// true`)** -- a real ABI limit, not scope discipline. requestedPushDialog's
+// own "dialogue:<name>" convention (TileGridHostRunner.cpp's
+// pushDialogOrTree()) always starts a tree at its OWN startNodeId; there
+// is no way to jump straight to an interior node like Dorin's own
+// "dorin_trade_menu". A second top-level choice that could only ever land
+// on the identical "greet" node "Talk" already opens would be a fake
+// choice, not a real one -- Dorin's/Bram's own "Let's trade"/"What's on
+// the menu?" line is already one click past "Talk" either way, so the
+// menu's own action label just says so ("Talk to Dorin (trade
+// available)") instead of pretending to offer two destinations that are
+// actually one.
+//
+// **A menu choice can go stale**: the player is free to walk away while
+// the menu is showing (nothing pins them in place), so the forced handler
+// re-checks adjacency itself and can legitimately find nothing there any
+// more -- it just silently does nothing that frame, the same as an
+// ordinary interactPressed press thrown at empty air would.
+enum class RightClickAction {
+    None,
+    TalkAldermast,
+    TalkWilla,
+    TalkGrimward,
+    TalkBram,
+    TalkOswin,
+    TalkThessaly,
+    TalkDorin,
+    Attack,
+    MineOrChop,
+    Fish,
+    Cook,
+    Smelt,
+    Forge,
+    Till,
+    Harvest,
+};
+
+constexpr const char* kRightClickMenuLayoutName = "RightClickMenu";
+constexpr const char* kRightClickActionElementId = "rcm_action";
+constexpr const char* kRightClickCancelActionId = "rcm_cancel";
+
+RightClickAction& pendingRightClickAction() {
+    static RightClickAction action = RightClickAction::None;
+    return action;
+}
+std::string& rightClickActionLabel() {
+    static std::string label;
+    return label;
+}
+std::vector<BeUiElementOverride>& uiOverrideBuffer() {
+    static std::vector<BeUiElementOverride> buf;
+    return buf;
+}
+
+bool rightClickMenuOpen(const BeTileGridFrame* frame) {
+    return frame->activeDialogLayoutName != nullptr &&
+           std::strcmp(frame->activeDialogLayoutName, kRightClickMenuLayoutName) == 0;
+}
+
+// Read-only mirror of startCombatEncounter()'s own nearest-living-enemy scan
+// (same kMeleeRangeWorldUnits/findEnemyDef()) -- no side effects, purely
+// "is there a real target," so building the menu never fires a hitbox.
+bool nearestLivingEnemyInRange(const BeTileGridFrame* frame) {
+    if (frame->agents == nullptr) return false;
+    for (int i = 0; i < frame->agentCount; ++i) {
+        const BeAgentState& agent = frame->agents[i];
+        if (agent.health <= 0.0f) continue;
+        if (findEnemyDef(agent.kind) == nullptr) continue;
+        const float dx = agent.worldX - frame->playerWorldX;
+        const float dy = agent.worldY - frame->playerWorldY;
+        if (dx * dx + dy * dy <= kMeleeRangeWorldUnits * kMeleeRangeWorldUnits) return true;
+    }
+    return false;
+}
+
+// Read-only mirror of handleMiningAndWoodcutting()'s own player-cell-plus-4-
+// neighbors, layer-0-only scan -- returns the first matching MinableResource
+// so the menu can show its real verb ("Mine"/"Chop"), or nullptr.
+const MinableResource* findAdjacentMinableResource(BeTileGridFrame* frame) {
+    if (frame->queryTileKindId == nullptr || frame->worldToCell == nullptr) return nullptr;
+    int px, py;
+    frame->worldToCell(frame->playerWorldX, frame->playerWorldY, &px, &py);
+    constexpr int kDx[] = {0, 0, 0, -1, 1};
+    constexpr int kDy[] = {0, -1, 1, 0, 0};
+    for (int dir = 0; dir < 5; ++dir) {
+        const char* kindId = frame->queryTileKindId(0, px + kDx[dir], py + kDy[dir]);
+        if (kindId == nullptr || kindId[0] == '\0') continue;
+        for (int i = 0; i < kMinableResourceCount; ++i) {
+            if (std::strcmp(kindId, kMinableResources[i].tileKindId) == 0) return &kMinableResources[i];
+        }
+    }
+    return nullptr;
+}
+
+// ---- Tile-kind-id lists for the remaining tile actions, mirroring each
+// handler's own local array (handleFishing()'s kFishingSpotKinds is
+// already file-scope and reused directly below; handleCooking()/
+// handleSmelting()/handleForging()/handleTilling()/handleHarvesting()'s
+// own kCookingFireKinds/kSmelterKinds/kAnvilKinds/kDirtKinds/kHomeCropKinds
+// are each local to their own function, so the literal is duplicated here
+// rather than touching five existing functions for a cosmetic hoist only
+// this read-only resolver needs). ----
+constexpr const char* const kRcmCookingFireKinds[] = {"cooking_fire"};
+constexpr const char* const kRcmSmelterKinds[] = {"smelter"};
+constexpr const char* const kRcmAnvilKinds[] = {"anvil"};
+constexpr const char* const kRcmDirtKinds[] = {"dirt"};
+constexpr const char* const kRcmHomeCropKinds[] = {"home_wheat", "home_turnip", "home_carrot", "home_potato",
+                                                     "home_onion"};
+
+// The real resolver: js/input.js's own priority order (ground bag -> NPC ->
+// enemy -> mystery NPC -> getTileActions(tile)), minus the ground-bag
+// branch (nothing to resolve it against, see this section's own doc
+// comment) and the mystery-NPC branch (js/npcs.js's own mystery quest
+// chain was never ported, same PORTING_PLAN.md finding startThessalyDialogue()
+// already cites). Returns RightClickAction::None (and an empty label) when
+// nothing real is adjacent.
+RightClickAction resolveRightClickAction(BeTileGridFrame* frame, std::string* outLabel) {
+    if (playerNearAldermast(frame)) {
+        *outLabel = "Talk to Aldermast";
+        return RightClickAction::TalkAldermast;
+    }
+    if (playerNearWilla(frame)) {
+        *outLabel = "Talk to Willa";
+        return RightClickAction::TalkWilla;
+    }
+    if (playerNearGrimward(frame)) {
+        *outLabel = "Talk to Grimward";
+        return RightClickAction::TalkGrimward;
+    }
+    if (playerNearBram(frame)) {
+        *outLabel = "Talk to Bram (trade available)";
+        return RightClickAction::TalkBram;
+    }
+    if (playerNearOswin(frame)) {
+        *outLabel = "Talk to Oswin";
+        return RightClickAction::TalkOswin;
+    }
+    if (playerNearThessaly(frame)) {
+        *outLabel = "Talk to Thessaly";
+        return RightClickAction::TalkThessaly;
+    }
+    if (playerNearDorin(frame)) {
+        *outLabel = "Talk to Dorin (trade available)";
+        return RightClickAction::TalkDorin;
+    }
+    if (nearestLivingEnemyInRange(frame)) {
+        *outLabel = "Attack";
+        return RightClickAction::Attack;
+    }
+    if (const MinableResource* res = findAdjacentMinableResource(frame)) {
+        *outLabel = std::string(1, static_cast<char>(std::toupper(static_cast<unsigned char>(res->toastVerb[0])))) +
+                    (res->toastVerb + 1);
+        return RightClickAction::MineOrChop;
+    }
+    if (findAdjacentTileOfKind(frame, kFishingSpotKinds, 2, nullptr, nullptr, nullptr)) {
+        *outLabel = "Fish";
+        return RightClickAction::Fish;
+    }
+    if (findAdjacentTileOfKind(frame, kRcmCookingFireKinds, 1, nullptr, nullptr, nullptr)) {
+        *outLabel = "Cook";
+        return RightClickAction::Cook;
+    }
+    if (findAdjacentTileOfKind(frame, kRcmSmelterKinds, 1, nullptr, nullptr, nullptr)) {
+        *outLabel = "Smelt";
+        return RightClickAction::Smelt;
+    }
+    if (findAdjacentTileOfKind(frame, kRcmAnvilKinds, 1, nullptr, nullptr, nullptr)) {
+        *outLabel = "Forge";
+        return RightClickAction::Forge;
+    }
+    if (activeZoneId() == "homestead" && findAdjacentTileOfKind(frame, kRcmDirtKinds, 1, nullptr, nullptr, nullptr)) {
+        *outLabel = "Till the soil";
+        return RightClickAction::Till;
+    }
+    if (findAdjacentTileOfKind(frame, kRcmHomeCropKinds, 5, nullptr, nullptr, nullptr)) {
+        *outLabel = "Harvest";
+        return RightClickAction::Harvest;
+    }
+    return RightClickAction::None;
+}
+
+// Fires the SAME handler direct interact already calls for the chosen
+// action, with `forced = true` so it runs regardless of this frame's
+// interactPressed state -- see this section's own doc comment above for
+// why this is not a second copy of any grant/dialogue logic.
+void executeRightClickAction(BeTileGridFrame* frame, RightClickAction action) {
+    switch (action) {
+        case RightClickAction::TalkAldermast: startAldermastDialogue(frame, /*forced=*/true); return;
+        case RightClickAction::TalkWilla: startBankDialogue(frame, /*forced=*/true); return;
+        case RightClickAction::TalkGrimward: startGrimwardDialogue(frame, /*forced=*/true); return;
+        case RightClickAction::TalkBram: startBramDialogue(frame, /*forced=*/true); return;
+        case RightClickAction::TalkOswin: startOswinDialogue(frame, /*forced=*/true); return;
+        case RightClickAction::TalkThessaly: startThessalyDialogue(frame, /*forced=*/true); return;
+        case RightClickAction::TalkDorin: startDorinDialogue(frame, /*forced=*/true); return;
+        case RightClickAction::Attack: handleCombatEncounter(frame, /*forced=*/true); return;
+        case RightClickAction::MineOrChop: handleMiningAndWoodcutting(frame, /*forced=*/true); return;
+        case RightClickAction::Fish: handleFishing(frame, /*forced=*/true); return;
+        case RightClickAction::Cook: handleCooking(frame, /*forced=*/true); return;
+        case RightClickAction::Smelt: handleSmelting(frame, /*forced=*/true); return;
+        case RightClickAction::Forge: handleForging(frame, /*forced=*/true); return;
+        case RightClickAction::Till: handleTilling(frame, /*forced=*/true); return;
+        case RightClickAction::Harvest: handleHarvesting(frame, /*forced=*/true); return;
+        case RightClickAction::None: return;
+    }
+}
+
+// Wiring: on the right-click edge, resolve+open (or toast "nothing to do"
+// and open nothing); while open, keep the action label live and react to
+// a real click on either choice. Guarded on activeDialogLayoutName being
+// empty before opening -- same "don't steal focus from anything already
+// on the dialog stack" convention every start*Dialogue()/
+// handleDevConsoleToggle() above already uses.
+void handleRightClickMenu(BeTileGridFrame* frame) {
+    if (rightClickMenuOpen(frame)) {
+        uiOverrideBuffer().clear();
+        BeUiElementOverride ov{};
+        ov.elementId = kRightClickActionElementId;
+        ov.text = rightClickActionLabel().c_str();
+        uiOverrideBuffer().push_back(ov);
+        frame->requestedUiElementOverrides = uiOverrideBuffer().data();
+        frame->requestedUiElementOverrideCount = static_cast<int>(uiOverrideBuffer().size());
+
+        if (frame->clickedUiActionId != nullptr && frame->clickedUiActionId[0] != '\0') {
+            if (std::strcmp(frame->clickedUiActionId, kRightClickActionElementId) == 0) {
+                frame->requestedPopDialog = 1;
+                executeRightClickAction(frame, pendingRightClickAction());
+                pendingRightClickAction() = RightClickAction::None;
+            } else if (std::strcmp(frame->clickedUiActionId, kRightClickCancelActionId) == 0) {
+                frame->requestedPopDialog = 1;
+                pendingRightClickAction() = RightClickAction::None;
+            }
+        }
+        return;
+    }
+
+    if (!frame->mouseRightPressed) return;
+    if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
+
+    std::string label;
+    const RightClickAction action = resolveRightClickAction(frame, &label);
+    if (action == RightClickAction::None) {
+        toastScratch() = "Nothing to do here.";
+        frame->requestedToastText = toastScratch().c_str();
+        return;
+    }
+
+    pendingRightClickAction() = action;
+    rightClickActionLabel() = label;
+    frame->requestedPushDialog = kRightClickMenuLayoutName;
+}
+
+// ======= Player HUD (js/ui.js's updateHUD(), item N4-UIWRITE) =======
+// PORTING_PLAN.md's own js/ui.js row named this exact gap: js/ui.js's
+// updateHUD() (line 342) keeps a persistent gold-hud/combat-lvl-hud display
+// live every frame with no dialogue/menu open at all, and before item
+// N4-UIWRITE there was no way for a plugin to write a live value onto a
+// UILayout element outside dialogue's hardcoded speaker/body/choice
+// bindings -- the health bar (already real/host-drawn per that
+// investigation) was the one exception, since it never went through
+// UILayoutOverrides at all. This closes the gold+combat-level half with the
+// SAME BeUiElementOverride mechanism handleRightClickMenu() above already
+// established, appended into the identical uiOverrideBuffer() rather than a
+// second buffer -- see that function's own doc comment and
+// GameModuleApi.h's BeUiElementOverride doc comment for why several entries
+// (each touching a different elementId) coexist in one array with no
+// conflict.
+//
+// **Coexistence with handleRightClickMenu() specifically**: that function
+// calls uiOverrideBuffer().clear() itself, but only on the branch where the
+// right-click menu is already open -- so this function must run AFTER
+// handleRightClickMenu() in updateGrimstoneRuntime()'s dispatch (it does,
+// see that function's own call order) and must APPEND rather than clear, or
+// a frame with the menu open would have its rcm_action override wiped by
+// this function's own entries instead of gaining them. Re-deriving
+// frame->requestedUiElementOverrides/Count from the buffer's OWN current
+// data()/size() (rather than trusting whatever handleRightClickMenu() set)
+// is required too: appending to a std::vector can reallocate, which would
+// leave frame->requestedUiElementOverrides dangling if it still pointed at
+// the pre-append buffer.
+//
+// **Scope, first pass**: gold (kPlayerGoldFlag, the bank system's own flag)
+// plus one derived "Combat Lv" summary line, mirroring js/ui.js's own real
+// `cb = Math.floor((atk+def+str+hpLvl)/4)` formula exactly (updateHUD(),
+// line 345) rather than inventing a new "active skill" concept this port
+// has no other use for -- js/ui.js's own production HUD already treats
+// combat level as ITS summary line, not a per-skill XP readout, so this
+// reuses that same real precedent instead of guessing at a new one.
+//
+// **Second pass (this one) closes the previously-deferred half**: js/ui.js's
+// separate skills panel (`#skills-panel`, buildSkillsPanel()/
+// updateSkillDisplay(), lines 42-60 and 484-609) is read in full before
+// writing any of what follows. What it actually is, checked rather than
+// assumed:
+//   - A persistent LEFT-side panel, NOT a modal/dialog -- it sits alongside
+//     the rest of the page the whole time a game is loaded. It is
+//     collapsible (skillsToggleBtn's ◀/▶ click, applySkillsState()) but its
+//     OWN real default, read from applySkillsState(localStorage.getItem(
+//     'grimstone_skills_collapsed') === '1') on a fresh browser with no
+//     stored preference, is EXPANDED, not collapsed. So "always visible
+//     alongside the rest of the HUD" is the right shape here, not a
+//     separate dialog-stack layout -- and TileGrid::hudLayoutName
+//     (TileGrid.h) is a SINGLE persistent-overlay slot per grid anyway (see
+//     its own doc comment), so a second "SkillsPanel" UILayout could never
+//     coexist with PlayerHUD as two simultaneously-active hud overlays even
+//     if it were built that way. This pass therefore extends the SAME
+//     PlayerHUD UILayout (content/ui-layouts.json) with the skill rows,
+//     authored `"visible": true` by default (UILayout.cpp's own
+//     `el.value("visible", true)` -- matching the JS's real fresh-browser
+//     default of expanded, not an invented "start hidden" guess) --
+//     matching this file's own "one central funnel" (zoneSlugToTileGrid())
+//     convention that hudLayoutName's own doc comment already documents.
+//   - Per skill: buildSkillsPanel() (line 491) shows a name label, a level
+//     number (`sk.lvl`, with a small equipment-bonus superscript this pass
+//     does NOT reproduce -- see below), and an XP progress bar toward next
+//     level (`skill-xp-fill`, width% = `(sk.xp-xpForLevel(sk.lvl)) /
+//     (xpForLevel(sk.lvl+1)-xpForLevel(sk.lvl)) * 100`, clamped to 100).
+//     ALL 11 skills at once, in one non-scrolling, non-paginated list (no
+//     pagination/scroll code anywhere in buildSkillsPanel()) -- so the new
+//     `SkillsPanel`-shaped section below authors exactly 11 rows, matching
+//     BattleMenu's own real Slider-element precedent (content/
+//     ui-layouts.json, `battle_player_hp_bar`/`battle_enemy_hp_bar`) for the
+//     bar itself.
+//   - Clicking a skill row additionally opens a floating tooltip
+//     (showSkillTooltip(), line 513) listing level milestones and live
+//     equipment-bonus lines (getEquipBonuses(), SKILL_BONUS_MAP). That
+//     tooltip -- and the equipment-bonus superscript on the level number it
+//     shares data with -- is real UI surface this port has no equivalent
+//     equipment-stat-bonus system for today (checked: no getEquipBonuses()
+//     analog anywhere in this file), and is a SEPARATE, follow-up-sized gap
+//     from "show the 11 skills' level+XP bar," not a one-line addition to
+//     it -- deliberately deferred here, same as this section's own prior
+//     "explicitly left for a future pass" note used to read, just narrowed
+//     to name the real remaining piece instead of the whole panel.
+//   - Toggle: js's own click-driven ◀/▶ button has no direct analog on this
+//     engine's fixed keysDown table (no mouse-hover/click-on-a-HUD-element
+//     primitive exists for this, unlike interactive dialog/battle Labels,
+//     which route through frame->clickedUiActionId, not a plain HUD
+//     overlay). A real key toggle is substituted instead, following
+//     handleDevConsoleToggle()'s own LeftControl+<letter> edge-detected
+//     `keysDown` pattern exactly (own "was down last frame" flag, toggling
+//     once per press, not once per frame held) -- LeftControl+K
+//     (kSkillsPanelToggleKey below), distinct from dev console's
+//     LeftControl+L. See handleSkillsPanelToggle() below.
+int playerHudCombatLevel(const BeTileGridFrame* frame) {
+    const int atk = readSkillLevel(frame, GrimstoneSkill::Attack);
+    const int def = readSkillLevel(frame, GrimstoneSkill::Defence);
+    const int str = readSkillLevel(frame, GrimstoneSkill::Strength);
+    const int hpLvl = readSkillLevel(frame, GrimstoneSkill::Hitpoints);
+    return (atk + def + str + hpLvl) / 4;
+}
+
+constexpr const char* kHudGoldElementId = "hud_gold_text";
+constexpr const char* kHudCombatElementId = "hud_combat_text";
+
+std::string& hudGoldTextScratch() {
+    static std::string text;
+    return text;
+}
+std::string& hudCombatTextScratch() {
+    static std::string text;
+    return text;
+}
+
+// ---- Skills panel (js/ui.js's buildSkillsPanel()/updateSkillDisplay(),
+// closing the second half of this section's own doc comment above) ----
+constexpr const char* kSkillsPanelBgElementId = "skills_panel_bg";
+constexpr const char* kSkillsPanelTitleElementId = "skills_panel_title";
+constexpr const char* kSkillsPanelToggleKey = "K"; // + LeftControl -- see this section's own doc comment above
+constexpr const char* kSkillsPanelOpenFlag = "skills_panel_open";
+
+// Own "was the combo down last frame" edge-detect flag, same shape
+// handleDevConsoleToggle() below uses for its own LeftControl+L combo --
+// kept as a real per-frame flag (not a static local) since this whole file
+// keeps no persistent struct of its own, the same reasoning
+// handleFarmGrowthTick() already established and handleDevConsoleToggle()
+// reuses.
+void handleSkillsPanelToggle(BeTileGridFrame* frame) {
+    const bool comboDown = isKeyDown(frame, "LeftControl") && isKeyDown(frame, kSkillsPanelToggleKey);
+    const bool wasDown = readFlag(frame, "skills_panel_toggle_key_was_down", 0.0) != 0.0;
+    queueFlagSet("skills_panel_toggle_key_was_down", comboDown ? 1.0 : 0.0);
+
+    if (comboDown && !wasDown) {
+        // Default (flag never set) is OPEN -- matches js's own real
+        // fresh-browser default (applySkillsState() with no stored
+        // 'grimstone_skills_collapsed' preference is expanded), see this
+        // section's own doc comment above.
+        const bool currentlyOpen = readFlag(frame, kSkillsPanelOpenFlag, 1.0) != 0.0;
+        queueFlagSet(kSkillsPanelOpenFlag, currentlyOpen ? 0.0 : 1.0);
+    }
+}
+
+bool skillsPanelOpen(const BeTileGridFrame* frame) { return readFlag(frame, kSkillsPanelOpenFlag, 1.0) != 0.0; }
+
+// Element ids for each of the 11 skill rows, same order as
+// kSkillDisplayNames/GrimstoneSkill/kSkillXpFlagKeys above -- built once
+// into static storage (not re-concatenated every frame) since these are the
+// SAME 11 fixed strings on every single frame this runs.
+struct SkillPanelRowIds {
+    std::string nameId;
+    std::string lvlId;
+    std::string barId;
+};
+const std::vector<SkillPanelRowIds>& skillPanelRowIds() {
+    static const std::vector<SkillPanelRowIds> ids = [] {
+        std::vector<SkillPanelRowIds> v;
+        v.reserve(kSkillCount);
+        for (int i = 0; i < kSkillCount; ++i) {
+            const std::string name = kSkillDisplayNames[i];
+            v.push_back({"skill_name_" + name, "skill_lvl_" + name, "skill_bar_" + name});
+        }
+        return v;
+    }();
+    return ids;
+}
+
+// Pushes one visible/hasVisible-only override for `elementId` -- used for
+// every element in the panel whose ONLY per-frame concern is show/hide
+// (the background panel, the title, and each row's name label, none of
+// which have any other live value).
+void pushVisibleOnly(const char* elementId, bool visible) {
+    BeUiElementOverride ov{};
+    ov.elementId = elementId;
+    ov.hasVisible = 1;
+    ov.visible = visible ? 1 : 0;
+    uiOverrideBuffer().push_back(ov);
+}
+
+// Builds this frame's 11 skill rows (level text + XP-bar value), plus the
+// panel background/title, ALL gated on the same show/hide flag --
+// js/ui.js's own buildSkillsPanel() shows every skill at once with no
+// pagination (checked, see this section's own doc comment above), so this
+// mirrors that shape exactly rather than inventing paging this port has no
+// other precedent for. Appends into the SAME uiOverrideBuffer()
+// updatePlayerHud() (below) itself pushes the gold/combat overrides
+// into -- called FROM updatePlayerHud(), before that function re-derives
+// frame->requestedUiElementOverrides/Count from the buffer's own current
+// data()/size(), so no separate re-derivation is needed here (matching
+// handleRightClickMenu()'s/updatePlayerHud()'s own "one re-derive per
+// frame, after every append" discipline -- see this section's own doc
+// comment above for why re-deriving from anything OTHER than the buffer's
+// own live data()/size() would risk a dangling pointer after a push_back
+// reallocates).
+void updateSkillsPanel(BeTileGridFrame* frame) {
+    handleSkillsPanelToggle(frame);
+    const bool open = skillsPanelOpen(frame);
+
+    pushVisibleOnly(kSkillsPanelBgElementId, open);
+    pushVisibleOnly(kSkillsPanelTitleElementId, open);
+
+    for (int i = 0; i < kSkillCount; ++i) {
+        const auto& ids = skillPanelRowIds()[static_cast<size_t>(i)];
+        pushVisibleOnly(ids.nameId.c_str(), open);
+
+        const GrimstoneSkill skill = static_cast<GrimstoneSkill>(i);
+        const int level = readSkillLevel(frame, skill);
+        const double xp = readSkillXp(frame, skill);
+        const double baseXp = xpForLevel(level);
+        const double neededXp = xpForLevel(level + 1) - baseXp;
+        const double progress = neededXp > 0.0 ? std::clamp((xp - baseXp) / neededXp, 0.0, 1.0) : 1.0;
+
+        BeUiElementOverride lvlOv{};
+        lvlOv.elementId = ids.lvlId.c_str(); // skillPanelRowIds()'s own static vector -- stable for the program's whole lifetime, no interning needed
+        lvlOv.text = internString("Lv " + std::to_string(level));
+        lvlOv.hasVisible = 1;
+        lvlOv.visible = open ? 1 : 0;
+        uiOverrideBuffer().push_back(lvlOv);
+
+        BeUiElementOverride barOv{};
+        barOv.elementId = ids.barId.c_str();
+        barOv.hasValue = 1;
+        barOv.value = progress;
+        barOv.hasVisible = 1;
+        barOv.visible = open ? 1 : 0;
+        uiOverrideBuffer().push_back(barOv);
+    }
+}
+
+void updatePlayerHud(BeTileGridFrame* frame) {
+    const double gold = readFlag(frame, kPlayerGoldFlag, 0.0);
+    hudGoldTextScratch() = "Gold: " + std::to_string(static_cast<int>(gold));
+    hudCombatTextScratch() = "Combat Lv " + std::to_string(playerHudCombatLevel(frame));
+
+    BeUiElementOverride goldOv{};
+    goldOv.elementId = kHudGoldElementId;
+    goldOv.text = hudGoldTextScratch().c_str();
+    uiOverrideBuffer().push_back(goldOv);
+
+    BeUiElementOverride combatOv{};
+    combatOv.elementId = kHudCombatElementId;
+    combatOv.text = hudCombatTextScratch().c_str();
+    uiOverrideBuffer().push_back(combatOv);
+
+    updateSkillsPanel(frame);
+
+    // Re-derive from the buffer's own current state rather than
+    // incrementing whatever handleRightClickMenu() already set -- see this
+    // section's own doc comment above for why (a push_back may reallocate).
+    frame->requestedUiElementOverrides = uiOverrideBuffer().data();
+    frame->requestedUiElementOverrideCount = static_cast<int>(uiOverrideBuffer().size());
+}
+
+// ======= Dev Console (js/devconsole.js) =======
+// Transcribed from js/devconsole.js's runDevCommand() switch (lines 78-238)
+// and its toggle/close wiring (toggleConsole()/the two keydown listeners,
+// lines 62-70, 242-282). Read in full before writing any of this, per this
+// pass's own task framing.
+//
+// **Gate, mirroring the JS's own (real, not invented)**: js/devconsole.js's
+// toggleConsole() (line 63) has exactly ONE gate -- `if(!currentMap) return;`,
+// i.e. "only while a game is actually loaded." It is NOT a dev-only/debug-
+// build flag; the JS ships this exact command console reachable by any
+// player who knows to press backtick, in production, with no further
+// authorization check anywhere in the file (checked: no `DEBUG`/`isDev`/
+// role check anywhere in devconsole.js). Mirrored as-is rather than
+// invented-more-strict here: `updateGrimstoneRuntime()` only ever runs
+// while a TileGrid is actually loaded and live (there is no "no game
+// loaded" state it runs during), so that gate is automatically satisfied
+// every time this file runs at all, and the one thing worth gating on for
+// real is not stealing focus from another dialog already open (Aldermast's/
+// Willa's own conversations, or anything else on the stack) -- the same
+// `activeDialogLayoutName`-empty guard startAldermastDialogue()/
+// startBankDialogue() already use above.
+//
+// **Toggle key, a REAL, documented substitution, not a guess**: the JS
+// toggles on the backtick/tilde key (`e.key === '\`'`, lines 257, 278).
+// This engine's custom-input surface (`BeTileGridFrame::keysDown`,
+// ScriptInputKeys.h) is a deliberately small FIXED 44-key table -- A-Z,
+// 0-9, the four arrows, Space, LeftShift, LeftControl, Escape -- with no
+// backtick/grave/tilde key anywhere in it (checked the real table, not
+// assumed from the header comment alone). There is therefore no way to
+// reproduce the JS's exact keybind through this ABI at all; LeftControl+L
+// is substituted here (documented, not silently different) as the closest
+// available "modifier + letter, not used by movement/interact" combo.
+// Escape, unlike backtick, genuinely IS in the fixed table, so the JS's
+// OWN secondary close-key (`e.key === 'Escape' || e.key === '\`'`, same
+// line 257) is reproduced exactly for closing, even though opening can't
+// use the same key the JS does.
+//
+// **The real, load-bearing gap this section used to document is now
+// CLOSED, schema-side**: a hand-authored `content/ui-layouts.json` (new,
+// this pass) now carries both `kDialogueTemplateLayoutName`
+// ("DialogueTemplate" -- a speaker Label id `dlg_speaker`, a body Label id
+// `dlg_body`, and `kMaxDialogueChoices` (4) interactive choice Labels ids
+// `dlg_choice_0`..`dlg_choice_3` with matching `actionId`s, exactly the
+// element-id/actionId convention `TileGridHostRunner.cpp`'s own
+// `UILayoutOverrides` dialogue-tree binding reads -- confirmed by reading
+// that binding code, not guessed) and `kDevConsoleLayoutName`
+// ("DevConsoleTemplate" -- a TextInput id exactly `kDevConsoleInputElementId`
+// plus an interactive Label id/actionId exactly `kDevConsoleSubmitActionId`,
+// below). Both layouts are verified against `UILayout.h`'s real struct
+// fields AND its real serializer (`UILayout.cpp`'s `parseElement()`/
+// `elementToJson()`/`parseLayout()`), not guessed from a header comment
+// alone -- same discipline `content/weapons.json`/`content/dialogue-trees.json`
+// already established for this port's other hand-authored content.
+// **What's still open, same shape as every other hand-authored content
+// file in this port**: `content/ui-layouts.json` has no packaging/copy-to-
+// `<BE_DATA_DIR>` step of its own -- checked, and there ISN'T one for
+// `content/weapons.json`/`content/dialogue-trees.json` either (this
+// project's own `CMakeLists.txt` builds only the plugin `.so`, no content-
+// copy step exists anywhere in this repo), so this is not a gap specific
+// to UI content, it's this port's existing, already-documented convention:
+// a file at `<BE_DATA_DIR>/ui-layouts.json` is what `uiLayoutLibrary()`
+// (UILayout.h) actually reads at runtime (confirmed: `libraryPath()` in
+// `UILayout.cpp` resolves to `userDataDir() / "ui-layouts.json"`), so this
+// new file still needs to be copied there (or wired into a packaging step)
+// before a running engine actually loads it -- not yet done, and, with no
+// engine build existing in this sandbox, NOT verified against a real
+// running engine, only against the real C++ schema/serializer read in full
+// above. Once it's in place, the toggle/open/close plumbing plus the REAL,
+// fully working command parser/dispatcher below need no further source
+// change to start actually rendering end to end -- verified against every
+// helper it reuses (queueXpGrant/queueItemGrant/kPlayerGoldFlag/
+// requestedHealthDelta).
+constexpr const char* kDevConsoleLayoutName = "DevConsoleTemplate";
+constexpr const char* kDevConsoleInputElementId = "dev_console_input";
+constexpr const char* kDevConsoleSubmitActionId = "dev_console_submit";
+constexpr const char* kDevConsoleToggleKey = "L"; // + LeftControl -- see this section's own doc comment
+
+// Transcribed verbatim from js/version.js's own `GAME_VERSION` global and
+// its changelog comment block (lines 1-19) -- the only version constant
+// that exists anywhere in the reference JS. This port previously had NO
+// equivalent constant anywhere in src/ or project.json (the `version`
+// command below reported a fixed placeholder string instead); this is
+// that constant, finally given a real home. js/version.js's own update-
+// checker/Service-Worker-banner machinery (checkForUpdate()/
+// showUpdateBanner()/applyUpdate(), lines 21-71) has no analog here and
+// isn't ported -- there is no engine-side "fetch a raw file from GitHub
+// and compare semver" primitive, and, per this item's own task framing
+// (a small, `version`-command-only pass), inventing one for a cosmetic
+// "new version available" banner is real over-scope, not this pass's job.
+constexpr const char* kGameVersion = "0.6.4";
+
+// One entry per js/version.js changelog line (its own comment block,
+// lines 8-18), oldest last exactly as the JS lists them. A judgement
+// call, not a default: this could instead be its own DialogueTemplate
+// node (content/ui-layouts.json already has the schema, per this
+// section's own doc comment above) with one choice per changelog entry,
+// but that's a real multi-node dialogue tree built for what is, at
+// bottom, still just a version string with some history attached --
+// exactly the "don't over-build a dialogue tree for a version number"
+// case this pass's own task framing calls out. A single toast, the same
+// surface every other dev-console command already reports through, is
+// the right size for this: see the "version"/"versionlog" commands below.
+constexpr const char* kVersionChangelog[] = {
+    "0.6.4 -- Homestead cabin interior with movable bed; door now enterable",
+    "0.6.3 -- Homestead sigil usable without quest flag (auto-grants on use)",
+    "0.6.2 -- Ground bags: dropped items appear as bags; right-click to pick up",
+    "0.6.1 -- Dev console (` key): give/gold/heal/tp/setskill/xp/flag commands",
+    "0.6.0 -- Save migration system; Service Worker offline support + auto-update banner",
+    "0.5.0 -- PeerJS P2P co-op (up to 4 players), in-game session start/stop",
+    "0.4.0 -- Homestead feature: Old Bertram quest, farming, crop rendering",
+    "0.3.0 -- World map (M key), crop respawn, dungeon loot, inn sleep restriction",
+    "0.2.0 -- Monolithic HTML split into organised file structure; bug fixes",
+    "0.1.0 -- Initial release",
+};
+constexpr int kVersionChangelogCount = sizeof(kVersionChangelog) / sizeof(kVersionChangelog[0]);
+
+bool isKeyDown(const BeTileGridFrame* frame, const char* name) {
+    if (frame->keysDown == nullptr) return false;
+    for (int i = 0; i < frame->keysDownCount; ++i)
+        if (frame->keysDown[i] != nullptr && std::strcmp(frame->keysDown[i], name) == 0) return true;
+    return false;
+}
+
+bool devConsoleOpen(const BeTileGridFrame* frame) {
+    return frame->activeDialogLayoutName != nullptr && std::strcmp(frame->activeDialogLayoutName, kDevConsoleLayoutName) == 0;
+}
+
+// Edge-detects the LeftControl+L combo (own flag, same "own the
+// accumulator/last-state as a flag since this file keeps no persistent
+// struct of its own" discipline handleFarmGrowthTick() already
+// establishes) so holding the combo down doesn't reopen/reclose the
+// console every single frame.
+void handleDevConsoleToggle(BeTileGridFrame* frame) {
+    const bool comboDown = isKeyDown(frame, "LeftControl") && isKeyDown(frame, kDevConsoleToggleKey);
+    const bool wasDown = readFlag(frame, "dev_console_toggle_key_was_down", 0.0) != 0.0;
+    queueFlagSet("dev_console_toggle_key_was_down", comboDown ? 1.0 : 0.0);
+
+    if (comboDown && !wasDown) {
+        if (devConsoleOpen(frame)) {
+            frame->requestedPopDialog = 1;
+        } else if (frame->activeDialogLayoutName == nullptr || frame->activeDialogLayoutName[0] == '\0') {
+            // Don't steal focus from Aldermast/Willa/anything else already
+            // on the dialog stack -- same guard startAldermastDialogue()/
+            // startBankDialogue() already use above.
+            frame->requestedPushDialog = kDevConsoleLayoutName;
+        }
+        return;
+    }
+
+    // Mirrors the JS's own dual close-key (`Escape` OR backtick, line 257)
+    // -- Escape genuinely is in the fixed keysDown table, unlike backtick.
+    if (devConsoleOpen(frame) && isKeyDown(frame, "Escape")) {
+        frame->requestedPopDialog = 1;
+    }
+}
+
+const char* findTextInputValue(const BeTileGridFrame* frame, const char* elementId) {
+    if (frame->activeTextInputs == nullptr) return nullptr;
+    for (int i = 0; i < frame->activeTextInputCount; ++i) {
+        const BeUiTextInputState& ti = frame->activeTextInputs[i];
+        if (ti.elementId != nullptr && std::strcmp(ti.elementId, elementId) == 0) return ti.text;
+    }
+    return nullptr;
+}
+
+std::string devConsoleToLower(std::string s) {
+    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return s;
+}
+
+// Mirrors runDevCommand()'s own `raw.trim().split(/\s+/)` (line 74).
+std::vector<std::string> devConsoleSplitWhitespace(const std::string& s) {
+    std::vector<std::string> parts;
+    size_t i = 0;
+    while (i < s.size()) {
+        while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i]))) ++i;
+        const size_t start = i;
+        while (i < s.size() && !std::isspace(static_cast<unsigned char>(s[i]))) ++i;
+        if (i > start) parts.push_back(s.substr(start, i - start));
+    }
+    return parts;
+}
+
+bool findSkillByName(const std::string& name, GrimstoneSkill* outSkill) {
+    const std::string lower = devConsoleToLower(name);
+    for (int i = 0; i < kSkillCount; ++i) {
+        if (devConsoleToLower(kSkillDisplayNames[i]) == lower) {
+            *outSkill = static_cast<GrimstoneSkill>(i);
+            return true;
+        }
+    }
+    return false;
+}
+
+void devConsoleToast(BeTileGridFrame* frame, const std::string& text) {
+    toastScratch() = text;
+    frame->requestedToastText = toastScratch().c_str();
+}
+
+// The parser/dispatcher itself -- js/devconsole.js's own switch(cmd), lines
+// 78-238, one case at a time. Every command reports its result via a toast
+// (this section's own doc comment explains why: no richer on-screen log
+// surface exists yet) instead of devPrint()'s scrolling log pane.
+void runDevConsoleCommand(BeTileGridFrame* frame, const std::string& raw) {
+    const std::vector<std::string> parts = devConsoleSplitWhitespace(raw);
+    if (parts.empty()) return; // mirrors the JS's own `case '': return;`
+
+    const std::string cmd = devConsoleToLower(parts[0]);
+    const std::vector<std::string> args(parts.begin() + 1, parts.end());
+
+    if (cmd == "help") {
+        devConsoleToast(frame,
+                         "give <item> [qty] | gold <amt> | addgold <amt> | heal | tp <0-4> | "
+                         "setskill <skill> <lvl> | xp <skill> <amt> | flag <name> [value] | "
+                         "clearinv | version | versionlog | clear");
+        return;
+    }
+
+    if (cmd == "give") {
+        if (args.empty()) {
+            devConsoleToast(frame, "Usage: give <item_id> [qty]");
+            return;
+        }
+        // js's own alias map (line 101): sigil->home_sigil, seed->wheat_seed;
+        // wheat->wheat is an identity no-op in the JS, nothing to remap here.
+        std::string itemId = args[0];
+        if (itemId == "sigil") itemId = "home_sigil";
+        else if (itemId == "seed") itemId = "wheat_seed";
+        int qty = 1;
+        if (args.size() > 1) {
+            qty = std::atoi(args[1].c_str());
+            if (qty < 1) qty = 1;
+        }
+        // No item-registry validation exists anywhere in this port to
+        // mirror the JS's own `if(!ITEMS[itemId])` check against (this
+        // whole file already grants arbitrary plugin-authored item id
+        // strings with no such registry, e.g. handleCombatDeathRewards()'s
+        // own unconditional `queueItemGrant("bones", 1)` above) -- an
+        // unknown id here is granted exactly like every other activity's
+        // grants already are, real behavior, not a gap this command
+        // introduces on its own.
+        queueItemGrant(internString(itemId), qty);
+        devConsoleToast(frame, "+ " + std::to_string(qty) + "x " + itemId);
+        return;
+    }
+
+    if (cmd == "gold" || cmd == "addgold") {
+        if (args.empty()) {
+            devConsoleToast(frame, "Usage: " + cmd + " <amount>");
+            return;
+        }
+        char* parseEnd = nullptr;
+        const long amt = std::strtol(args[0].c_str(), &parseEnd, 10);
+        if (parseEnd == args[0].c_str()) {
+            devConsoleToast(frame, "Usage: " + cmd + " <amount>");
+            return;
+        }
+        const double current = readFlag(frame, kPlayerGoldFlag, 0.0);
+        double newGold = (cmd == "gold") ? static_cast<double>(amt) : current + static_cast<double>(amt);
+        if (newGold < 0.0) newGold = 0.0; // js's own `Math.max(0, ...)`, both commands (lines 121, 131)
+        queueFlagSet(kPlayerGoldFlag, newGold);
+        if (cmd == "gold") {
+            devConsoleToast(frame, "Gold set to " + std::to_string(static_cast<long long>(newGold)));
+        } else {
+            devConsoleToast(frame, "Gold: " + std::to_string(static_cast<long long>(newGold)) + " (" +
+                                        (amt >= 0 ? "+" : "") + std::to_string(amt) + ")");
+        }
+        return;
+    }
+
+    if (cmd == "heal") {
+        // js's own `p.hp = p.maxHp` (line 140) -- the host's own
+        // requestedHealthDelta is a signed DELTA, not an absolute set
+        // (GameModuleApi.h's v15->v16 doc comment), so this heals exactly
+        // the gap to full rather than overshooting (already clamped to
+        // [0, playerMaxHealth] host-side regardless).
+        const float delta = frame->playerMaxHealth - frame->playerHealth;
+        if (delta > 0.0f) frame->requestedHealthDelta = delta;
+        devConsoleToast(frame, "HP restored to " + std::to_string(static_cast<int>(frame->playerMaxHealth)));
+        return;
+    }
+
+    if (cmd == "tp") {
+        // Real zone swap, using the exact same mechanism a portal
+        // TileMarker fires (see the "======= Zone transitions ======="
+        // section's own doc comment above) -- this used to be a
+        // documented, unfixed gap (js's own tp, lines 147-168, swaps
+        // `zoneIndex` in-process; this port had no slug/index -> file-path
+        // table anywhere), closed by zoneSlugToTileGrid()
+        // (GrimstoneGame.h/.cpp) + zonetransition::requestZoneSwap() above.
+        static const char* const kZoneNames[] = {"Ashenveil", "Ashen Moor", "Iron Peaks", "Cursed Marshes",
+                                                   "Obsidian Depths"};
+        static const char* const kZoneSlugs[] = {"ashenveil", "ashen_moor", "iron_peaks", "cursed_marshes",
+                                                   "obsidian_depths"};
+        if (args.empty()) {
+            devConsoleToast(frame, "Usage: tp <0-4>  (0=Ashenveil, 1=Ashen Moor, 2=Iron Peaks, "
+                                    "3=Cursed Marshes, 4=Obsidian Depths)");
+            return;
+        }
+        const int idx = std::atoi(args[0].c_str());
+        if (idx < 0 || idx > 4) {
+            devConsoleToast(frame, "Usage: tp <0-4>  (0=Ashenveil, 1=Ashen Moor, 2=Iron Peaks, "
+                                    "3=Cursed Marshes, 4=Obsidian Depths)");
+            return;
+        }
+        if (zonetransition::requestZoneSwap(frame, kZoneSlugs[idx])) {
+            devConsoleToast(frame, std::string("Teleporting to ") + kZoneNames[idx] + "...");
+            daynight::forceChange(); // same "recompute weather for the new zone right away" as a real portal
+        }
+        return;
+    }
+
+    if (cmd == "setskill") {
+        if (args.size() < 2) {
+            devConsoleToast(frame, "Usage: setskill <skill> <lvl>");
+            return;
+        }
+        GrimstoneSkill skill;
+        if (!findSkillByName(args[0], &skill)) {
+            std::string list;
+            for (int i = 0; i < kSkillCount; ++i) list += (i > 0 ? ", " : "") + std::string(kSkillDisplayNames[i]);
+            devConsoleToast(frame, "Unknown skill. Valid: " + list);
+            return;
+        }
+        int lvl = std::atoi(args[1].c_str());
+        if (lvl < 1) lvl = 1;
+        if (lvl > 99) lvl = 99;
+        // Sets the skill's XP flag to exactly the threshold for `lvl`
+        // (SET, not INCREMENT) -- levelForXp() then reports `lvl` exactly,
+        // mirroring the JS's own direct `p.skills[skillName].lvl = lvl`
+        // (line 178) as closely as a level-derived-from-xp store allows;
+        // syncHitpointsMaxHealth() picks up a Hitpoints change on the very
+        // next frame with no separate call needed here.
+        queueFlagSet(kSkillXpFlagKeys[static_cast<int>(skill)], xpForLevel(lvl));
+        devConsoleToast(frame, std::string(kSkillDisplayNames[static_cast<int>(skill)]) + " set to level " +
+                                    std::to_string(lvl));
+        return;
+    }
+
+    if (cmd == "xp") {
+        if (args.size() < 2) {
+            devConsoleToast(frame, "Usage: xp <skill> <amount>");
+            return;
+        }
+        GrimstoneSkill skill;
+        if (!findSkillByName(args[0], &skill)) {
+            std::string list;
+            for (int i = 0; i < kSkillCount; ++i) list += (i > 0 ? ", " : "") + std::string(kSkillDisplayNames[i]);
+            devConsoleToast(frame, "Unknown skill. Valid: " + list);
+            return;
+        }
+        const double amount = std::atof(args[1].c_str());
+        // Reuses the SAME queueXpGrant() helper every combat/activity
+        // system in this file already grants XP through, per this pass's
+        // own task framing -- not a second, hand-rolled xp write.
+        queueXpGrant(skill, amount);
+        devConsoleToast(frame, "+" + std::to_string(static_cast<long long>(amount)) + " XP -> " +
+                                    kSkillDisplayNames[static_cast<int>(skill)]);
+        return;
+    }
+
+    if (cmd == "flag") {
+        if (args.empty()) {
+            devConsoleToast(frame, "Usage: flag <name> [value]");
+            return;
+        }
+        const std::string& name = args[0];
+        if (args.size() < 2) {
+            // js's own questFlags.X reads back `undefined` for a never-set
+            // flag (line 208) -- this store has no such third state (a
+            // missing key and one explicitly set to 0 are indistinguishable
+            // via readFlag()'s own default-value contract), a real, minor
+            // deviation documented here rather than silently matched.
+            const double v = readFlag(frame, name.c_str(), 0.0);
+            devConsoleToast(frame, name + " = " + std::to_string(v));
+        } else {
+            // js's own true/false/null literal parsing (line 210) -- this
+            // store is numeric-double only (TileGridFlagStore.h), so
+            // "null" has no analog and is treated as an ordinary (failing
+            // to parse as a number) string, landing at 0.0 via atof()'s
+            // own "no valid conversion" contract, same as any other
+            // non-numeric token typed here.
+            double val;
+            if (args[1] == "true") val = 1.0;
+            else if (args[1] == "false") val = 0.0;
+            else val = std::atof(args[1].c_str());
+            queueFlagSet(internString(name), val);
+            devConsoleToast(frame, name + " = " + std::to_string(val));
+        }
+        return;
+    }
+
+    if (cmd == "clearinv") {
+        // No single "empty the whole inventory" primitive exists
+        // (TileGridInventory.h) -- removes every occupied slot's own
+        // count via the SAME BeItemDelta array every other grant/consume
+        // in this file already drains through, one entry per slot.
+        for (int i = 0; i < frame->inventoryCount; ++i) {
+            const BeInventorySlot& slot = frame->inventory[i];
+            if (slot.itemId != nullptr && slot.itemId[0] != '\0' && slot.count > 0) queueItemGrant(slot.itemId, -slot.count);
+        }
+        devConsoleToast(frame, "Inventory cleared.");
+        return;
+    }
+
+    if (cmd == "version") {
+        // js's own GAME_VERSION global (js/version.js line 19) DOES have a
+        // real equivalent now (kGameVersion above, transcribed from that
+        // same file) -- reports the real transcribed version instead of
+        // the fixed placeholder string this used to report, plus the
+        // single most recent changelog line (kVersionChangelog[0], same
+        // "newest first" order js/version.js's own comment block uses) so
+        // this single toast still carries "what changed most recently"
+        // without dumping the whole history js's own version.js has no
+        // in-game display for either (that lives in a source comment
+        // there, not any on-screen UI) -- see "versionlog" below for the
+        // full list.
+        devConsoleToast(frame, "Grimstone v" + std::string(kGameVersion) +
+                                    " (LiminalEngine/BEditor 2D port) -- " + kVersionChangelog[0]);
+        return;
+    }
+
+    if (cmd == "versionlog") {
+        // The full js/version.js changelog (kVersionChangelog above), one
+        // toast, newest first -- same "one long piped string" shape this
+        // file's own "help" command above already uses for a multi-item
+        // report, rather than a new UI surface (see kVersionChangelog's
+        // own doc comment on why this isn't a DialogueTemplate node).
+        std::string log = "Grimstone changelog: ";
+        for (int i = 0; i < kVersionChangelogCount; ++i) {
+            if (i > 0) log += " | ";
+            log += kVersionChangelog[i];
+        }
+        devConsoleToast(frame, log);
+        return;
+    }
+
+    if (cmd == "clear") {
+        // No-op: there is no on-screen scrollback log for this to clear
+        // (see this section's own top-of-file doc comment on the missing
+        // DevConsoleTemplate UILayout) -- js's own `clear` (line 232-234)
+        // empties `logEl.innerHTML`, which has no analog here yet.
+        return;
+    }
+
+    devConsoleToast(frame, "Unknown command: " + cmd + ". Type 'help' for a list.");
+}
+
+// Wiring (Part 4, same split every other dialog system in this file uses):
+// toggle open/close every frame, then react to a real submit click the
+// moment the (currently unauthored, see this section's own doc comment)
+// DevConsoleTemplate layout's own submit button fires one.
+void handleDevConsole(BeTileGridFrame* frame) {
+    handleDevConsoleToggle(frame);
+
+    if (!devConsoleOpen(frame)) return;
+    if (frame->clickedUiActionId == nullptr || frame->clickedUiActionId[0] == '\0') return;
+    if (std::strcmp(frame->clickedUiActionId, kDevConsoleSubmitActionId) != 0) return;
+
+    const char* typed = findTextInputValue(frame, kDevConsoleInputElementId);
+    if (typed == nullptr) return;
+    runDevConsoleCommand(frame, typed);
+}
+
+} // namespace
+
+void setGrimstoneRuntimeAssetDir(const std::filesystem::path& assetDir) { zonetransition::assetDir() = assetDir; }
+
+void updateGrimstoneRuntime(BeTileGridFrame* frame) {
+    if (frame == nullptr) return;
+
+    flagUpdateBuffer().clear();
+    itemUpdateBuffer().clear();
+    tileEditBuffer().clear();
+    timerStartBuffer().clear();
+    hitboxBuffer().clear();
+    objectiveUpdateBuffer().clear();
+    stringUpdateBuffer().clear();
+    stringScratch().clear();
+    uiOverrideBuffer().clear();
+
+    syncHitpointsMaxHealth(frame);
+    cc::maybeOfferCharacterCreation(frame); // before every other system -- mandatory on a fresh save, see its own doc comment above
+    cc::applyCharacterCreationEffects(frame);
+    handleZoneTransition(frame); // before every other system -- see its own doc comment above
+    handleHomesteadSigilUse(frame); // a hotbar-use zone swap, same family as handleZoneTransition() above
+    daynight::updateDayNightCycle(frame); // per-frame, not gated on interactPressed
+    daynight::updateWeather(frame);       // per-frame, not gated on interactPressed -- reads activeZoneId(), so after handleZoneTransition()
+    daynight::fireWeatherParticles(frame); // per-frame, not gated on interactPressed
+    daynight::updateColorGrade(frame);     // per-frame, not gated on interactPressed -- reads currentGameTime()/currentWeather(), so after the two calls above
+    daynight::updateNightOverlay(frame);   // per-frame, not gated on interactPressed -- reads currentGameTime(), the same input updateColorGrade() reads
+    handleMiningAndWoodcutting(frame);
+    handleCombatEncounter(frame); // per-frame, not gated on interactPressed -- see its own doc comment (proximity trigger)
+    handleCombatDeathRewards(frame); // per-frame, not gated on interactPressed
+    handleFishing(frame);
+    handleCooking(frame);
+    handleSmelting(frame);
+    handleForging(frame);
+    handleFarmGrowthTick(frame); // per-frame, not gated on interactPressed
+    handleTilling(frame);
+    handlePlanting(frame);
+    handleHarvesting(frame);
+    handleDungeonChestLoot(frame); // feeds void_shards_found/tome_fragments_found, read just below
+    updateAldermastObjectives(frame);  // per-frame, not gated on interactPressed
+    startAldermastDialogue(frame);
+    applyAldermastDialogueSideEffects(frame);
+    overrideAldermastLiveDialogueText(frame);
+    updateStockMarket(frame);   // per-frame, not gated on interactPressed
+    handleBondMaturity(frame);  // per-frame, not gated on interactPressed
+    startBankDialogue(frame);
+    applyBankDialogueSideEffects(frame);
+    overrideBankMenuLiveDialogueText(frame);
+    startGrimwardDialogue(frame);
+    startBramDialogue(frame);
+    applyBramDialogueSideEffects(frame);
+    overrideBramLiveDialogueText(frame);
+    startOswinDialogue(frame);
+    overrideOswinLiveDialogueText(frame);
+    startThessalyDialogue(frame);
+    startDorinDialogue(frame);
+    applyDorinDialogueSideEffects(frame);
+    overrideDorinLiveDialogueText(frame);
+    handleRightClickMenu(frame);
+    handleDevConsole(frame);
+    updatePlayerHud(frame); // after handleRightClickMenu() -- see that function's own coexistence note above
+
+    // Drain the scratch buffers into the frame's own write-back arrays --
+    // done last so every system above had a chance to queue into them
+    // first. Left empty (the common case, most frames), these are exactly
+    // the same "0 count" no-op every other array write-back in this ABI
+    // already documents.
+    if (!flagUpdateBuffer().empty()) {
+        frame->requestedFlagUpdates = flagUpdateBuffer().data();
+        frame->requestedFlagUpdateCount = static_cast<int>(flagUpdateBuffer().size());
+    }
+    if (!itemUpdateBuffer().empty()) {
+        frame->requestedItemUpdates = itemUpdateBuffer().data();
+        frame->requestedItemUpdateCount = static_cast<int>(itemUpdateBuffer().size());
+    }
+    if (!tileEditBuffer().empty()) {
+        frame->requestedTileEdits = tileEditBuffer().data();
+        frame->requestedTileEditCount = static_cast<int>(tileEditBuffer().size());
+    }
+    if (!timerStartBuffer().empty()) {
+        frame->requestedTimerStarts = timerStartBuffer().data();
+        frame->requestedTimerStartCount = static_cast<int>(timerStartBuffer().size());
+    }
+    if (!hitboxBuffer().empty()) {
+        frame->requestedHitboxes = hitboxBuffer().data();
+        frame->requestedHitboxCount = static_cast<int>(hitboxBuffer().size());
+    }
+    if (!objectiveUpdateBuffer().empty()) {
+        frame->requestedObjectiveUpdates = objectiveUpdateBuffer().data();
+        frame->requestedObjectiveUpdateCount = static_cast<int>(objectiveUpdateBuffer().size());
+    }
+    if (!stringUpdateBuffer().empty()) {
+        frame->requestedStringUpdates = stringUpdateBuffer().data();
+        frame->requestedStringUpdateCount = static_cast<int>(stringUpdateBuffer().size());
+    }
+}

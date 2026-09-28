@@ -1,0 +1,590 @@
+[
+  {
+    "name": "DialogueTemplate",
+    "elements": [
+      {
+        "kind": "panel",
+        "id": "dlg_panel",
+        "position": [0.04, 0.56],
+        "size": [0.92, 0.4],
+        "color": [0.06, 0.06, 0.09],
+        "alpha": 0.85,
+        "cornerRadius": 0.02
+      },
+      {
+        "kind": "label",
+        "id": "dlg_speaker",
+        "position": [0.08, 0.6],
+        "scale": 0.05,
+        "color": [1.0, 0.85, 0.35],
+        "text": ""
+      },
+      {
+        "kind": "label",
+        "id": "dlg_body",
+        "position": [0.08, 0.67],
+        "scale": 0.04,
+        "color": [0.95, 0.95, 0.95],
+        "text": "",
+        "wordWrap": true,
+        "wrapWidth": 0.84,
+        "lineSpacing": 1.25
+      },
+      {
+        "kind": "label",
+        "id": "dlg_choice_0",
+        "position": [0.08, 0.82],
+        "size": [0.84, 0.04],
+        "scale": 0.032,
+        "color": [0.8, 0.9, 1.0],
+        "text": "",
+        "interactive": true,
+        "actionId": "dlg_choice_0"
+      },
+      {
+        "kind": "label",
+        "id": "dlg_choice_1",
+        "position": [0.08, 0.865],
+        "size": [0.84, 0.04],
+        "scale": 0.032,
+        "color": [0.8, 0.9, 1.0],
+        "text": "",
+        "interactive": true,
+        "actionId": "dlg_choice_1"
+      },
+      {
+        "kind": "label",
+        "id": "dlg_choice_2",
+        "position": [0.08, 0.91],
+        "size": [0.84, 0.04],
+        "scale": 0.032,
+        "color": [0.8, 0.9, 1.0],
+        "text": "",
+        "interactive": true,
+        "actionId": "dlg_choice_2"
+      },
+      {
+        "kind": "label",
+        "id": "dlg_choice_3",
+        "position": [0.08, 0.955],
+        "size": [0.84, 0.04],
+        "scale": 0.032,
+        "color": [0.8, 0.9, 1.0],
+        "text": "",
+        "interactive": true,
+        "actionId": "dlg_choice_3"
+      }
+    ]
+  },
+  {
+    "name": "DevConsoleTemplate",
+    "elements": [
+      {
+        "kind": "panel",
+        "id": "dev_console_panel",
+        "position": [0.04, 0.02],
+        "size": [0.92, 0.08],
+        "color": [0.04, 0.04, 0.05],
+        "alpha": 0.88,
+        "cornerRadius": 0.015
+      },
+      {
+        "kind": "textInput",
+        "id": "dev_console_input",
+        "position": [0.065, 0.035],
+        "size": [0.72, 0.045],
+        "scale": 0.035,
+        "color": [0.95, 0.95, 0.95],
+        "bevelColor": [0.8, 0.95, 0.8],
+        "placeholder": "Enter command...",
+        "interactive": true
+      },
+      {
+        "kind": "label",
+        "id": "dev_console_submit",
+        "position": [0.8, 0.035],
+        "size": [0.14, 0.045],
+        "scale": 0.035,
+        "color": [0.7, 1.0, 0.7],
+        "text": "Run",
+        "interactive": true,
+        "actionId": "dev_console_submit"
+      }
+    ]
+  },
+  {
+    "name": "RightClickMenu",
+    "elements": [
+      {
+        "kind": "panel",
+        "id": "rcm_panel",
+        "position": [0.32, 0.42],
+        "size": [0.36, 0.16],
+        "color": [0.06, 0.06, 0.09],
+        "alpha": 0.9,
+        "cornerRadius": 0.02
+      },
+      {
+        "kind": "label",
+        "id": "rcm_title",
+        "position": [0.35, 0.45],
+        "scale": 0.036,
+        "color": [1.0, 0.85, 0.35],
+        "text": "What now?"
+      },
+      {
+        "kind": "label",
+        "id": "rcm_action",
+        "position": [0.35, 0.5],
+        "size": [0.3, 0.04],
+        "scale": 0.034,
+        "color": [0.8, 0.9, 1.0],
+        "text": "",
+        "interactive": true,
+        "actionId": "rcm_action"
+      },
+      {
+        "kind": "label",
+        "id": "rcm_cancel",
+        "position": [0.35, 0.545],
+        "size": [0.3, 0.04],
+        "scale": 0.034,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Never mind",
+        "interactive": true,
+        "actionId": "rcm_cancel"
+      }
+    ]
+  },
+  {
+    "name": "PlayerHUD",
+    "elements": [
+      {
+        "kind": "panel",
+        "id": "hud_panel",
+        "position": [0.02, 0.02],
+        "size": [0.22, 0.085],
+        "color": [0.06, 0.06, 0.09],
+        "alpha": 0.75,
+        "cornerRadius": 0.015
+      },
+      {
+        "kind": "label",
+        "id": "hud_gold_text",
+        "position": [0.035, 0.032],
+        "scale": 0.032,
+        "color": [1.0, 0.85, 0.35],
+        "text": "Gold: 0"
+      },
+      {
+        "kind": "label",
+        "id": "hud_combat_text",
+        "position": [0.035, 0.068],
+        "scale": 0.028,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Combat Lv 1"
+      },
+      {
+        "kind": "panel",
+        "id": "skills_panel_bg",
+        "position": [0.02, 0.115],
+        "size": [0.26, 0.40],
+        "color": [0.06, 0.06, 0.09],
+        "alpha": 0.75,
+        "cornerRadius": 0.015
+      },
+      {
+        "kind": "label",
+        "id": "skills_panel_title",
+        "position": [0.035, 0.128],
+        "scale": 0.026,
+        "color": [0.9, 0.85, 0.6],
+        "text": "Skills"
+      },
+      {
+        "kind": "label",
+        "id": "skill_name_Mining",
+        "position": [0.035, 0.161],
+        "scale": 0.02,
+        "color": [0.85, 0.85, 0.9],
+        "text": "Mining"
+      },
+      {
+        "kind": "label",
+        "id": "skill_lvl_Mining",
+        "position": [0.225, 0.161],
+        "scale": 0.02,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Lv 1"
+      },
+      {
+        "kind": "slider",
+        "id": "skill_bar_Mining",
+        "position": [0.035, 0.180],
+        "size": [0.225, 0.011],
+        "color": [0.1, 0.1, 0.14],
+        "bevelColor": [0.55, 0.45, 0.2],
+        "value": 0.0
+      },
+      {
+        "kind": "label",
+        "id": "skill_name_Smithing",
+        "position": [0.035, 0.196],
+        "scale": 0.02,
+        "color": [0.85, 0.85, 0.9],
+        "text": "Smithing"
+      },
+      {
+        "kind": "label",
+        "id": "skill_lvl_Smithing",
+        "position": [0.225, 0.196],
+        "scale": 0.02,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Lv 1"
+      },
+      {
+        "kind": "slider",
+        "id": "skill_bar_Smithing",
+        "position": [0.035, 0.215],
+        "size": [0.225, 0.011],
+        "color": [0.1, 0.1, 0.14],
+        "bevelColor": [0.55, 0.45, 0.2],
+        "value": 0.0
+      },
+      {
+        "kind": "label",
+        "id": "skill_name_Woodcutting",
+        "position": [0.035, 0.231],
+        "scale": 0.02,
+        "color": [0.85, 0.85, 0.9],
+        "text": "Woodcutting"
+      },
+      {
+        "kind": "label",
+        "id": "skill_lvl_Woodcutting",
+        "position": [0.225, 0.231],
+        "scale": 0.02,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Lv 1"
+      },
+      {
+        "kind": "slider",
+        "id": "skill_bar_Woodcutting",
+        "position": [0.035, 0.250],
+        "size": [0.225, 0.011],
+        "color": [0.1, 0.1, 0.14],
+        "bevelColor": [0.55, 0.45, 0.2],
+        "value": 0.0
+      },
+      {
+        "kind": "label",
+        "id": "skill_name_Crafting",
+        "position": [0.035, 0.266],
+        "scale": 0.02,
+        "color": [0.85, 0.85, 0.9],
+        "text": "Crafting"
+      },
+      {
+        "kind": "label",
+        "id": "skill_lvl_Crafting",
+        "position": [0.225, 0.266],
+        "scale": 0.02,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Lv 1"
+      },
+      {
+        "kind": "slider",
+        "id": "skill_bar_Crafting",
+        "position": [0.035, 0.285],
+        "size": [0.225, 0.011],
+        "color": [0.1, 0.1, 0.14],
+        "bevelColor": [0.55, 0.45, 0.2],
+        "value": 0.0
+      },
+      {
+        "kind": "label",
+        "id": "skill_name_Fishing",
+        "position": [0.035, 0.301],
+        "scale": 0.02,
+        "color": [0.85, 0.85, 0.9],
+        "text": "Fishing"
+      },
+      {
+        "kind": "label",
+        "id": "skill_lvl_Fishing",
+        "position": [0.225, 0.301],
+        "scale": 0.02,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Lv 1"
+      },
+      {
+        "kind": "slider",
+        "id": "skill_bar_Fishing",
+        "position": [0.035, 0.320],
+        "size": [0.225, 0.011],
+        "color": [0.1, 0.1, 0.14],
+        "bevelColor": [0.3, 0.5, 0.65],
+        "value": 0.0
+      },
+      {
+        "kind": "label",
+        "id": "skill_name_Cooking",
+        "position": [0.035, 0.336],
+        "scale": 0.02,
+        "color": [0.85, 0.85, 0.9],
+        "text": "Cooking"
+      },
+      {
+        "kind": "label",
+        "id": "skill_lvl_Cooking",
+        "position": [0.225, 0.336],
+        "scale": 0.02,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Lv 1"
+      },
+      {
+        "kind": "slider",
+        "id": "skill_bar_Cooking",
+        "position": [0.035, 0.355],
+        "size": [0.225, 0.011],
+        "color": [0.1, 0.1, 0.14],
+        "bevelColor": [0.7, 0.4, 0.2],
+        "value": 0.0
+      },
+      {
+        "kind": "label",
+        "id": "skill_name_Farming",
+        "position": [0.035, 0.371],
+        "scale": 0.02,
+        "color": [0.85, 0.85, 0.9],
+        "text": "Farming"
+      },
+      {
+        "kind": "label",
+        "id": "skill_lvl_Farming",
+        "position": [0.225, 0.371],
+        "scale": 0.02,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Lv 1"
+      },
+      {
+        "kind": "slider",
+        "id": "skill_bar_Farming",
+        "position": [0.035, 0.390],
+        "size": [0.225, 0.011],
+        "color": [0.1, 0.1, 0.14],
+        "bevelColor": [0.35, 0.6, 0.25],
+        "value": 0.0
+      },
+      {
+        "kind": "label",
+        "id": "skill_name_Attack",
+        "position": [0.035, 0.406],
+        "scale": 0.02,
+        "color": [0.85, 0.85, 0.9],
+        "text": "Attack"
+      },
+      {
+        "kind": "label",
+        "id": "skill_lvl_Attack",
+        "position": [0.225, 0.406],
+        "scale": 0.02,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Lv 1"
+      },
+      {
+        "kind": "slider",
+        "id": "skill_bar_Attack",
+        "position": [0.035, 0.425],
+        "size": [0.225, 0.011],
+        "color": [0.1, 0.1, 0.14],
+        "bevelColor": [0.77, 0.19, 0.19],
+        "value": 0.0
+      },
+      {
+        "kind": "label",
+        "id": "skill_name_Defence",
+        "position": [0.035, 0.441],
+        "scale": 0.02,
+        "color": [0.85, 0.85, 0.9],
+        "text": "Defence"
+      },
+      {
+        "kind": "label",
+        "id": "skill_lvl_Defence",
+        "position": [0.225, 0.441],
+        "scale": 0.02,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Lv 1"
+      },
+      {
+        "kind": "slider",
+        "id": "skill_bar_Defence",
+        "position": [0.035, 0.460],
+        "size": [0.225, 0.011],
+        "color": [0.1, 0.1, 0.14],
+        "bevelColor": [0.4, 0.45, 0.75],
+        "value": 0.0
+      },
+      {
+        "kind": "label",
+        "id": "skill_name_Strength",
+        "position": [0.035, 0.476],
+        "scale": 0.02,
+        "color": [0.85, 0.85, 0.9],
+        "text": "Strength"
+      },
+      {
+        "kind": "label",
+        "id": "skill_lvl_Strength",
+        "position": [0.225, 0.476],
+        "scale": 0.02,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Lv 1"
+      },
+      {
+        "kind": "slider",
+        "id": "skill_bar_Strength",
+        "position": [0.035, 0.495],
+        "size": [0.225, 0.011],
+        "color": [0.1, 0.1, 0.14],
+        "bevelColor": [0.65, 0.32, 0.15],
+        "value": 0.0
+      },
+      {
+        "kind": "label",
+        "id": "skill_name_Hitpoints",
+        "position": [0.035, 0.511],
+        "scale": 0.02,
+        "color": [0.85, 0.85, 0.9],
+        "text": "Hitpoints"
+      },
+      {
+        "kind": "label",
+        "id": "skill_lvl_Hitpoints",
+        "position": [0.225, 0.511],
+        "scale": 0.02,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Lv 10"
+      },
+      {
+        "kind": "slider",
+        "id": "skill_bar_Hitpoints",
+        "position": [0.035, 0.530],
+        "size": [0.225, 0.011],
+        "color": [0.1, 0.1, 0.14],
+        "bevelColor": [0.18, 0.58, 0.28],
+        "value": 0.0
+      }
+    ]
+  },
+  {
+    "name": "BattleMenu",
+    "elements": [
+      {
+        "kind": "panel",
+        "id": "battle_panel",
+        "position": [0.22, 0.32],
+        "size": [0.56, 0.52],
+        "color": [0.06, 0.06, 0.09],
+        "alpha": 0.92,
+        "cornerRadius": 0.02
+      },
+      {
+        "kind": "label",
+        "id": "battle_enemy_name",
+        "position": [0.26, 0.36],
+        "scale": 0.04,
+        "color": [1.0, 0.85, 0.35],
+        "text": ""
+      },
+      {
+        "kind": "slider",
+        "id": "battle_enemy_hp_bar",
+        "position": [0.26, 0.41],
+        "size": [0.48, 0.03],
+        "color": [0.25, 0.08, 0.08],
+        "bevelColor": [0.77, 0.19, 0.19],
+        "value": 1.0
+      },
+      {
+        "kind": "label",
+        "id": "battle_enemy_hp_text",
+        "position": [0.26, 0.445],
+        "scale": 0.028,
+        "color": [0.95, 0.95, 0.95],
+        "text": ""
+      },
+      {
+        "kind": "label",
+        "id": "battle_player_name",
+        "position": [0.26, 0.49],
+        "scale": 0.036,
+        "color": [0.8, 0.9, 1.0],
+        "text": "You"
+      },
+      {
+        "kind": "slider",
+        "id": "battle_player_hp_bar",
+        "position": [0.26, 0.525],
+        "size": [0.48, 0.03],
+        "color": [0.08, 0.2, 0.08],
+        "bevelColor": [0.18, 0.58, 0.28],
+        "value": 1.0
+      },
+      {
+        "kind": "label",
+        "id": "battle_player_hp_text",
+        "position": [0.26, 0.56],
+        "scale": 0.028,
+        "color": [0.95, 0.95, 0.95],
+        "text": ""
+      },
+      {
+        "kind": "label",
+        "id": "battle_message",
+        "position": [0.26, 0.605],
+        "size": [0.48, 0.08],
+        "scale": 0.03,
+        "color": [0.85, 0.85, 0.9],
+        "text": "",
+        "wordWrap": true,
+        "wrapWidth": 0.48,
+        "lineSpacing": 1.2
+      },
+      {
+        "kind": "label",
+        "id": "battle_btn_attack",
+        "position": [0.26, 0.7],
+        "size": [0.22, 0.045],
+        "scale": 0.034,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Attack",
+        "interactive": true,
+        "actionId": "battle_attack"
+      },
+      {
+        "kind": "label",
+        "id": "battle_btn_defend",
+        "position": [0.52, 0.7],
+        "size": [0.22, 0.045],
+        "scale": 0.034,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Defend",
+        "interactive": true,
+        "actionId": "battle_defend"
+      },
+      {
+        "kind": "label",
+        "id": "battle_btn_flee",
+        "position": [0.26, 0.755],
+        "size": [0.48, 0.045],
+        "scale": 0.034,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Flee",
+        "interactive": true,
+        "actionId": "battle_flee"
+      }
+    ]
+  }
+]
