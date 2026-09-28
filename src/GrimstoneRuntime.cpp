@@ -4,6 +4,7 @@
 #include "TileGrid.h"
 #include "TileKindRegistry.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
@@ -375,8 +376,12 @@ void handleMiningAndWoodcutting(BeTileGridFrame* frame, bool forced = false) {
     }
 }
 
-// ======= Combat (simplified real-time interaction, NOT the JS's turn-based
-// battle menu) =======
+// ======= Combat (js/activities.js's real turn-based battle menu, ported for
+// real -- see the "UPDATE (turn-based combat pass)" note below for the
+// current system; the paragraphs immediately following this one are the
+// ORIGINAL real-time-stand-in design note, kept in place rather than deleted
+// per this file's own "append a correction, don't rewrite history"
+// convention) =======
 // js/activities.js's real combat is a full turn-based modal battle-menu
 // system (executeCombatMove(), ~line 1293, and the whole panel around it,
 // ~lines 1109-1790): move buttons with damage multipliers/multi-hit/buffs/
@@ -386,12 +391,64 @@ void handleMiningAndWoodcutting(BeTileGridFrame* frame, bool forced = false) {
 // REAL-TIME action-combat model instead -- a hitbox fired at a moment of the
 // caller's choosing, resolved against a named WeaponDef's FIXED damage, no
 // menu, no turns, no per-swing damage override. Building the full turn-based
-// menu system is explicitly OUT OF SCOPE for this pass (a much larger,
-// separate body of work -- an entire modal dialog-stack UI with move
-// buttons, buff/debuff tracking, turn sequencing); what follows is a real,
-// working SIMPLIFIED real-time stand-in instead: one BeHitboxRequest per
-// interact press against the nearest living enemy agent, using the JS's own
+// menu system was, at the time this note was first written, judged OUT OF
+// SCOPE for that pass; what followed for a while was a real, working
+// SIMPLIFIED real-time stand-in instead: one BeHitboxRequest per interact
+// press against the nearest living enemy agent, using the JS's own
 // basic-attack (Punch, dmgMult:1.0) damage formula.
+//
+// **UPDATE (turn-based combat pass): the stand-in above is GONE, replaced by
+// a real turn-based battle menu.** `handleCombatAttack()` (the interact-
+// press-fires-a-hitbox function this whole section originally described) no
+// longer exists -- see `handleCombatEncounter()`/`updateBattleMenu()` further
+// down for what replaced it, and PORTING_PLAN.md's own combat row for the
+// full move-list/mechanics writeup. The short version, since this is the
+// single biggest design call this pass made:
+//
+// - **Real-time-vs-turn-based coexistence, resolved by FREEZING, not by
+//   deleting either system.** This port's OWN real-time layer turned out to
+//   be considerably more built-out than "one hitbox per interact press"
+//   suggests: `GrimstoneGame.cpp`'s `makeEnemyAgentSpawn()` already gives
+//   every one of the six enemy kinds a real, host-autonomous
+//   `TileAgentSpawn::reactionMode = Chase` + `attackWeaponName` +
+//   `attackRange` -- the HOST itself already chases the player and applies
+//   `attackWeaponName`'s damage to `playerHealth` the instant an agent gets
+//   within `attackRange`, entirely independent of any plugin code
+//   (`TileGridHostRunner.cpp`'s own combat-framework block, confirmed by
+//   reading it directly: `if (npcs[i].attacking && !attackWeaponName.empty())
+//   playerHealth = clamp(playerHealth - weapon->damage, ...)`, gated on the
+//   SAME `frozenAgents[i]` check that skips that agent's `update()` call
+//   entirely). Two independently-damaging systems firing on the same living
+//   agent at once -- the host's own autonomous real-time swing AND this
+//   pass's turn-based menu -- would be exactly the "silently conflicting"
+//   outcome this task explicitly calls out to avoid. The fix: the moment a
+//   battle opens against agent index N, this file lists N in
+//   `requestedAgentFreezes` EVERY frame the battle stays open (cleared the
+//   frame the battle ends) -- `TileGridHostRunner.cpp`'s own frozen-agent
+//   `continue` is BEFORE both `update()` (wander/chase) and the
+//   `attacking`/`attackWeaponName` damage-application block, confirmed by
+//   reading that exact code path, so freezing genuinely suspends the whole
+//   real-time exchange for that one agent, not just its movement. Every
+//   OTHER agent in the zone keeps running its own real-time AI unaffected --
+//   this is a deliberate, narrower freeze than "pause the world," matching
+//   the JS's own real behavior (combat's own modal panel takes over input,
+//   but the JS never pauses anything OUTSIDE the fight either).
+// - **The trigger is now proximity-OR-explicit, closer to the JS's own
+//   `triggerEnemyAttack()`** ("when an enemy enters attack range, it pulls
+//   the player into combat," js/activities.js line ~1001) than the old
+//   interact-only stand-in was: a battle opens either when a `reacting`
+//   (chasing) enemy agent is within `kMeleeRangeWorldUnits` of the player
+//   (the real proximity pull, unconditional on interactPressed), OR via an
+//   explicit interact press / the right-click "Attack" menu entry against a
+//   living enemy in range regardless of whether it has noticed the player
+//   yet (preserving this port's own pre-existing sneak-attack agency, which
+//   the old stand-in already had and which nothing in the JS's own
+//   `triggerEnemyAttack()` forbids -- it just never had an equivalent button
+//   to press).
+// - **A player-initiated (right-click) attack and the host's own proximity
+//   pull can target the SAME agent through the identical code path** -- both
+//   funnel into `startCombatEncounter()`, so there is exactly one way a
+//   battle begins, not two.
 //
 // **Real gap, found while wiring this up, not a simplification this port can
 // paper over**: NOTHING in this port currently spawns a live TileAgentSpawn
@@ -466,26 +523,52 @@ constexpr CombatWeaponTier kCombatWeaponTiers[] = {
 };
 constexpr int kCombatWeaponTierCount = sizeof(kCombatWeaponTiers) / sizeof(kCombatWeaponTiers[0]);
 
-// js/activities.js's own ENEMY_DEFS (line 741) -- xp values only. Gold isn't
-// granted here: no gold/economy flag or item exists anywhere in this port
-// yet (checked -- no "gold" item id appears anywhere in GrimstoneRuntime.cpp/
-// GrimstoneGame.cpp), a real gap this function doesn't invent a workaround
-// for. hp/minDmg/maxDmg/aggroRange/speed/patrolRadius are irrelevant here:
-// the HOST owns HP itself (BeAgentState::health/maxHealth), and this port
-// has no per-species aggro/patrol AI wired up either (js/npcs.js's own
-// PORTING_PLAN.md row: "Not started").
+// js/activities.js's own ENEMY_DEFS (line 741-747). `xp` was the only field
+// this table carried through the real-time-stand-in pass -- hp/aggroRange
+// were irrelevant then since the HOST owns HP (BeAgentState::health/
+// maxHealth) and there was no per-species AI to tune. The turn-based battle
+// menu genuinely needs three more of ENEMY_DEFS' own fields the old comment
+// here called irrelevant:
+//   - `minDmg`/`maxDmg` -- the enemy's own attack-roll range for its turn in
+//     battle (js's own `_combatEnemyTurn()`: `floor(random()*(maxDmg-minDmg+1))
+//     +minDmg`). GrimstoneGame.cpp's own kEnemyAgentTuning[] (real-time AI
+//     tuning) has NO equivalent field at all -- it authors a single
+//     `attackWeaponName` (a fixed-damage WeaponDef) instead of a min/max
+//     range, so this table is genuinely the only place these two numbers
+//     exist in this port.
+//   - `speed` -- js's own flee-chance formula reads it (`_combatEnemyTurn()`'s
+//     sibling `combatFlee()`, both js/activities.js ~line 1738: `speedPenalty
+//     = max(0, (speed-1.5)*0.08)`). Matches kEnemyAgentTuning[]'s own `speed`
+//     field exactly (both transcribed from the same ENEMY_DEFS row), kept
+//     duplicated here rather than reaching across files for the same
+//     "ordering/module-boundary" reason kEnemyAgentTuning[]'s own doc comment
+//     already gives for duplicating the attack-tier quantization logic.
+//   - `gold` -- js's own `_combatVictory()` grants `p.gold += e.def.gold`
+//     (js/activities.js line 1767). The ORIGINAL real-time-stand-in comment
+//     here said gold was ungranted because "no gold/economy flag ... exists
+//     anywhere in this port" -- true when it was written, but stale by the
+//     time of this pass: the Bank system (`kPlayerGoldFlag`, further down
+//     this file) has since given this port a real wallet. Victory in the
+//     turn-based battle grants it (see `endBattleVictory()` below);
+//     `handleCombatDeathRewards()` itself is UNCHANGED and still does not
+//     grant gold -- see that function's own doc comment for why closing
+//     that specific gap is left alone rather than touched incidentally here.
 struct EnemyDef {
     const char* kind; // registerGrimstoneTileKinds()'s own tile-kind id
     const char* displayName;
-    double xp; // matches ENEMY_DEFS[...].xp exactly
+    double xp;     // matches ENEMY_DEFS[...].xp exactly
+    double minDmg; // matches ENEMY_DEFS[...].minDmg exactly
+    double maxDmg; // matches ENEMY_DEFS[...].maxDmg exactly
+    double speed;  // matches ENEMY_DEFS[...].speed exactly
+    double gold;   // matches ENEMY_DEFS[...].gold exactly
 };
 constexpr EnemyDef kEnemyDefs[] = {
-    {"goblin_spawn", "Goblin", 12.0},
-    {"skeleton_spawn", "Skeleton", 18.0},
-    {"wolf_spawn", "Wolf", 15.0},
-    {"zombie", "Zombie", 20.0},
-    {"cultist", "Cultist", 22.0},
-    {"shadow_walker", "Shadow Walker", 22.0},
+    {"goblin_spawn", "Goblin", 12.0, 3.0, 8.0, 1.8, 8.0},
+    {"skeleton_spawn", "Skeleton", 18.0, 5.0, 12.0, 1.4, 14.0},
+    {"wolf_spawn", "Wolf", 15.0, 4.0, 10.0, 2.4, 10.0},
+    {"zombie", "Zombie", 20.0, 4.0, 11.0, 0.9, 12.0},
+    {"cultist", "Cultist", 22.0, 6.0, 14.0, 1.6, 18.0},
+    {"shadow_walker", "Shadow Walker", 22.0, 5.0, 13.0, 1.5, 15.0},
 };
 constexpr int kEnemyDefCount = sizeof(kEnemyDefs) / sizeof(kEnemyDefs[0]);
 
@@ -496,37 +579,162 @@ const EnemyDef* findEnemyDef(const char* kind) {
     return nullptr;
 }
 
-// Fires one BeHitboxRequest against the nearest living enemy agent within
-// melee range -- one attack per interact press, matching every other
-// activity's own "one grant per press" rule.
-void handleCombatAttack(BeTileGridFrame* frame, bool forced = false) {
-    if (!forced && !frame->interactPressed) return;
-    if (frame->agents == nullptr) return;
+// ======= Turn-based battle menu (js/activities.js's own executeCombatMove()/
+// _combatEnemyTurn()/combatFlee(), lines ~1109-1790) =======
+// See this section's own big doc comment above (right after the "=======
+// Combat" header) for the full real-time-vs-turn-based coexistence decision
+// and the proximity-vs-explicit trigger design. What follows is the actual
+// state machine.
+//
+// **Scope of this pass, stated explicitly (see PORTING_PLAN.md's own combat
+// row for the full writeup)**: three moves -- Attack (js's own basic Punch,
+// dmgMult 1.0, the EXACT formula/weapon-tier-quantization the old real-time
+// stand-in already used), Defend (a generic +10-Defence-this-turn move,
+// matching the SHAPE of js's own weapon-specific defensive moves --
+// Riposte/Mana Shield/Battle Cry's defBuff half -- without this port's
+// missing equipment-slot system to pick a weapon-specific moveset from), and
+// Flee (js's own real attack-level/enemy-speed flee-chance formula,
+// unchanged). Genuinely deferred, by name, not silently dropped: the entire
+// weapon-specific moveset system (`_getWeaponMoves()` -- Aimed Shot/Rapid
+// Fire/Cleave/Cripple/etc., all of it gated on an equipment-slot system this
+// port has never had for ANY activity); the entire six-element 24-spell
+// SPELL_BOOK and its rune-amplification mechanic; every buff/debuff effect
+// beyond Defend's own flat +10 (burn DOT, freeze/stun, weaken, reflect,
+// multi-turn barrier, Battle Cry's Strength buff); multi-hit moves; miss-
+// chance moves; the in-combat item-use menu (`openCombatItemMenu()`); the
+// auto-attack toggle. A future pass wanting any of these has a real,
+// working turn/menu/HP-bar/freeze scaffold to extend rather than a green
+// field.
+//
+// **Turn order**: strictly alternating (player move -> enemy move -> repeat)
+// exactly like the JS -- never speed-based, matching `_combatEnemyTurn()`'s
+// own unconditional call after every non-victory player move.
+//
+// **What persists across turns**: the engaged agent's index (so overrides/
+// freezes/the next hitbox all target the SAME agent henceforth), a
+// single-turn defence boost (Defend's own +10, consumed on the very next
+// enemy attack -- js's own `_combatTurnDefBoost`), and a short flee/defeat
+// "don't immediately re-engage" cooldown per agent index (see
+// `battleCooldowns()` below) -- ALL of it in ordinary function-local statics,
+// the same "ephemeral UI/session state, not persisted through a save" shape
+// `pendingRightClickAction()`/`rightClickActionLabel()` already establish
+// for the right-click menu further down this file, not the flags/
+// BeFlagUpdate persistence store gameplay state (skills, quest flags, gold)
+// uses.
+constexpr const char* kBattleMenuLayoutName = "BattleMenu";
+constexpr const char* kBattleAttackActionId = "battle_attack";
+constexpr const char* kBattleDefendActionId = "battle_defend";
+constexpr const char* kBattleFleeActionId = "battle_flee";
+constexpr const char* kBattleEnemyNameElementId = "battle_enemy_name";
+constexpr const char* kBattleEnemyHpBarElementId = "battle_enemy_hp_bar";
+constexpr const char* kBattleEnemyHpTextElementId = "battle_enemy_hp_text";
+constexpr const char* kBattlePlayerHpBarElementId = "battle_player_hp_bar";
+constexpr const char* kBattlePlayerHpTextElementId = "battle_player_hp_text";
+constexpr const char* kBattleMessageElementId = "battle_message";
+constexpr const char* kBattleFleeButtonElementId = "battle_btn_flee";
 
-    int targetIdx = -1;
-    float bestDistSq = kMeleeRangeWorldUnits * kMeleeRangeWorldUnits;
-    for (int i = 0; i < frame->agentCount; ++i) {
-        const BeAgentState& agent = frame->agents[i];
-        if (agent.health <= 0.0f) continue; // dead agents stay in the array (index-stable), never a target
-        if (findEnemyDef(agent.kind) == nullptr) continue;
-        const float dx = agent.worldX - frame->playerWorldX;
-        const float dy = agent.worldY - frame->playerWorldY;
-        const float distSq = dx * dx + dy * dy;
-        if (distSq <= bestDistSq) {
-            bestDistSq = distSq;
-            targetIdx = i;
+// Same wallet key as kPlayerGoldFlag (defined much further down this file,
+// in the Bank section) -- duplicated here rather than relocating this whole
+// combat section past it, matching this file's own "duplicate a small
+// literal across an ordering-constrained section" precedent
+// (handleRightClickMenu()'s own kRcmCookingFireKinds-etc. doc comment).
+constexpr const char* kCombatPlayerGoldFlag = "player_gold";
+
+// Forward declaration for a function defined later in this file (same
+// ordering-constraint shape queueFlagSet's own forward declaration above
+// already establishes) -- a pure append to shared per-frame scratch state,
+// safe to call from here.
+std::vector<BeUiElementOverride>& uiOverrideBuffer();
+
+enum class BattlePhase {
+    PlayerChoice,
+    ResolvingPlayerAttack,
+    EnemyTurnWait,
+    Ending,
+};
+
+BattlePhase& battlePhase() {
+    static BattlePhase phase = BattlePhase::PlayerChoice;
+    return phase;
+}
+int& battleTargetIndex() {
+    static int idx = -1;
+    return idx;
+}
+float& battleEnemyHpBeforeAttack() {
+    static float hp = 0.0f;
+    return hp;
+}
+double& battleTurnTimer() {
+    static double timer = 0.0;
+    return timer;
+}
+double& battleEndDelaySeconds() {
+    static double delay = 0.0;
+    return delay;
+}
+float& battleDefenceBoost() {
+    static float boost = 0.0f;
+    return boost;
+}
+std::string& battleMessage() {
+    static std::string msg;
+    return msg;
+}
+
+// A short "don't immediately re-open a battle against this same agent"
+// grace period after a flee or a defeat -- js's own `combatFlee()` sets
+// `e.ignoreUntil = Date.now() + 3*60*1000` on a successful flee (line 1747);
+// this port has no per-agent "ignore the player" host primitive to set
+// (only requestedAgentFreezes, which would ALSO stop the agent from doing
+// anything at all, not just re-engaging), so this is a plugin-owned
+// substitute using the SAME 3-minute window, measured against this file's
+// own accumulated `frame->dt`, not wall-clock time (this port has no
+// wall-clock read anywhere in this file either -- every other timer in this
+// section already accumulates `dt` the same way).
+struct BattleCooldown {
+    int agentIndex;
+    double untilSeconds;
+};
+std::vector<BattleCooldown>& battleCooldowns() {
+    static std::vector<BattleCooldown> cooldowns;
+    return cooldowns;
+}
+double& battleElapsedSeconds() {
+    static double elapsed = 0.0;
+    return elapsed;
+}
+constexpr double kBattleFleeCooldownSeconds = 180.0; // js's own 3*60*1000ms
+
+bool battleOnCooldown(int agentIndex) {
+    for (const BattleCooldown& c : battleCooldowns()) {
+        if (c.agentIndex == agentIndex) return c.untilSeconds > battleElapsedSeconds();
+    }
+    return false;
+}
+void battleSetCooldown(int agentIndex) {
+    for (BattleCooldown& c : battleCooldowns()) {
+        if (c.agentIndex == agentIndex) {
+            c.untilSeconds = battleElapsedSeconds() + kBattleFleeCooldownSeconds;
+            return;
         }
     }
-    if (targetIdx < 0) return;
+    battleCooldowns().push_back({agentIndex, battleElapsedSeconds() + kBattleFleeCooldownSeconds});
+}
 
-    // js/activities.js's own executeCombatMove() basic-attack formula
-    // (Punch, dmgMult:1.0, line ~1355): floor(random()*(strLvl*2+4))+1,
-    // plus floor((attackBonus+tempAtk+extraAtk)/3) -- the latter is always 0
-    // here since no equipment-bonus/temp-buff system exists anywhere in this
-    // port yet (the same "no equipment bonus tracking" gap every other
-    // activity in this file already has, not a new one introduced here).
-    // frame->randomUint32 (v27->v28 ABI) draws from the SAME seeded stream
-    // handleFishing() already uses, in place of the JS's Math.random().
+bool battleMenuOpen(const BeTileGridFrame* frame) {
+    return frame->activeDialogLayoutName != nullptr &&
+           std::strcmp(frame->activeDialogLayoutName, kBattleMenuLayoutName) == 0;
+}
+
+// js's own executeCombatMove() basic-attack formula (Punch, dmgMult:1.0,
+// line ~1355) -- IDENTICAL formula and weapon-tier-quantization the old
+// real-time-stand-in `handleCombatAttack()` used, just fired from the
+// battle menu's own Attack button instead of an interact press. See this
+// section's own "Judgement call on how damage is applied" doc comment
+// (above kEnemyAgentKinds) for why a discrete weapon tier is the ONLY real
+// way an agent's health can change here.
+void fireBattleAttackHitbox(BeTileGridFrame* frame) {
     const int strLevel = readSkillLevel(frame, GrimstoneSkill::Strength);
     double roll;
     if (frame->randomUint32 != nullptr) {
@@ -549,10 +757,325 @@ void handleCombatAttack(BeTileGridFrame* frame, bool forced = false) {
 
     queueHitbox(frame->playerWorldX, frame->playerWorldY, /*shape=*/1, kMeleeRangeWorldUnits, 0.0f,
                 chosen->weaponName);
+}
 
+// js's own combatFlee() formula, unchanged (js/activities.js line ~1738):
+// attackBonus caps at +40% by Attack level 99, speedPenalty scales with how
+// much faster than 1.5 the enemy's own speed is, clamped to [0.15, 0.9]
+// overall.
+double battleFleeChance(const BeTileGridFrame* frame, const EnemyDef& def) {
+    const int attackLevel = readSkillLevel(frame, GrimstoneSkill::Attack);
+    const double attackBonus = std::min(0.4, (static_cast<double>(attackLevel) - 1.0) / 98.0 * 0.4);
+    const double speedPenalty = std::max(0.0, (def.speed - 1.5) * 0.08);
+    return std::min(0.9, std::max(0.15, 0.3 + attackBonus - speedPenalty));
+}
+
+double battleRollUnit(BeTileGridFrame* frame) {
+    if (frame->randomUint32 == nullptr) return 0.5; // deterministic fallback, same convention as fireBattleAttackHitbox()
+    constexpr double kUint32Max = 4294967295.0;
+    return static_cast<double>(frame->randomUint32()) / kUint32Max;
+}
+
+// js's own _combatVictory() (js/activities.js lines 1758-1780), minus the
+// bones/xp grant -- handleCombatDeathRewards() already grants those,
+// per-frame, on the SAME agent-health<=0 transition this hitbox produces on
+// some later frame (see that function's own doc comment); duplicating xp/
+// bones here would double-grant them. This function's own job is just the
+// gold half of _combatVictory() that function does NOT grant, plus ending
+// the battle.
+void battleEndVictory(BeTileGridFrame* frame, const EnemyDef& def) {
+    const double gold = readFlag(frame, kCombatPlayerGoldFlag, 0.0);
+    queueFlagSet(kCombatPlayerGoldFlag, gold + def.gold);
+    battleMessage() = std::string("Victory! The ") + def.displayName + " falls. +" +
+                       std::to_string(static_cast<int>(def.gold)) + "g";
+    battlePhase() = BattlePhase::Ending;
+    battleEndDelaySeconds() = 1.6; // js's own setTimeout(_closeCombatPanel, 1600)
+    battleTurnTimer() = 0.0;
+}
+
+// js's own _combatDefeat() (js/activities.js lines 1782-1786) calls
+// respawn() -- this port has no player-death/respawn primitive of ANY kind
+// to hook into (checked: no "respawn" function, no level-reset/teleport-to-
+// spawn mechanism anywhere in this file), and building one is real,
+// separately-scoped work far beyond this pass's own turn-based-combat
+// scope. The honest v1 substitute: the player survives, staggering back to
+// a small fraction of max health (20%) via requestedHealthDelta, instead of
+// silently doing nothing or inventing a half-built respawn flow. Documented
+// here and in PORTING_PLAN.md as a real, deliberate deviation, not an
+// oversight.
+void battleEndDefeat(BeTileGridFrame* frame, const EnemyDef& def) {
+    const float reviveHealth = std::max(1.0f, frame->playerMaxHealth * 0.2f);
+    if (reviveHealth > frame->playerHealth) frame->requestedHealthDelta = reviveHealth - frame->playerHealth;
+    battleMessage() = "You have been slain by the " + std::string(def.displayName) +
+                       "... but stagger back to your feet.";
+    battleSetCooldown(battleTargetIndex()); // same "don't immediately re-engage" grace flee gets
+    battlePhase() = BattlePhase::Ending;
+    battleEndDelaySeconds() = 1.5; // js's own setTimeout(..., 1500)
+    battleTurnTimer() = 0.0;
+}
+
+void battleEndFled(const EnemyDef& def) {
+    battleMessage() = std::string("You create an opening and escape the ") + def.displayName + "!";
+    battleSetCooldown(battleTargetIndex());
+    battlePhase() = BattlePhase::Ending;
+    battleEndDelaySeconds() = 1.0; // js's own setTimeout(_closeCombatPanel, 1000)
+    battleTurnTimer() = 0.0;
+}
+
+// js's own _combatEnemyTurn() damage half (js/activities.js lines
+// 1683-1721), minus every spell-driven effect (burn/stun/weaken/reflect/
+// barrier -- none of this port's SPELL_BOOK exists, see this section's own
+// scope note above) and minus equipment/temp-buff defence bonuses (the same
+// "no equipment-bonus tracking" gap every activity in this file already
+// has). What's left, real and unchanged: `defBonus = max(0, defLevel-3) +
+// battleDefenceBoost()` (Defend's own single-turn boost, consumed here) and
+// a plain `floor(random()*(maxDmg-minDmg+1))+minDmg` roll, applied to
+// `playerHealth` directly via requestedHealthDelta (the ABI's own "exists
+// ONLY for the player's own health" primitive -- see this file's own
+// "Judgement call" doc comment above for the equivalent player->enemy
+// constraint). Unlike a hitbox, this write-back has no documented multi-
+// frame resolution latency, so this function computes and reports the
+// EXPECTED post-delta health itself for the same-frame defeat check, the
+// same "fire and trust the clamp" convention the dev console's own "heal"
+// command already uses (see that command's own doc comment).
+void battleRunEnemyTurn(BeTileGridFrame* frame, const EnemyDef& def) {
+    const int defLevel = readSkillLevel(frame, GrimstoneSkill::Defence);
+    const double defBonus = std::max(0.0, static_cast<double>(defLevel) - 3.0) + battleDefenceBoost();
+    battleDefenceBoost() = 0.0; // single-turn boost, consumed the instant the enemy swings
+
+    const double unit = battleRollUnit(frame);
+    const double rawDmg = def.minDmg + std::floor(unit * (def.maxDmg - def.minDmg + 1.0));
+    const double actualDmg = std::max(0.0, rawDmg - defBonus);
+
+    float expectedHealth = frame->playerHealth;
+    if (actualDmg > 0.0) {
+        const float delta = -static_cast<float>(actualDmg);
+        frame->requestedHealthDelta = delta;
+        expectedHealth = std::clamp(frame->playerHealth + delta, 0.0f, frame->playerMaxHealth);
+        battleMessage() = std::string("The ") + def.displayName + " strikes you for " +
+                           std::to_string(static_cast<int>(actualDmg)) + " damage.";
+    } else {
+        battleMessage() = std::string("The ") + def.displayName + "'s attack glances off your armour.";
+    }
+
+    if (expectedHealth <= 0.0f) {
+        battleEndDefeat(frame, def);
+    } else {
+        battlePhase() = BattlePhase::PlayerChoice;
+        battleTurnTimer() = 0.0;
+    }
+}
+
+constexpr double kBattleAttackResolutionTimeoutSeconds = 1.0; // generous grace past the host's own multi-frame hitbox latency
+constexpr double kBattleEnemyTurnDelaySeconds = 0.9; // js's own setTimeout(_combatEnemyTurn, 800 + random()*300)
+constexpr float kBattleDefendBonus = 10.0f; // js's own generic defBuff moves (Mana Shield/Riposte), +10 Defence this turn
+
+// Builds this frame's live overrides (HP bars/text, the message line, the
+// flee button's own live percentage) into the shared uiOverrideBuffer() and
+// (re-)points frame->requestedUiElementOverrides at its CURRENT data()/
+// size() -- same "append, then re-derive the pointer from the buffer's own
+// current storage" discipline handleRightClickMenu()/updatePlayerHud()
+// establish and document in detail (their own coexistence doc comments,
+// further down this file): appending can reallocate, so the pointer must be
+// taken AFTER every push, never cached.
+void pushBattleOverrides(BeTileGridFrame* frame, const BeAgentState& enemy, const EnemyDef& def, double fleeChance) {
+    auto pushText = [](const char* id, const std::string& text) {
+        BeUiElementOverride ov{};
+        ov.elementId = id;
+        ov.text = internString(text);
+        uiOverrideBuffer().push_back(ov);
+    };
+    auto pushValue = [](const char* id, double value) {
+        BeUiElementOverride ov{};
+        ov.elementId = id;
+        ov.hasValue = 1;
+        ov.value = value;
+        uiOverrideBuffer().push_back(ov);
+    };
+
+    pushText(kBattleEnemyNameElementId, def.displayName);
+    const float enemyMax = enemy.maxHealth > 0.0f ? enemy.maxHealth : 1.0f;
+    pushValue(kBattleEnemyHpBarElementId, std::clamp(enemy.health / enemyMax, 0.0f, 1.0f));
+    pushText(kBattleEnemyHpTextElementId, std::to_string(std::max(0, static_cast<int>(enemy.health))) + " / " +
+                                               std::to_string(static_cast<int>(enemyMax)));
+
+    const float playerMax = frame->playerMaxHealth > 0.0f ? frame->playerMaxHealth : 1.0f;
+    pushValue(kBattlePlayerHpBarElementId, std::clamp(frame->playerHealth / playerMax, 0.0f, 1.0f));
+    pushText(kBattlePlayerHpTextElementId, std::to_string(std::max(0, static_cast<int>(frame->playerHealth))) +
+                                                " / " + std::to_string(static_cast<int>(playerMax)));
+
+    pushText(kBattleMessageElementId, battleMessage());
+    pushText(kBattleFleeButtonElementId,
+             "Flee (" + std::to_string(static_cast<int>(std::round(fleeChance * 100.0))) + "%)");
+
+    frame->requestedUiElementOverrides = uiOverrideBuffer().data();
+    frame->requestedUiElementOverrideCount = static_cast<int>(uiOverrideBuffer().size());
+}
+
+// Drives one already-open battle for one whole frame: freezes the engaged
+// agent, keeps the panel's live overrides current, reacts to a player click
+// during PlayerChoice, and advances the ResolvingPlayerAttack/EnemyTurnWait/
+// Ending timers. Called every frame the battle menu is open, regardless of
+// interactPressed -- this is a click-driven UI, not an interact-gated
+// activity.
+void updateBattleMenu(BeTileGridFrame* frame) {
+    battleElapsedSeconds() += static_cast<double>(frame->dt);
+
+    const int targetIdx = battleTargetIndex();
+    const bool endingPhase = battlePhase() == BattlePhase::Ending;
+
+    // Keep the engaged agent frozen -- see this section's own top-of-file
+    // doc comment for why this is the load-bearing half of the real-time-
+    // vs-turn-based coexistence design. Re-asserted every frame per
+    // requestedAgentFreezes' own "not a fires-once field" contract.
+    if (targetIdx >= 0) {
+        frame->requestedAgentFreezes = &battleTargetIndex();
+        frame->requestedAgentFreezeCount = 1;
+    }
+
+    // Target lost (an out-of-bounds index, or the agent no longer matches a
+    // living enemy kind) is only a real abort BEFORE the battle has already
+    // concluded -- during Ending the enemy is EXPECTED to read dead
+    // (Victory), or the index may already be stale from a defeat/flee
+    // cooldown's own bookkeeping, neither of which should tear the panel
+    // down early.
+    const bool targetStillValid =
+        targetIdx >= 0 && frame->agents != nullptr && targetIdx < frame->agentCount &&
+        findEnemyDef(frame->agents[targetIdx].kind) != nullptr && frame->agents[targetIdx].health > 0.0f;
+    if (!endingPhase && !targetStillValid) {
+        frame->requestedPopDialog = 1;
+        battlePhase() = BattlePhase::PlayerChoice;
+        battleTargetIndex() = -1;
+        return;
+    }
+
+    const BeAgentState& enemy = frame->agents[targetIdx];
+    const EnemyDef* def = findEnemyDef(enemy.kind);
+    if (def == nullptr) def = &kEnemyDefs[0]; // unreachable given targetStillValid above; defensive only
+
+    const double fleeChance = battleFleeChance(frame, *def);
+    pushBattleOverrides(frame, enemy, *def, fleeChance);
+
+    switch (battlePhase()) {
+        case BattlePhase::PlayerChoice: {
+            if (frame->clickedUiActionId == nullptr || frame->clickedUiActionId[0] == '\0') return;
+            if (std::strcmp(frame->clickedUiActionId, kBattleAttackActionId) == 0) {
+                battleEnemyHpBeforeAttack() = enemy.health;
+                fireBattleAttackHitbox(frame);
+                battleMessage() = std::string("You attack the ") + def->displayName + "...";
+                battlePhase() = BattlePhase::ResolvingPlayerAttack;
+                battleTurnTimer() = 0.0;
+            } else if (std::strcmp(frame->clickedUiActionId, kBattleDefendActionId) == 0) {
+                battleDefenceBoost() += kBattleDefendBonus;
+                battleMessage() = "You brace yourself. (+10 Defence this turn)";
+                battlePhase() = BattlePhase::EnemyTurnWait;
+                battleTurnTimer() = 0.0;
+            } else if (std::strcmp(frame->clickedUiActionId, kBattleFleeActionId) == 0) {
+                if (battleRollUnit(frame) < fleeChance) {
+                    battleEndFled(*def);
+                } else {
+                    battleMessage() =
+                        "You couldn't escape! The " + std::string(def->displayName) + " blocks your path.";
+                    battlePhase() = BattlePhase::EnemyTurnWait;
+                    battleTurnTimer() = 0.0;
+                }
+            }
+            return;
+        }
+        case BattlePhase::ResolvingPlayerAttack: {
+            battleTurnTimer() += static_cast<double>(frame->dt);
+            const float before = battleEnemyHpBeforeAttack();
+            if (enemy.health < before - 0.01f) {
+                const double dealt = static_cast<double>(before - enemy.health);
+                battleMessage() = "You hit the " + std::string(def->displayName) + " for " +
+                                   std::to_string(static_cast<int>(dealt)) + " damage.";
+                if (enemy.health <= 0.0f) {
+                    battleEndVictory(frame, *def);
+                } else {
+                    battlePhase() = BattlePhase::EnemyTurnWait;
+                    battleTurnTimer() = 0.0;
+                }
+            } else if (battleTurnTimer() >= kBattleAttackResolutionTimeoutSeconds) {
+                battleMessage() = "Your attack narrowly misses the " + std::string(def->displayName) + ".";
+                battlePhase() = BattlePhase::EnemyTurnWait;
+                battleTurnTimer() = 0.0;
+            }
+            return;
+        }
+        case BattlePhase::EnemyTurnWait: {
+            battleTurnTimer() += static_cast<double>(frame->dt);
+            if (battleTurnTimer() >= kBattleEnemyTurnDelaySeconds) battleRunEnemyTurn(frame, *def);
+            return;
+        }
+        case BattlePhase::Ending: {
+            battleTurnTimer() += static_cast<double>(frame->dt);
+            if (battleTurnTimer() >= battleEndDelaySeconds()) {
+                frame->requestedPopDialog = 1;
+                battlePhase() = BattlePhase::PlayerChoice;
+                battleTargetIndex() = -1;
+            }
+            return;
+        }
+    }
+}
+
+// Opens a new battle against the nearest living enemy agent in melee range
+// -- the one true entry point every trigger funnels through (see this
+// section's own top-of-file doc comment for the proximity-vs-explicit
+// trigger design). `forced` bypasses only the `!interactPressed` gate, the
+// same convention every other menu-driven activity in this file already
+// uses.
+void startCombatEncounter(BeTileGridFrame* frame, bool forced) {
+    if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
+    if (frame->agents == nullptr) return;
+
+    int targetIdx = -1;
+    float bestDistSq = kMeleeRangeWorldUnits * kMeleeRangeWorldUnits;
+    bool anyReactingInRange = false;
+    for (int i = 0; i < frame->agentCount; ++i) {
+        const BeAgentState& agent = frame->agents[i];
+        if (agent.health <= 0.0f) continue; // dead agents stay in the array (index-stable), never a target
+        if (findEnemyDef(agent.kind) == nullptr) continue;
+        if (battleOnCooldown(i)) continue; // recent flee/defeat grace period -- see battleCooldowns()'s own doc comment
+        const float dx = agent.worldX - frame->playerWorldX;
+        const float dy = agent.worldY - frame->playerWorldY;
+        const float distSq = dx * dx + dy * dy;
+        if (distSq > bestDistSq) continue;
+        bestDistSq = distSq;
+        targetIdx = i;
+        anyReactingInRange = agent.reacting != 0;
+    }
+    if (targetIdx < 0) return;
+
+    // The proximity trigger (a reacting/chasing enemy already within melee
+    // range) fires unconditionally, matching js's own triggerEnemyAttack();
+    // the explicit trigger (interactPressed, or a forced right-click
+    // "Attack" choice) additionally requires the interact gate, same as
+    // every other menu-driven activity.
+    if (!anyReactingInRange && !forced && !frame->interactPressed) return;
+
+    battleTargetIndex() = targetIdx;
+    battlePhase() = BattlePhase::PlayerChoice;
+    battleTurnTimer() = 0.0;
+    battleDefenceBoost() = 0.0;
     const EnemyDef* def = findEnemyDef(frame->agents[targetIdx].kind);
-    toastScratch() = std::string("You strike at the ") + (def != nullptr ? def->displayName : "enemy") + ".";
-    frame->requestedToastText = toastScratch().c_str();
+    battleMessage() =
+        std::string("You face the ") + (def != nullptr ? def->displayName : "enemy") + ". What will you do?";
+    frame->requestedPushDialog = kBattleMenuLayoutName;
+}
+
+// Top-level dispatch: while a battle is already open, run its turn logic
+// every frame regardless of interactPressed (a click-driven menu);
+// otherwise look for a new encounter to start. Replaces the old
+// handleCombatAttack() real-time stand-in entirely -- see this section's
+// own top-of-file doc comment for why there are no longer two combat
+// systems to keep from conflicting.
+void handleCombatEncounter(BeTileGridFrame* frame, bool forced = false) {
+    if (battleMenuOpen(frame)) {
+        updateBattleMenu(frame);
+        return;
+    }
+    startCombatEncounter(frame, forced);
 }
 
 // Runs every frame (not gated on interactPressed) -- detects the
@@ -975,7 +1498,7 @@ struct SkillDelta {
 // ---- Class bonuses (js/character.js's CLASSES array, lines 2-64) ----
 // gear[]/startEquip[] are granted IDENTICALLY, both as plain inventory
 // items -- this port has no equipment-slot system of any kind (the same
-// "no equipment-bonus/temp-buff system" gap handleCombatAttack() above
+// "no equipment-bonus/temp-buff system" gap fireBattleAttackHitbox() above
 // already documents), so there is nowhere else for a "weapon"/"body"
 // startEquip item to go.
 struct ClassDef {
@@ -2343,7 +2866,7 @@ int aldermastCombatAvg(const BeTileGridFrame* frame) {
 // exact float coordinate (checked every add*NpcMarker() call site in
 // GrimstoneGame.cpp; none do). A real, position-based workaround for a real
 // ABI gap, not a guess -- same "real gap, found while wiring this up, not a
-// simplification this port can paper over" spirit as handleCombatAttack()'s
+// simplification this port can paper over" spirit as startCombatEncounter()'s
 // own doc comment above.
 constexpr float kAldermastMarkerWorldX = 13.5f;
 constexpr float kAldermastMarkerWorldY = 5.5f;
@@ -2775,7 +3298,7 @@ const BankStock* findBankStock(const char* id) {
 // accumulated-dt seconds instead of Date.now() milliseconds.
 // frame->randomUint32 (the SAME seeded stream every other weighted-roll
 // system in this file already draws from) stands in for the JS's own
-// Math.random(), matching handleFishing()/handleCombatAttack()'s own
+// Math.random(), matching handleFishing()/fireBattleAttackHitbox()'s own
 // convention.
 constexpr double kStockMarketTickSeconds = 30.0;
 
@@ -2791,7 +3314,7 @@ void updateStockMarket(BeTileGridFrame* frame) {
         const BankStock& stock = kBankStocks[i];
         const double current = readFlag(frame, stock.priceFlagKey, stock.basePrice);
 
-        double unit = 0.5; // deterministic fallback, same convention as handleCombatAttack() above
+        double unit = 0.5; // deterministic fallback, same convention as fireBattleAttackHitbox() above
         if (frame->randomUint32 != nullptr) {
             constexpr double kUint32Max = 4294967295.0;
             unit = static_cast<double>(frame->randomUint32()) / kUint32Max;
@@ -3652,7 +4175,7 @@ bool rightClickMenuOpen(const BeTileGridFrame* frame) {
            std::strcmp(frame->activeDialogLayoutName, kRightClickMenuLayoutName) == 0;
 }
 
-// Read-only mirror of handleCombatAttack()'s own nearest-living-enemy scan
+// Read-only mirror of startCombatEncounter()'s own nearest-living-enemy scan
 // (same kMeleeRangeWorldUnits/findEnemyDef()) -- no side effects, purely
 // "is there a real target," so building the menu never fires a hitbox.
 bool nearestLivingEnemyInRange(const BeTileGridFrame* frame) {
@@ -3787,7 +4310,7 @@ void executeRightClickAction(BeTileGridFrame* frame, RightClickAction action) {
         case RightClickAction::TalkOswin: startOswinDialogue(frame, /*forced=*/true); return;
         case RightClickAction::TalkThessaly: startThessalyDialogue(frame, /*forced=*/true); return;
         case RightClickAction::TalkDorin: startDorinDialogue(frame, /*forced=*/true); return;
-        case RightClickAction::Attack: handleCombatAttack(frame, /*forced=*/true); return;
+        case RightClickAction::Attack: handleCombatEncounter(frame, /*forced=*/true); return;
         case RightClickAction::MineOrChop: handleMiningAndWoodcutting(frame, /*forced=*/true); return;
         case RightClickAction::Fish: handleFishing(frame, /*forced=*/true); return;
         case RightClickAction::Cook: handleCooking(frame, /*forced=*/true); return;
@@ -4427,7 +4950,7 @@ void updateGrimstoneRuntime(BeTileGridFrame* frame) {
     daynight::updateColorGrade(frame);     // per-frame, not gated on interactPressed -- reads currentGameTime()/currentWeather(), so after the two calls above
     daynight::updateNightOverlay(frame);   // per-frame, not gated on interactPressed -- reads currentGameTime(), the same input updateColorGrade() reads
     handleMiningAndWoodcutting(frame);
-    handleCombatAttack(frame);
+    handleCombatEncounter(frame); // per-frame, not gated on interactPressed -- see its own doc comment (proximity trigger)
     handleCombatDeathRewards(frame); // per-frame, not gated on interactPressed
     handleFishing(frame);
     handleCooking(frame);
