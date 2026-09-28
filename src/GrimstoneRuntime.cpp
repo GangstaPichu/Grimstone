@@ -844,6 +844,21 @@ bool requestZoneSwap(BeTileGridFrame* frame, const std::string& targetZone) {
     // for its own arguments.
     queueStringSet(kActiveZoneStringKey, activeZoneIdRef().c_str());
     cooldownFrames() = kPostTransitionCooldownFrames;
+
+    // handleDungeonChestLoot()'s own per-visit dedup (defined further down
+    // this file, near "Dungeon chest loot" -- its doc comment there explains
+    // why this reset exists): a fresh (re)entry into the one dungeon that
+    // pass's void-shard/tome-fragment rolls are gated on gets a fresh
+    // chance at each, the same "at most one per visit" shape
+    // makeDungeonMap()'s own per-object `_voidShardGiven`/`_tomeFragGiven`
+    // fields give the JS every time it rebuilds that dungeon's map. Literal
+    // flag keys here on purpose (not shared constants) -- those constants
+    // are declared after this function in file order; both sides just need
+    // to agree on the same two string keys.
+    if (targetZone == "cultist_catacombs") {
+        queueFlagSet("cc_void_shard_given_visit", 0.0);
+        queueFlagSet("cc_tome_frag_given_visit", 0.0);
+    }
     return true;
 }
 
@@ -2273,14 +2288,14 @@ void handleHarvesting(BeTileGridFrame* frame, bool forced = false) {
 // this file). `void_shards_found` (0-4) and `tome_fragments_found` (0-3) are
 // transcribed as NUMBERS, not booleans, matching the JS's own
 // `questFlags.void_shards_found || 0` / `questFlags.tome_fragments_found ||
-// 0` usage (js/zones.js lines 114, 152) -- nothing in THIS port increments
-// either one yet, since no dungeon-chest-loot system exists anywhere in this
-// file/GrimstoneGame.cpp (checked: no "chest"/"loot" handling anywhere in
-// this file) to be the source of truth for "the player found a shard/
-// fragment." That's a real, separate gap (same shape as handleFishing()'s
-// own documented zone-read gap above), not something this quest-chain pass
-// invents a workaround for -- both flags are read/displayed correctly the
-// moment something else sets them.
+// 0` usage (js/zones.js lines 114, 152).
+//
+// UPDATE (dungeon-chest-loot pass): at the time this section was first
+// written, nothing in this port incremented either flag -- no dungeon-
+// chest-loot system existed anywhere in this file/GrimstoneGame.cpp. That
+// gap is now closed by handleDungeonChestLoot() (this file, "======= Dungeon
+// chest loot" section, further down) -- both flags are real, live counters
+// now, not just correctly-displayed dead state.
 //
 // Aldermast's own real Grimstone location: js/npcs.js line 670-673 calls
 // openWizardDialogue() for T.NPC_WIZARD, and js/zones.js line 476 places
@@ -3049,6 +3064,162 @@ void overrideBankMenuLiveDialogueText(BeTileGridFrame* frame) {
             "Medium: 200g -> 250g in 15 min; Long: 400g -> 600g in 30 min.";
         frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
     }
+}
+
+// ======= Dungeon chest loot ("void_shards_found"/"tome_fragments_found" gap) =======
+// Transcribed from js/activities.js's searchChest() dungeon branch (read in
+// full, lines 2190-2316) plus js/zones.js's own DUNGEON_LOOT table (lines
+// 1774-1795) and rollDungeonLoot() (lines 1797-1802). This is the real
+// mechanism the Aldermast quest-chain pass above (see its own doc comment,
+// "======= Aldermast's quest chain" above) explicitly named as missing:
+// "nothing in this port increments void_shards_found/tome_fragments_found
+// yet... a real, separate gap." This closes it.
+//
+// **Which dungeons**: searchChest()'s own `inDungeon` check (line 2227-2228)
+// matches FOUR zone display names -- THE ASHWOOD CRYPTS, THE IRON DEPTHS,
+// THE CULTIST CATACOMBS, AETHERIC SPIRE. Checked against this port's own
+// zoneSlugToTileGrid() (GrimstoneGame.cpp) before writing anything: only
+// "cultist_catacombs" is wired to a reachable slug there today --
+// buildAshenDungeon()/buildIronPeaksDungeon() carry no slug in that table
+// yet (daynight::updateNightOverlay()'s own doc comment above documents the
+// same gap), and AETHERIC SPIRE is buildWizardTowerInterior(), a hand-
+// authored interior never built via buildDungeonMap() at all (its own
+// "chest" tiles are Aldermast's own dressing, not dungeon-loot chests in
+// the JS -- searchChest()'s isSpecialChest/Dorin's-ledger/caravan-manifest
+// branches would take priority there anyway, none of which exist in this
+// port's Wizard Tower). So this gates on activeZoneId() ==
+// "cultist_catacombs" alone, the real currently-reachable subset, rather
+// than silently gating on all four or invisibly no-oping in the other
+// three.
+//
+// **Per-visit dedup**: the JS's `currentMap._voidShardGiven`/
+// `_tomeFragGiven` (lines 2252, 2254, 2269, 2272) are fields on the
+// per-entry `currentMap` object makeDungeonMap() rebuilds FRESH -- a brand
+// new random layout, `_voidShardGiven` unset again -- every time the
+// player re-enters that dungeon, capping each VISIT to at most one
+// shard/fragment, no matter how many of that visit's chests are opened.
+// This port's own zonetransition::cachedZone() builds "cultist_catacombs"'s
+// TileGrid ONCE and reuses it forever (no fresh regeneration per visit), so
+// the JS's per-object field has no direct equivalent. The nearest faithful
+// stand-in: a host flag reset every time requestZoneSwap() actually
+// (re)enters "cultist_catacombs" (see that function's own new reset lines,
+// zonetransition namespace above) -- the same "at most one per visit, a
+// fresh chance on the next visit" shape the JS's own quest design leans on
+// (four total shards needed, but only one dungeon reachable here, so
+// revisiting it repeatedly is the only way to gather all four).
+constexpr const char* kCcVoidShardVisitFlag = "cc_void_shard_given_visit";
+constexpr const char* kCcTomeFragVisitFlag = "cc_tome_frag_given_visit";
+
+// js/zones.js lines 1774-1795 -- id/weight pairs transcribed exactly.
+// Total weight is 94 (checked by hand against this exact list, not
+// recomputed at runtime the way the JS's own `.reduce()` does, since this
+// table never changes at runtime).
+struct DungeonLootEntry {
+    const char* itemId;
+    int weight;
+};
+constexpr DungeonLootEntry kDungeonLootTable[] = {
+    {"iron_sword", 4},    {"iron_helm", 4},     {"iron_plate", 3},    {"iron_legs", 3},
+    {"iron_shield", 3},   {"bronze_sword", 6},  {"bronze_helm", 6},   {"bronze_plate", 5},
+    {"bronze_legs", 5},   {"wheat", 6},         {"turnip", 6},        {"egg", 4},
+    {"bones", 10},        {"coins", 8},         {"goblin_hide", 7},   {"iron_arrows", 5},
+    {"bronze_arrows", 7}, {"steel_sword", 1},   {"mithril_sword", 1},
+};
+constexpr int kDungeonLootTableCount = sizeof(kDungeonLootTable) / sizeof(kDungeonLootTable[0]);
+constexpr int kDungeonLootTotalWeight = 94;
+
+constexpr const char* kDungeonChestKind[] = {"chest"};
+
+// **Deliberately NOT transcribed**: searchChest()'s own blueprint drop
+// (lines 2282-2293, `!currentMap._blueprintGiven && Math.random() < 0.22`,
+// picking from `state.homeBlueprintsLearned`). This port has no
+// home-blueprint/home-building system at all yet -- grep this whole file
+// for "blueprint" outside this comment and there are zero hits, matching
+// searchChest()'s OWN blueprint-buildable-furniture code path
+// (buildFurniture(), js/activities.js line 2160-ish) having no port either.
+// A real, separate, smaller future-authoring-pass gap, named here rather
+// than silently dropped -- NOT invented around by e.g. granting a
+// substitute item.
+void handleDungeonChestLoot(BeTileGridFrame* frame, bool forced = false) {
+    if (!forced && !frame->interactPressed) return;
+    if (activeZoneId() != "cultist_catacombs") return; // see this function's own doc comment above
+    if (frame->randomUint32 == nullptr) return; // no real rng stream this build -- same guard fishing's own roll uses
+
+    int cx = 0, cy = 0;
+    if (!findAdjacentTileOfKind(frame, kDungeonChestKind, 1, &cx, &cy, nullptr)) return;
+
+    // js/activities.js startFish()'s own weighted-roll pattern (read via
+    // frame->randomUint32, the SAME seeded stream game.lua's own be.random()
+    // draws from, in place of the JS's Math.random() -- not std::rand()).
+    constexpr double kUint32Max = 4294967295.0;
+    auto rollUnit = [&]() -> double { return static_cast<double>(frame->randomUint32()) / kUint32Max; };
+
+    toastScratch() = "You pry open the ancient chest...";
+    frame->requestedToastText = toastScratch().c_str();
+
+    // Ashen Seal -- one guaranteed-chance chest once the quest is accepted
+    // (js/activities.js lines 2237-2245).
+    if (readFlag(frame, "ashen_seal_accepted", 0.0) != 0.0 && readFlag(frame, "ashen_seal_found", 0.0) == 0.0 &&
+        rollUnit() < 0.6) {
+        queueItemGrant("ashen_seal", 1);
+        queueFlagSet("ashen_seal_found", 1.0);
+    }
+
+    // Void Shards -- at most one per dungeon VISIT, capped at 4 total
+    // (js/activities.js lines 2247-2262).
+    const double shardsFound = readFlag(frame, "void_shards_found", 0.0);
+    if (readFlag(frame, "constellation_accepted", 0.0) != 0.0 && readFlag(frame, "constellation_done", 0.0) == 0.0 &&
+        shardsFound < 4.0 && readFlag(frame, kCcVoidShardVisitFlag, 0.0) == 0.0 && rollUnit() < 0.45) {
+        queueItemGrant("void_shard", 1);
+        queueFlagSet(kCcVoidShardVisitFlag, 1.0);
+        queueFlagSet("void_shards_found", shardsFound + 1.0);
+    }
+
+    // Tome Fragments -- at most one per dungeon VISIT, capped at 3 total,
+    // each a distinct itemId in found order (js/activities.js lines
+    // 2264-2280).
+    const double fragsFound = readFlag(frame, "tome_fragments_found", 0.0);
+    if (readFlag(frame, "grimoire_accepted", 0.0) != 0.0 && readFlag(frame, "grimoire_done", 0.0) == 0.0 &&
+        fragsFound < 3.0 && readFlag(frame, kCcTomeFragVisitFlag, 0.0) == 0.0 && rollUnit() < 0.55) {
+        constexpr const char* kFragItemIds[] = {"tome_fragment_1", "tome_fragment_2", "tome_fragment_3"};
+        const int fragIdx = static_cast<int>(fragsFound); // 0, 1, or 2 -- js's own `[shardsFound]` index pattern
+        queueItemGrant(kFragItemIds[fragIdx], 1);
+        queueFlagSet(kCcTomeFragVisitFlag, 1.0);
+        queueFlagSet("tome_fragments_found", fragsFound + 1.0);
+    }
+
+    // Generic loot -- 1-3 items via the weighted DUNGEON_LOOT table above,
+    // plus 10-49 gold whenever the roll lands on "coins" (js/activities.js
+    // lines 2231-2232, 2295-2299; js/zones.js lines 1797-1802).
+    const int numItems = 1 + static_cast<int>(rollUnit() * 3.0);
+    const int goldAmount = 10 + static_cast<int>(rollUnit() * 40.0);
+    for (int i = 0; i < numItems; ++i) {
+        double roll = rollUnit() * static_cast<double>(kDungeonLootTotalWeight);
+        const char* pickedId = "bones"; // rollDungeonLoot()'s own fallback (js/zones.js line 1801)
+        for (int t = 0; t < kDungeonLootTableCount; ++t) {
+            roll -= static_cast<double>(kDungeonLootTable[t].weight);
+            if (roll <= 0.0) {
+                pickedId = kDungeonLootTable[t].itemId;
+                break;
+            }
+        }
+        if (std::strcmp(pickedId, "coins") == 0) {
+            const double currentGold = readFlag(frame, kPlayerGoldFlag, 0.0);
+            queueFlagSet(kPlayerGoldFlag, currentGold + static_cast<double>(goldAmount));
+        } else {
+            queueItemGrant(pickedId, 1);
+        }
+    }
+
+    // Chest removed after searching, permanently for this visit's map --
+    // js/activities.js line 2302: `currentMap.tiles[y][x] =
+    // currentMap.floor[y][x]||T.DUNGEON_FLOOR` (no respawn, no re-search).
+    // buildDungeonMap() (GrimstoneGame.cpp) paints "chest" onto the Overlay
+    // layer (1) wherever it differs from the floor snapshot -- the SAME
+    // Floor/Overlay split its own doc comment describes -- so clearing
+    // Overlay back to empty (kindId "") reveals the plain dungeon_floor
+    // already sitting on Floor (0) underneath, matching the JS exactly.
+    queueTileEdit(1, cx, cy, "");
 }
 
 // ======= The five inert `npc_spawn` proof-of-concept NPCs (Grimward,
@@ -4236,6 +4407,7 @@ void updateGrimstoneRuntime(BeTileGridFrame* frame) {
     handleTilling(frame);
     handlePlanting(frame);
     handleHarvesting(frame);
+    handleDungeonChestLoot(frame); // feeds void_shards_found/tome_fragments_found, read just below
     updateAldermastObjectives(frame);  // per-frame, not gated on interactPressed
     startAldermastDialogue(frame);
     applyAldermastDialogueSideEffects(frame);
