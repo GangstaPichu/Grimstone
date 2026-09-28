@@ -167,6 +167,203 @@
     ]
   },
   {
+    "name": "aldermast_void_handin",
+    "startNodeId": "handin",
+    "nodes": [
+      {
+        "id": "handin",
+        "speaker": "Aldermast",
+        "text": "Four shards. I can feel them from here -- the constellation hums again. Bring them to me. All four, now.",
+        "choices": [
+          {
+            "text": "Here are all four shards.",
+            "targetNodeId": "handin_thanks",
+            "action": "give_item",
+            "actionParam": "amulet_of_stars",
+            "actionParam2": "1"
+          }
+        ]
+      },
+      {
+        "id": "handin_thanks",
+        "speaker": "Aldermast",
+        "text": "Perfect. Watch -- yes, there. The four stars are lit again. The Amulet of Stars is yours. I cannot explain what it will do in detail without three hours and a chalkboard. Wear it. You will understand.",
+        "choices": [
+          { "text": "Remarkable.", "targetNodeId": "void_epilogue" }
+        ]
+      },
+      {
+        "id": "void_epilogue",
+        "speaker": "Aldermast",
+        "text": "Now -- while you are here. My Grimoire. The original one -- three hundred years of research. The cultists stole it during the siege and tore it into three fragments before I could stop them. The pages are scattered across the dungeons. I need them back. All three.",
+        "choices": [
+          { "text": "I'll find them.", "targetNodeId": "grimoire_accepted_confirm" },
+          { "text": "Perhaps later." }
+        ]
+      },
+      {
+        "id": "grimoire_accepted_confirm",
+        "speaker": "Aldermast",
+        "text": "Good. The fragments will be in chests -- they are distinctive, you'll know them. The pages glow faintly even after all this time. Find all three and I'll teach you the Void Rune -- and give you something else besides.",
+        "choices": [
+          { "text": "I will return." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "aldermast_void_gathering",
+    "startNodeId": "gathering",
+    "nodes": [
+      {
+        "id": "gathering",
+        "speaker": "Aldermast",
+        "text": "Four shards. I can feel them from here -- the constellation hums again. Bring them to me. All four, now.",
+        "choices": [
+          { "text": "I'm gathering them." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "aldermast_grimoire_progress",
+    "startNodeId": "progress",
+    "nodes": [
+      {
+        "id": "progress",
+        "speaker": "Aldermast",
+        "text": "You have found 0 of the three Grimoire Fragments. Search dungeon chests across the Ashwood Crypts, Iron Depths, and Cultist Catacombs. The pages still carry a faint aetheric signature -- they glow.",
+        "choices": [
+          { "text": "I'll keep looking." },
+          { "text": "What's in the Grimoire?", "targetNodeId": "progress_detail" }
+        ]
+      },
+      {
+        "id": "progress_detail",
+        "speaker": "Aldermast",
+        "text": "Everything. Three centuries of arcane theory, forty-seven original rune designs, the complete history of the Void Constellation event. And my chicken pie recipe, but that is confidential.",
+        "choices": [
+          { "text": "Noted." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "aldermast_grimoire_handin",
+    "startNodeId": "handin",
+    "nodes": [
+      {
+        "id": "handin",
+        "speaker": "Aldermast",
+        "text": "All three fragments. I can feel the resonance even across the room. Hand them over -- carefully.",
+        "choices": [
+          {
+            "text": "Here, all three.",
+            "targetNodeId": "handin_thanks",
+            "action": "give_item",
+            "actionParam": "staff_of_aldermast",
+            "actionParam2": "1"
+          }
+        ]
+      },
+      {
+        "id": "handin_thanks",
+        "speaker": "Aldermast",
+        "text": "There. Whole again. Centuries of work, intact. As promised -- the Void Rune is now available at the Spell Tome. And this staff has been waiting for someone worthy. It was made to amplify arcane intent. I find myself no longer needing it. You clearly do.",
+        "choices": [
+          { "text": "I am honoured." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "aldermast_grimoire_missing",
+    "startNodeId": "missing",
+    "nodes": [
+      {
+        "id": "missing",
+        "speaker": "Aldermast",
+        "text": "You have found all three fragments -- but I sense you do not have them all on you. Check your inventory. Bring all three at once.",
+        "choices": [
+          { "text": "I'll check." }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "aldermast_lore_chat",
+    "startNodeId": "idle",
+    "nodes": [
+      {
+        "id": "idle",
+        "speaker": "Aldermast",
+        "text": "The constellation burns bright again. Whatever is happening below that chapel -- the surges will slow, for a time. Though I suspect the calm won't last. Come back if you find anything else interesting.",
+        "choices": [
+          { "text": "Goodbye, Aldermast." },
+          { "text": "What are Shadow Walkers?", "targetNodeId": "lore_shadow" },
+          { "text": "What happened to the Grimward kings?", "targetNodeId": "lore_grimward" },
+          { "text": "More questions...", "targetNodeId": "idle_more" }
+        ]
+      },
+      {
+        "id": "idle_more",
+        "speaker": "Aldermast",
+        "text": "The constellation burns bright again. Whatever is happening below that chapel -- the surges will slow, for a time. Though I suspect the calm won't last. Come back if you find anything else interesting.",
+        "choices": [
+          { "text": "Back.", "targetNodeId": "idle" },
+          { "text": "Tell me about the Void Shards.", "targetNodeId": "lore_void" },
+          { "text": "Tell me about rune crafting.", "targetNodeId": "lore_runecraft" },
+          { "text": "What is magic, really?", "targetNodeId": "lore_magic" }
+        ]
+      },
+      {
+        "id": "lore_shadow",
+        "speaker": "Aldermast",
+        "text": "Impressions. When something vast moved through the Whisperwood -- centuries ago -- it left residue. The Shadow Walkers are that residue, shaped by the ambient fear of the forest. They are not alive, exactly. But they are not not alive either.",
+        "choices": [
+          { "text": "Ask something else.", "targetNodeId": "idle" },
+          { "text": "Goodbye, Aldermast." }
+        ]
+      },
+      {
+        "id": "lore_grimward",
+        "speaker": "Aldermast",
+        "text": "They were warned. I warned them personally, three times, in writing. They built their city on a convergence point -- aetheric lines crossing in the wrong configuration. When the cultists started digging beneath the chapel, the end was already written. I left before the last page.",
+        "choices": [
+          { "text": "Ask something else.", "targetNodeId": "idle" },
+          { "text": "Goodbye, Aldermast." }
+        ]
+      },
+      {
+        "id": "lore_void",
+        "speaker": "Aldermast",
+        "text": "Crystallised void-energy. They fell when four stars in the Constellation were extinguished -- something consumed them. The shards landed in the darkest places in the realm, drawn by resonance. You will feel cold near them.",
+        "choices": [
+          { "text": "Ask something else.", "targetNodeId": "idle" },
+          { "text": "Goodbye, Aldermast." }
+        ]
+      },
+      {
+        "id": "lore_runecraft",
+        "speaker": "Aldermast",
+        "text": "Rune crafting? A worthy pursuit. Find the Spell Tome in this very tower -- it will guide you. Start with Arcane Dust before you attempt anything more ambitious. The tome is upstairs.",
+        "choices": [
+          { "text": "Ask something else.", "targetNodeId": "idle" },
+          { "text": "Goodbye, Aldermast." }
+        ]
+      },
+      {
+        "id": "lore_magic",
+        "speaker": "Aldermast",
+        "text": "Pattern recognition, at the most fundamental level. The world has a grammar. Magic is learning to speak it. The runes are just mnemonic shortcuts -- training wheels for those who haven't memorised the conjugations yet. Give it time.",
+        "choices": [
+          { "text": "Ask something else.", "targetNodeId": "idle" },
+          { "text": "Goodbye, Aldermast." }
+        ]
+      }
+    ]
+  },
+  {
     "name": "willa_bank",
     "startNodeId": "menu",
     "nodes": [

@@ -2259,24 +2259,28 @@ void handleHarvesting(BeTileGridFrame* frame, bool forced = false) {
     frame->requestedToastText = toastScratch().c_str();
 }
 
-// ======= Aldermast's quest chain: "The Ashen Seal" / "The Void Shards" =======
+// ======= Aldermast's quest chain: "The Ashen Seal" / "The Void Shards" /
+// "The Fractured Grimoire" =======
 // Transcribed from js/zones.js's openWizardDialogue()/openWizardConstellationOffer()
-// (lines 6-246). A real, working proof-of-concept for the quest/dialogue
-// system, not a full port of the whole wizard conversation tree -- see this
-// function group's own doc comments below and PORTING_PLAN.md's own
-// js/quests.js row for exactly which JS branches are covered vs. deferred.
+// (lines 6-246, read in full). A real, working proof-of-concept for the
+// quest/dialogue system covering all three of Aldermast's quests plus his
+// always-available lore Q&A/idle chat -- see this function group's own doc
+// comments below and PORTING_PLAN.md's own js/quests.js row for exactly
+// which JS branches this covers.
 //
 // State: every JS `questFlags.X` boolean this pass touches becomes a host
 // flag (same "1.0/0.0 for true/false" convention skill XP already uses in
-// this file). `void_shards_found` is transcribed as a NUMBER (0-4), not a
-// boolean, matching the JS's own `questFlags.void_shards_found || 0` usage
-// (js/zones.js line 114) -- nothing in THIS port increments it yet, since no
-// dungeon-chest-loot system exists anywhere in this file/GrimstoneGame.cpp
-// (checked: no "chest"/"loot" handling anywhere in this file) to be the
-// source of truth for "the player found a shard." That's a real, separate
-// gap (same shape as handleFishing()'s own documented zone-read gap above),
-// not something this quest-chain pass invents a workaround for -- the flag
-// exists and is read/displayed correctly the moment something else sets it.
+// this file). `void_shards_found` (0-4) and `tome_fragments_found` (0-3) are
+// transcribed as NUMBERS, not booleans, matching the JS's own
+// `questFlags.void_shards_found || 0` / `questFlags.tome_fragments_found ||
+// 0` usage (js/zones.js lines 114, 152) -- nothing in THIS port increments
+// either one yet, since no dungeon-chest-loot system exists anywhere in this
+// file/GrimstoneGame.cpp (checked: no "chest"/"loot" handling anywhere in
+// this file) to be the source of truth for "the player found a shard/
+// fragment." That's a real, separate gap (same shape as handleFishing()'s
+// own documented zone-read gap above), not something this quest-chain pass
+// invents a workaround for -- both flags are read/displayed correctly the
+// moment something else sets them.
 //
 // Aldermast's own real Grimstone location: js/npcs.js line 670-673 calls
 // openWizardDialogue() for T.NPC_WIZARD, and js/zones.js line 476 places
@@ -2417,6 +2421,30 @@ void updateAldermastObjectives(BeTileGridFrame* frame) {
             queueFlagSet("aldermast_obj_void_done", done ? 1.0 : 0.0);
         }
     }
+
+    // ---- QUEST 3: The Fractured Grimoire (js/zones.js lines 131-184) ----
+    // Same "stage transition, not every frame" gating as the two objectives
+    // above -- a third `TileGridObjectiveLog` entry, warranted because the
+    // JS treats this as a real, independently tracked third quest (its own
+    // accept line, its own `tome_fragments_found` progress counter, its own
+    // hand-in and reward), not a footnote on the Void Shards objective.
+    const bool grimoireAccepted = readFlag(frame, "grimoire_accepted", 0.0) != 0.0;
+    if (grimoireAccepted) {
+        const bool grimoireDone = readFlag(frame, "grimoire_done", 0.0) != 0.0;
+        const int frags3 = grimoireDone ? 3 : static_cast<int>(readFlag(frame, "tome_fragments_found", 0.0));
+        const double storedFragCount = readFlag(frame, "aldermast_obj_grimoire_count", -1.0);
+        const double storedGrimoireDone = readFlag(frame, "aldermast_obj_grimoire_done", 0.0);
+        const bool grimoireDoneChanged = (grimoireDone ? 1.0 : 0.0) != storedGrimoireDone;
+        if (static_cast<double>(frags3) != storedFragCount || grimoireDoneChanged) {
+            if (grimoireDone) {
+                queueObjectiveUpdate("grimoire", "The Fractured Grimoire has been made whole again.", true);
+            } else {
+                queueObjectiveUpdate("grimoire", "Find the Grimoire Fragments (" + std::to_string(frags3) + "/3)", false);
+            }
+            queueFlagSet("aldermast_obj_grimoire_count", static_cast<double>(frags3));
+            queueFlagSet("aldermast_obj_grimoire_done", grimoireDone ? 1.0 : 0.0);
+        }
+    }
 }
 
 // ======= Dialogue start (Part 4 wiring) =======
@@ -2425,18 +2453,44 @@ void updateAldermastObjectives(BeTileGridFrame* frame) {
 // covers ANY dialog source, not just tree-driven ones), pushes exactly the
 // tree that matches the JS's own top-level if-chain in openWizardDialogue()/
 // openWizardConstellationOffer() for the player's CURRENT quest state.
-// Real, hand-authored branch coverage vs. deferred, per PORTING_PLAN.md:
-// covered -- the initial offer (3 choices), the accepted-not-found
-// reminder, the found-it hand-in (grants ring_of_warding), the found-but-
-// lost-it fallback, the Void Shards offer (both the undertrained refusal
-// and the real accept/not-yet offer), and a minimal in-progress reminder.
-// Deferred -- the constellation_done Grimoire hand-off and beyond (JS lines
-// 130-184), the always-available lore options and post-Grimoire idle chat
-// (JS lines 186-208), and the void_shards_found==4-but-not-yet-handed-in
-// "I'm gathering them" branch (JS lines 118-145) -- once constellation_done
-// is set this file has nothing further to offer and simply doesn't open a
-// dialogue at all, rather than silently mis-routing into an unauthored
-// state.
+// Real, hand-authored branch coverage, per PORTING_PLAN.md: the initial
+// offer (3 choices), the accepted-not-found reminder, the found-it hand-in
+// (grants ring_of_warding), the found-but-lost-it fallback, the Void Shards
+// offer (both the undertrained refusal and the real accept/not-yet offer),
+// the in-progress reminder, the 4/4-found-not-yet-handed-in branch (JS
+// lines 118-145 -- hand-in when the player still holds all 4 shards,
+// "I'm gathering them" when they don't), the Fractured Grimoire quest (JS
+// lines 130-184: progress/"what's in it", hand-in granting
+// staff_of_aldermast, and the found-but-not-carrying-all-3 fallback), and
+// the always-available lore Q&A/idle chat (JS lines 186-208).
+//
+// **Reachability proof for the idle-chat branch**, checked by tracing every
+// guard above it in openWizardDialogue(): every earlier `if`-block returns
+// early, so falling through to the idle-chat code at JS line 186 requires
+// `ashen_seal_returned && constellation_accepted && constellation_done` to
+// ALL be true already (each is the negated condition of the block above it
+// that would otherwise have returned first) -- meaning the JS's own third
+// idle-chat variant ("The tower is quiet today...", line 192, guarding on
+// neither `grimoire_done` nor `constellation_done`) is genuinely
+// unreachable dead code in the original: `constellation_done` is already
+// guaranteed true by the time control gets there. This port's dispatch
+// below and `overrideAldermastLiveDialogueText()`'s idle-text override
+// therefore only implement the two REACHABLE variants
+// (`grimoire_done` / `!grimoire_done`), matching real JS behavior exactly
+// rather than adding a branch the original game can never show.
+//
+// **Real JS quirk, transcribed faithfully rather than "fixed"**: the
+// Fractured Grimoire offer only ever appears inline, as a follow-up inside
+// the Void Shards hand-in flow (`aldermast_void_handin`'s own
+// "void_epilogue" node) -- there is no separate top-level re-offer. So if
+// the player picks "Perhaps later." there, `grimoire_accepted` stays false
+// forever with `constellation_done` already true, and every future visit
+// falls straight to idle chat with no way back to that offer. That is what
+// the real JS does (checked: `openWizardDialogue()`'s own `constellation_
+// done`-gated block, JS line 113, is the ONLY place the Grimoire offer is
+// reachable, and it only fires while `!constellation_done`) -- this port's
+// dispatch below reproduces the same dead end rather than inventing a new
+// way back in.
 void startAldermastDialogue(BeTileGridFrame* frame, bool forced = false) {
     if (!forced && !frame->interactPressed) return;
     if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
@@ -2465,10 +2519,34 @@ void startAldermastDialogue(BeTileGridFrame* frame, bool forced = false) {
         frame->requestedPushDialog =
             (aldermastCombatAvg(frame) < 30) ? "dialogue:aldermast_void_offer_undertrained" : "dialogue:aldermast_void_offer";
     } else if (!constellationDone) {
-        frame->requestedPushDialog = "dialogue:aldermast_void_progress";
+        const int voidFound = static_cast<int>(readFlag(frame, "void_shards_found", 0.0));
+        if (voidFound < 4) {
+            frame->requestedPushDialog = "dialogue:aldermast_void_progress";
+        } else {
+            frame->requestedPushDialog = (countInInventory(frame, "void_shard") >= 4)
+                                              ? "dialogue:aldermast_void_handin"
+                                              : "dialogue:aldermast_void_gathering";
+        }
+    } else {
+        // constellation_done: either mid-Grimoire, done-with-Grimoire, or
+        // (the real JS dead end documented above) never-offered-again.
+        const bool grimoireAccepted = readFlag(frame, "grimoire_accepted", 0.0) != 0.0;
+        const bool grimoireDone = readFlag(frame, "grimoire_done", 0.0) != 0.0;
+        if (grimoireAccepted && !grimoireDone) {
+            const int fragsFound = static_cast<int>(readFlag(frame, "tome_fragments_found", 0.0));
+            if (fragsFound < 3) {
+                frame->requestedPushDialog = "dialogue:aldermast_grimoire_progress";
+            } else {
+                const bool hasAllFragments = countInInventory(frame, "tome_fragment_1") > 0 &&
+                                              countInInventory(frame, "tome_fragment_2") > 0 &&
+                                              countInInventory(frame, "tome_fragment_3") > 0;
+                frame->requestedPushDialog = hasAllFragments ? "dialogue:aldermast_grimoire_handin"
+                                                               : "dialogue:aldermast_grimoire_missing";
+            }
+        } else {
+            frame->requestedPushDialog = "dialogue:aldermast_lore_chat";
+        }
     }
-    // constellation_done: deferred (see this function's own doc comment) --
-    // deliberately opens nothing rather than guessing at an unauthored node.
 }
 
 // ======= Dialogue choice side effects the action vocabulary can't express
@@ -2511,6 +2589,24 @@ void applyAldermastDialogueSideEffects(BeTileGridFrame* frame) {
     } else if (std::strcmp(frame->activeDialogueTreeName, "aldermast_void_offer") == 0 &&
                std::strcmp(frame->activeDialogueNodeId, "accepted") == 0) {
         if (readFlag(frame, "constellation_accepted", 0.0) == 0.0) queueFlagSet("constellation_accepted", 1.0);
+    } else if (std::strcmp(frame->activeDialogueTreeName, "aldermast_void_handin") == 0) {
+        if (std::strcmp(frame->activeDialogueNodeId, "handin_thanks") == 0) {
+            if (readFlag(frame, "constellation_done", 0.0) == 0.0) {
+                queueItemGrant("void_shard", -4); // consumed on hand-in, same as the JS's removeFromInventory('void_shard', 4)
+                queueFlagSet("constellation_done", 1.0);
+            }
+        } else if (std::strcmp(frame->activeDialogueNodeId, "grimoire_accepted_confirm") == 0) {
+            if (readFlag(frame, "grimoire_accepted", 0.0) == 0.0) queueFlagSet("grimoire_accepted", 1.0);
+        }
+    } else if (std::strcmp(frame->activeDialogueTreeName, "aldermast_grimoire_handin") == 0 &&
+               std::strcmp(frame->activeDialogueNodeId, "handin_thanks") == 0) {
+        if (readFlag(frame, "grimoire_done", 0.0) == 0.0) {
+            // Consumed on hand-in, same as the JS's own three removeFromInventory() calls.
+            queueItemGrant("tome_fragment_1", -1);
+            queueItemGrant("tome_fragment_2", -1);
+            queueItemGrant("tome_fragment_3", -1);
+            queueFlagSet("grimoire_done", 1.0);
+        }
     }
 }
 
@@ -2539,6 +2635,44 @@ void overrideAldermastLiveDialogueText(BeTileGridFrame* frame) {
                                      " of the four Void Shards. Search the deepest chests in every dungeon -- the "
                                      "Ashwood Crypts, the Iron Depths, and the Cultist Catacombs. The shards are "
                                      "drawn to darkness.";
+        frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+    } else if (std::strcmp(frame->activeDialogueTreeName, "aldermast_grimoire_progress") == 0 &&
+               frame->activeDialogueNodeId != nullptr && std::strcmp(frame->activeDialogueNodeId, "progress") == 0) {
+        const int frags = static_cast<int>(readFlag(frame, "tome_fragments_found", 0.0));
+        dialogueOverrideScratch() = "You have found " + std::to_string(frags) +
+                                     " of the three Grimoire Fragments. Search dungeon chests across the Ashwood "
+                                     "Crypts, Iron Depths, and Cultist Catacombs. The pages still carry a faint "
+                                     "aetheric signature -- they glow.";
+        frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+    } else if (std::strcmp(frame->activeDialogueTreeName, "aldermast_lore_chat") == 0 &&
+               frame->activeDialogueNodeId != nullptr &&
+               (std::strcmp(frame->activeDialogueNodeId, "idle") == 0 ||
+                std::strcmp(frame->activeDialogueNodeId, "idle_more") == 0)) {
+        // Only the two REACHABLE idle-chat variants (see startAldermastDialogue()'s
+        // own doc comment on why the JS's third "tower is quiet" variant is dead code).
+        const bool grimoireDone = readFlag(frame, "grimoire_done", 0.0) != 0.0;
+        dialogueOverrideScratch() =
+            grimoireDone ? "The Grimoire is whole again. I have re-inscribed the void rune recipe into it -- that "
+                            "knowledge is safe now. Come back if you find anything else. I suspect you will."
+                         : "The constellation burns bright again. Whatever is happening below that chapel -- the "
+                           "surges will slow, for a time. Though I suspect the calm won't last. Come back if you "
+                           "find anything else interesting.";
+        frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
+    } else if (std::strcmp(frame->activeDialogueTreeName, "aldermast_lore_chat") == 0 &&
+               frame->activeDialogueNodeId != nullptr && std::strcmp(frame->activeDialogueNodeId, "lore_runecraft") == 0) {
+        // Live per JS's own `questFlags.magic_intro_seen` ternary (js/zones.js line
+        // 203-205) -- nothing in this port sets that flag yet (no Spell Tome/rune-
+        // crafting system is ported), so this always shows the "not yet seen" variant
+        // today, but stays correct if/when a future pass ports what sets it.
+        const bool magicIntroSeen = readFlag(frame, "magic_intro_seen", 0.0) != 0.0;
+        dialogueOverrideScratch() =
+            magicIntroSeen
+                ? "Runes are crystallised intent. The Arcane Dust forms the substrate -- coal gives the spark, "
+                  "copper ore the vessel. From there the elemental shape depends on what you bind into the dust. "
+                  "The Spell Tome upstairs has the full catalogue. Your Magic level governs what you can attempt "
+                  "without the rune... rebounding."
+                : "Rune crafting? A worthy pursuit. Find the Spell Tome in this very tower -- it will guide you. "
+                  "Start with Arcane Dust before you attempt anything more ambitious. The tome is upstairs.";
         frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
     }
 }
