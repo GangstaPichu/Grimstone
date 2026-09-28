@@ -2152,6 +2152,19 @@ void updateNightOverlay(BeTileGridFrame* frame) {
 // requestedLevelPath swap the moment one matches -- see the
 // "======= Zone transitions =======" section's own doc comment above for
 // the full mechanism.
+//
+// "dungeon_stair_down"-kinded markers are treated identically to "portal"
+// ones here -- buildProceduralZone()'s own zoneIndex 1/2 dungeon-entrance
+// markers (GrimstoneGame.cpp) now carry a real "targetZone" property
+// (pointing at buildAshenDungeon()/buildIronPeaksDungeon() via the
+// "ashen_dungeon"/"iron_dungeon" slugs, see zoneSlugToTileGrid()'s own doc
+// comment) but were deliberately kept at their original, descriptive
+// "dungeon_stair_down" kind rather than relabeled "portal" -- nothing else
+// in this codebase reads that kind for anything (checked: grep for
+// "dungeon_stair_down" across src/*.cpp turns up only where it's placed),
+// so widening the check here is strictly additive and keeps the marker's
+// own kind meaningful for a future consumer (e.g. a distinct stair icon)
+// instead of overloading it onto "portal" just to make it swappable.
 void handleZoneTransition(BeTileGridFrame* frame) {
     using namespace zonetransition;
 
@@ -2168,7 +2181,7 @@ void handleZoneTransition(BeTileGridFrame* frame) {
     const float px = frame->playerWorldX;
     const float py = frame->playerWorldY;
     for (const TileMarker& m : current->markers) {
-        if (m.kind != "portal") continue;
+        if (m.kind != "portal" && m.kind != "dungeon_stair_down") continue;
         const float dx = px - m.position.x;
         const float dy = py - m.position.y;
         if (dx * dx + dy * dy > kPortalTriggerRadiusWorld * kPortalTriggerRadiusWorld) continue;
@@ -2188,6 +2201,51 @@ void handleZoneTransition(BeTileGridFrame* frame) {
             daynight::forceChange();
         }
         return; // at most one transition per frame
+    }
+}
+
+// Homestead Sigil -- js/activities.js's getItemActions() (lines 249-256):
+// right-clicking a "home_sigil" inventory item shows a single "Teleport to
+// Homestead" action that (re)sets questFlags.homestead_rewarded and calls
+// enterInterior(makeHomeMap, ...) unconditionally -- there is no gate
+// checked AT USE TIME beyond already carrying the item; the real gate is
+// upstream, at the point Bertram HANDS OUT the sigil (js/npcs.js lines
+// 458-497, questFlags.homestead_quest_accepted -> homestead_rewarded +
+// addToInventory('home_sigil'), see js/activities.js's own doc comment a
+// few lines above this one). That upstream quest (Bertram's "A Place to
+// Call Home") is NOT ported here -- checked, zero hits for
+// homestead_rewarded/homestead_quest_accepted/home_sigil anywhere in this
+// port before this change (see the Dorin "Old Bones" dialogue section's
+// own doc comment above, which already documented this exact gap) -- so
+// this function intentionally mirrors the JS's OWN use-time behavior
+// (possession is the only real check) rather than inventing a quest-flag
+// gate the JS itself doesn't have. A player who reaches "home_sigil" any
+// other way this port allows (the "give" dev-console command, following
+// the same pattern as every other item id -- see runDevConsoleCommand()'s
+// own "give" handler below) can use it exactly as the JS's own action
+// would let them.
+//
+// This port has no generic "right-click an inventory item for a context
+// menu" primitive at all (checked -- see this function's own doc comment
+// on GameModuleApi.h's v14->v15 hotbar-use notification for the closest
+// real substitute this ABI actually offers), so rather than fake one,
+// this uses the ABI's own hotbar-use hook exactly as designed: pressing a
+// hotbar number key (1-8) that holds an item both selects AND immediately
+// "uses" it (BeTileGridFrame::hotbarUsedSlot/hotbarUsedItemId, read-only,
+// -1/"" every frame except the one such a key was freshly pressed over a
+// non-empty slot). The host does NOT consume the item itself (same doc
+// comment), and neither does this -- matching the JS, which never removes
+// "home_sigil" from inventory either (it's a reusable teleport, not a
+// one-shot consumable).
+void handleHomesteadSigilUse(BeTileGridFrame* frame) {
+    if (frame->hotbarUsedSlot < 0) return;
+    if (frame->hotbarUsedItemId == nullptr || std::strcmp(frame->hotbarUsedItemId, "home_sigil") != 0) return;
+
+    if (zonetransition::requestZoneSwap(frame, "homestead")) {
+        // js/activities.js line 253's own log() message, verbatim.
+        toastScratch() = "The sigil pulses with warm light. You feel the homestead calling...";
+        frame->requestedToastText = toastScratch().c_str();
+        daynight::forceChange(); // same "recompute weather for the new zone right away" as a real portal
     }
 }
 
@@ -4993,6 +5051,7 @@ void updateGrimstoneRuntime(BeTileGridFrame* frame) {
     cc::maybeOfferCharacterCreation(frame); // before every other system -- mandatory on a fresh save, see its own doc comment above
     cc::applyCharacterCreationEffects(frame);
     handleZoneTransition(frame); // before every other system -- see its own doc comment above
+    handleHomesteadSigilUse(frame); // a hotbar-use zone swap, same family as handleZoneTransition() above
     daynight::updateDayNightCycle(frame); // per-frame, not gated on interactPressed
     daynight::updateWeather(frame);       // per-frame, not gated on interactPressed -- reads activeZoneId(), so after handleZoneTransition()
     daynight::fireWeatherParticles(frame); // per-frame, not gated on interactPressed

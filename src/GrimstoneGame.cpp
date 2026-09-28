@@ -1464,6 +1464,16 @@ TileGrid buildProceduralZone(const TileKindRegistry& registry, int zoneIndex, ui
             marker.kind = "dungeon_stair_down";
             marker.name = "Dungeon Entrance";
             marker.position = glm::vec2(stair.x + 0.5f, stair.y + 0.5f);
+            // Wires this marker into the real zone graph -- see
+            // zoneSlugToTileGrid()'s own doc comment on "ashen_dungeon"/
+            // "iron_dungeon" for why these two slugs (not "cultist_catacombs"'s
+            // pre-existing pattern alone) are what buildAshenDungeon()/
+            // buildIronPeaksDungeon() are reached through. handleZoneTransition()
+            // (GrimstoneRuntime.cpp) reads this exact property off any "portal"-
+            // *or*-kinded marker with a non-empty targetZone, so this
+            // "dungeon_stair_down"-kinded marker just needed the same property
+            // added, not a kind change.
+            marker.properties["targetZone"] = (zoneIndex == 1) ? "ashen_dungeon" : "iron_dungeon";
             grid.markers.push_back(marker);
         }
     }
@@ -4417,13 +4427,33 @@ bool zoneSlugToTileGrid(const TileKindRegistry& registry, const std::string& slu
         return true;
     }
     // Reachable via buildChapelLevel()'s own hidden-tomb "portal" marker
-    // (targetZone "cultist_catacombs") -- the one dungeon actually wired to
-    // a portal marker with a real targetZone; the Ashen Crypts/Iron Depths
-    // dungeon stairs carry no targetZone at all yet (see
-    // buildAshenDungeon()/buildIronPeaksDungeon()'s own doc comments), so
-    // they're intentionally NOT in this table.
+    // (targetZone "cultist_catacombs").
     if (slug == "cultist_catacombs") {
         outGrid = buildCultistCatacombs(registry, seed);
+        return true;
+    }
+    // The Ashen Crypts/Iron Depths -- reachable via buildProceduralZone()'s
+    // own zoneIndex 1/2 "dungeon_stair_down" markers, which now carry a
+    // real targetZone of these two slugs (see that function's own doc
+    // comment on the dungeon-entrance block). Slugs are this port's own
+    // new snake_case names (matching buildGreenfieldLevel()'s own
+    // documented "forsaken_chapel"/"western_pass" convention) for
+    // buildAshenDungeon()'s "THE ASHEN CRYPTS" and
+    // buildIronPeaksDungeon()'s "THE IRON DEPTHS" -- neither dungeon has a
+    // JS-authored slug of its own to transcribe (js/zones.js's
+    // makeAshenDungeon()/makeIronPeaksDungeon() are reached via the JS's
+    // own interior-stack push, not a named zone id), so "ashen_dungeon"/
+    // "iron_dungeon" are new, not transcribed. Deliberately distinct from
+    // "ashen_moor"/"iron_peaks" (the OVERWORLD zones these dungeons sit
+    // under and return to via their own stair-up portal, DungeonGenConfig::
+    // exitTargetZone) -- reusing those slugs here would collide with the
+    // procedural-biome entries just above.
+    if (slug == "ashen_dungeon") {
+        outGrid = buildAshenDungeon(registry, seed);
+        return true;
+    }
+    if (slug == "iron_dungeon") {
+        outGrid = buildIronPeaksDungeon(registry, seed);
         return true;
     }
     return false;

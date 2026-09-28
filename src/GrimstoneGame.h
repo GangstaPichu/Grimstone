@@ -331,9 +331,9 @@ TileGrid buildDungeonMap(const TileKindRegistry& registry, const DungeonGenConfi
 
 // The Ashen Moor's own dungeon, "The Ashen Crypts" -- reached via
 // buildProceduralZone()'s own zoneIndex==1 "dungeon_stair_down" marker
-// (see that function's own doc comment; placeDungeonEntrance() places it,
-// but it currently carries no targetZone -- wiring that marker to this
-// function is left for a future pass, see PORTING_PLAN.md). Mirrors
+// (see that function's own doc comment), which now carries a real
+// targetZone of "ashen_dungeon" (zoneSlugToTileGrid()'s own new slug for
+// this function -- see its own doc comment). Mirrors
 // `function makeAshenDungeon(seed)` (js/zones.js, lines 1667-1673). Its
 // own stair-up TileMarker targets "ashen_moor" (buildProceduralZone()'s
 // own zoneIndex==1 slug).
@@ -341,10 +341,10 @@ TileGrid buildAshenDungeon(const TileKindRegistry& registry, uint32_t seed);
 
 // The Iron Peaks' own dungeon, "The Iron Depths" -- reached via
 // buildProceduralZone()'s own zoneIndex==2 "dungeon_stair_down" marker,
-// same caveat as buildAshenDungeon() above. Mirrors
-// `function makeIronPeaksDungeon(seed)` (js/zones.js, lines 1675-1681).
-// Its own stair-up TileMarker targets "iron_peaks" (buildProceduralZone()'s
-// own zoneIndex==2 slug).
+// now wired to the "iron_dungeon" slug, same as buildAshenDungeon() above.
+// Mirrors `function makeIronPeaksDungeon(seed)` (js/zones.js, lines
+// 1675-1681). Its own stair-up TileMarker targets "iron_peaks"
+// (buildProceduralZone()'s own zoneIndex==2 slug).
 TileGrid buildIronPeaksDungeon(const TileKindRegistry& registry, uint32_t seed);
 
 // The Cultist Catacombs, under the not-yet-ported Forsaken Chapel --
