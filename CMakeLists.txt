@@ -51,12 +51,58 @@ target_link_libraries(grimstone_game PRIVATE glm::glm nlohmann_json::nlohmann_js
 # Windows PE linking needs the host's import library to resolve the engine
 # symbols this plugin calls but doesn't define (see the Game SDK's own
 # README.md for why -- ELF/.so needs no such thing).
+#
+# Grimstone is a 2D TileGrid game (buildTileGridGamePluginPackage(), not a
+# 3D Rooms game) -- its neutral runtime host is TileGridHost, NOT Backrooms
+# (that's the 3D demo's own host/import-library). tools/update-game-sdk.sh
+# (engine submodule) bundles per-host import libraries under
+# lib/windows/{libBackrooms.dll.a, libTinyTown.dll.a, libTileGridHost.dll.a}
+# precisely so a 2D plugin doesn't accidentally link against the wrong
+# host's export table -- libTileGridHost.dll.a is the correct one here.
 if(WIN32)
-  set(BE_GAME_SDK_WIN_IMPLIB "${BE_GAME_SDK_DIR}/lib/windows/libBackrooms.dll.a")
+  set(BE_GAME_SDK_WIN_IMPLIB "${BE_GAME_SDK_DIR}/lib/windows/libTileGridHost.dll.a")
   if(EXISTS "${BE_GAME_SDK_WIN_IMPLIB}")
     target_link_libraries(grimstone_game PRIVATE "${BE_GAME_SDK_WIN_IMPLIB}")
   else()
     message(WARNING "No Windows import library at \"${BE_GAME_SDK_WIN_IMPLIB}\" -- "
       "linking grimstone_game.dll will likely fail to resolve engine symbols.")
+  endif()
+
+  # The plugin's own EXPORT side (footgun #10, engine/BEditor/CLAUDE.md):
+  # WINDOWS_EXPORT_ALL_SYMBOLS is a no-op for the GNU/MinGW toolchain (only
+  # implemented for MSVC/Clang-cl), so the explicit --export-all-symbols
+  # linker flag is what actually makes this target's own symbols resolvable
+  # -- mirrors every other Windows game-plugin target in the engine repo
+  # (backrooms_game/backrooms_game_editor/TileGridHost's own CMakeLists.txt).
+  set_target_properties(grimstone_game PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_link_options(grimstone_game PRIVATE -Wl,--export-all-symbols)
+  endif()
+
+  # Statically linking libstdc++/libgcc/libwinpthread into this plugin
+  # collides with TileGridHost.exe's own statically-linked copies of the
+  # same runtime internals (exported via ITS OWN WINDOWS_EXPORT_ALL_SYMBOLS)
+  # -- same multiple-definition hazard LiminalEngine/CMakeLists.txt's
+  # backrooms_game target documents. Ship the 3 sidecar MinGW runtime DLLs
+  # next to the plugin instead, the standard MinGW deployment pattern for a
+  # non-static shared library.
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    execute_process(
+      COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=libstdc++-6.dll
+      OUTPUT_VARIABLE BE_GRIMSTONE_MINGW_LIBSTDCXX_DLL OUTPUT_STRIP_TRAILING_WHITESPACE)
+    execute_process(
+      COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=libgcc_s_seh-1.dll
+      OUTPUT_VARIABLE BE_GRIMSTONE_MINGW_LIBGCC_DLL OUTPUT_STRIP_TRAILING_WHITESPACE)
+    execute_process(
+      COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=libwinpthread-1.dll
+      OUTPUT_VARIABLE BE_GRIMSTONE_MINGW_LIBWINPTHREAD_DLL OUTPUT_STRIP_TRAILING_WHITESPACE)
+    foreach(_be_grimstone_dll IN LISTS BE_GRIMSTONE_MINGW_LIBSTDCXX_DLL BE_GRIMSTONE_MINGW_LIBGCC_DLL
+                                        BE_GRIMSTONE_MINGW_LIBWINPTHREAD_DLL)
+      if(EXISTS "${_be_grimstone_dll}")
+        add_custom_command(TARGET grimstone_game POST_BUILD
+          COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_be_grimstone_dll}" "$<TARGET_FILE_DIR:grimstone_game>"
+          COMMENT "Copying MinGW runtime sidecar DLL ${_be_grimstone_dll}")
+      endif()
+    endforeach()
   endif()
 endif()
