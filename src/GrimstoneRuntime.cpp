@@ -3294,12 +3294,31 @@ void handleDungeonChestLoot(BeTileGridFrame* frame, bool forced = false) {
 //   the full catalog would need many more paginated menu screens than this
 //   pass's own scope covers). Dorin's own "Old Bones, New Debts" quest
 //   (js/npcs.js lines 499-535, 686-734 -- a forged-ledger side quest
-//   reached by sneaking into his shop after dark, hinging on Bertram AND
-//   Vayne/Edwyn, neither of whose OWN quest-giving dialogue exists in this
-//   file) is a real, substantially bigger gap than a dialogue tree -- a
-//   whole second quest-giver's dialogue plus a night-only stealth/break-in
-//   mechanic this port has no primitive for -- and is explicitly deferred,
-//   not attempted here.
+//   reached by sneaking into his shop after dark) remains explicitly
+//   **deferred**, re-audited in a later pass rather than left on its
+//   original (now partly stale) reasoning: the night-only sneak-in
+//   mechanic is NOT blocked on a missing time-of-day primitive any more
+//   -- daynight::isNight()/nightAlpha() below are real and already gate
+//   other content (handleFishing()'s night-only fish) -- but the
+//   quest's own gate, questFlags.old_bones_accepted, requires
+//   qf.homestead_rewarded (js/npcs.js line 499), which is the
+//   completion flag of an entirely separate, unported prior quest
+//   (Bertram's own "A Place to Call Home", js/npcs.js lines 458-497: 3
+//   wheat handed to Bertram for a home_sigil + homestead access) that
+//   never sets it anywhere in this port (grepped: zero hits for
+//   homestead_rewarded/homestead_quest_accepted across src/*.cpp), so
+//   old_bones_accepted can never become true here. Bertram himself is
+//   only an npc_spawn marker in this port (GrimstoneGame.cpp, "Old
+//   Bertram, outside the barn") with no dialogue function of his own;
+//   Vayne has no presence in this port at all, and Edwyn is only one of
+//   three generic, unnamed "guard" markers this dispatch can't address
+//   individually. Porting "Old Bones" for real means porting that whole
+//   second, unrelated homestead-sigil quest first -- out of scope for a
+//   Dorin-dialogue pass -- so it stays deferred; see PORTING_PLAN.md's
+//   own note on this quest for the full chain. No "getting caught"
+//   failure state exists in the JS (the hidden-chest reveal in
+//   js/activities.js's searchChest() never penalizes the player), so
+//   none is invented here either.
 //
 // **NPC "schedules" (movement between named locations by time of day):
 // checked, and there simply is none to port.** grep for "schedule" across

@@ -251,9 +251,21 @@ TileGrid buildInnInterior(const TileKindRegistry& registry);
 // Dorin's Trading Post: a small counter-and-stockroom layout, Dorin
 // himself behind the counter. The JS conditionally hides Dorin at night
 // during the "Old Bones" quest and swaps in a hidden chest instead
-// (`dorinAbsent`/`questFlags.old_bones_*`) -- day/night and quest flags
-// aren't ported yet (see PORTING_PLAN.md), so this always places Dorin,
-// matching the JS's own default (daytime, quest not accepted) state.
+// (`dorinAbsent`/`questFlags.old_bones_*`). Re-checked in a later pass:
+// day/night is NOT the blocker any more -- `daynight::isNight()`/
+// `nightAlpha()` (GrimstoneRuntime.cpp) are real and already used for
+// other night-gating (e.g. handleFishing()'s night-only fish), so this
+// comment's earlier "day/night... aren't ported yet" reasoning was
+// stale. The actual reason this always places Dorin is that
+// `questFlags.old_bones_accepted` can never become true in this port --
+// its own prerequisite, `homestead_rewarded`, is the completion flag of
+// an entirely separate, unported Bertram quest ("A Place to Call Home",
+// js/npcs.js lines 458-497). See PORTING_PLAN.md's "Old Bones, New
+// Debts" note for the full real dependency chain (also: Vayne has no
+// presence in this port and Edwyn is only a generic, unaddressable
+// "guard" marker). Until that prerequisite quest exists, this matches
+// the JS's own reachable-by-every-player default (daytime, quest not
+// accepted) state, which is correct behavior, not a placeholder.
 TileGrid buildShopInterior(const TileKindRegistry& registry);
 
 // Mirrors `function makeBankInterior()` (js/zones.js, lines 2306-2354) --
