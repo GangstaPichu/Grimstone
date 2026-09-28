@@ -183,6 +183,298 @@
         "scale": 0.028,
         "color": [0.8, 0.9, 1.0],
         "text": "Combat Lv 1"
+      },
+      {
+        "kind": "panel",
+        "id": "skills_panel_bg",
+        "position": [0.02, 0.115],
+        "size": [0.26, 0.40],
+        "color": [0.06, 0.06, 0.09],
+        "alpha": 0.75,
+        "cornerRadius": 0.015
+      },
+      {
+        "kind": "label",
+        "id": "skills_panel_title",
+        "position": [0.035, 0.128],
+        "scale": 0.026,
+        "color": [0.9, 0.85, 0.6],
+        "text": "Skills"
+      },
+      {
+        "kind": "label",
+        "id": "skill_name_Mining",
+        "position": [0.035, 0.161],
+        "scale": 0.02,
+        "color": [0.85, 0.85, 0.9],
+        "text": "Mining"
+      },
+      {
+        "kind": "label",
+        "id": "skill_lvl_Mining",
+        "position": [0.225, 0.161],
+        "scale": 0.02,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Lv 1"
+      },
+      {
+        "kind": "slider",
+        "id": "skill_bar_Mining",
+        "position": [0.035, 0.180],
+        "size": [0.225, 0.011],
+        "color": [0.1, 0.1, 0.14],
+        "bevelColor": [0.55, 0.45, 0.2],
+        "value": 0.0
+      },
+      {
+        "kind": "label",
+        "id": "skill_name_Smithing",
+        "position": [0.035, 0.196],
+        "scale": 0.02,
+        "color": [0.85, 0.85, 0.9],
+        "text": "Smithing"
+      },
+      {
+        "kind": "label",
+        "id": "skill_lvl_Smithing",
+        "position": [0.225, 0.196],
+        "scale": 0.02,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Lv 1"
+      },
+      {
+        "kind": "slider",
+        "id": "skill_bar_Smithing",
+        "position": [0.035, 0.215],
+        "size": [0.225, 0.011],
+        "color": [0.1, 0.1, 0.14],
+        "bevelColor": [0.55, 0.45, 0.2],
+        "value": 0.0
+      },
+      {
+        "kind": "label",
+        "id": "skill_name_Woodcutting",
+        "position": [0.035, 0.231],
+        "scale": 0.02,
+        "color": [0.85, 0.85, 0.9],
+        "text": "Woodcutting"
+      },
+      {
+        "kind": "label",
+        "id": "skill_lvl_Woodcutting",
+        "position": [0.225, 0.231],
+        "scale": 0.02,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Lv 1"
+      },
+      {
+        "kind": "slider",
+        "id": "skill_bar_Woodcutting",
+        "position": [0.035, 0.250],
+        "size": [0.225, 0.011],
+        "color": [0.1, 0.1, 0.14],
+        "bevelColor": [0.55, 0.45, 0.2],
+        "value": 0.0
+      },
+      {
+        "kind": "label",
+        "id": "skill_name_Crafting",
+        "position": [0.035, 0.266],
+        "scale": 0.02,
+        "color": [0.85, 0.85, 0.9],
+        "text": "Crafting"
+      },
+      {
+        "kind": "label",
+        "id": "skill_lvl_Crafting",
+        "position": [0.225, 0.266],
+        "scale": 0.02,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Lv 1"
+      },
+      {
+        "kind": "slider",
+        "id": "skill_bar_Crafting",
+        "position": [0.035, 0.285],
+        "size": [0.225, 0.011],
+        "color": [0.1, 0.1, 0.14],
+        "bevelColor": [0.55, 0.45, 0.2],
+        "value": 0.0
+      },
+      {
+        "kind": "label",
+        "id": "skill_name_Fishing",
+        "position": [0.035, 0.301],
+        "scale": 0.02,
+        "color": [0.85, 0.85, 0.9],
+        "text": "Fishing"
+      },
+      {
+        "kind": "label",
+        "id": "skill_lvl_Fishing",
+        "position": [0.225, 0.301],
+        "scale": 0.02,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Lv 1"
+      },
+      {
+        "kind": "slider",
+        "id": "skill_bar_Fishing",
+        "position": [0.035, 0.320],
+        "size": [0.225, 0.011],
+        "color": [0.1, 0.1, 0.14],
+        "bevelColor": [0.3, 0.5, 0.65],
+        "value": 0.0
+      },
+      {
+        "kind": "label",
+        "id": "skill_name_Cooking",
+        "position": [0.035, 0.336],
+        "scale": 0.02,
+        "color": [0.85, 0.85, 0.9],
+        "text": "Cooking"
+      },
+      {
+        "kind": "label",
+        "id": "skill_lvl_Cooking",
+        "position": [0.225, 0.336],
+        "scale": 0.02,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Lv 1"
+      },
+      {
+        "kind": "slider",
+        "id": "skill_bar_Cooking",
+        "position": [0.035, 0.355],
+        "size": [0.225, 0.011],
+        "color": [0.1, 0.1, 0.14],
+        "bevelColor": [0.7, 0.4, 0.2],
+        "value": 0.0
+      },
+      {
+        "kind": "label",
+        "id": "skill_name_Farming",
+        "position": [0.035, 0.371],
+        "scale": 0.02,
+        "color": [0.85, 0.85, 0.9],
+        "text": "Farming"
+      },
+      {
+        "kind": "label",
+        "id": "skill_lvl_Farming",
+        "position": [0.225, 0.371],
+        "scale": 0.02,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Lv 1"
+      },
+      {
+        "kind": "slider",
+        "id": "skill_bar_Farming",
+        "position": [0.035, 0.390],
+        "size": [0.225, 0.011],
+        "color": [0.1, 0.1, 0.14],
+        "bevelColor": [0.35, 0.6, 0.25],
+        "value": 0.0
+      },
+      {
+        "kind": "label",
+        "id": "skill_name_Attack",
+        "position": [0.035, 0.406],
+        "scale": 0.02,
+        "color": [0.85, 0.85, 0.9],
+        "text": "Attack"
+      },
+      {
+        "kind": "label",
+        "id": "skill_lvl_Attack",
+        "position": [0.225, 0.406],
+        "scale": 0.02,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Lv 1"
+      },
+      {
+        "kind": "slider",
+        "id": "skill_bar_Attack",
+        "position": [0.035, 0.425],
+        "size": [0.225, 0.011],
+        "color": [0.1, 0.1, 0.14],
+        "bevelColor": [0.77, 0.19, 0.19],
+        "value": 0.0
+      },
+      {
+        "kind": "label",
+        "id": "skill_name_Defence",
+        "position": [0.035, 0.441],
+        "scale": 0.02,
+        "color": [0.85, 0.85, 0.9],
+        "text": "Defence"
+      },
+      {
+        "kind": "label",
+        "id": "skill_lvl_Defence",
+        "position": [0.225, 0.441],
+        "scale": 0.02,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Lv 1"
+      },
+      {
+        "kind": "slider",
+        "id": "skill_bar_Defence",
+        "position": [0.035, 0.460],
+        "size": [0.225, 0.011],
+        "color": [0.1, 0.1, 0.14],
+        "bevelColor": [0.4, 0.45, 0.75],
+        "value": 0.0
+      },
+      {
+        "kind": "label",
+        "id": "skill_name_Strength",
+        "position": [0.035, 0.476],
+        "scale": 0.02,
+        "color": [0.85, 0.85, 0.9],
+        "text": "Strength"
+      },
+      {
+        "kind": "label",
+        "id": "skill_lvl_Strength",
+        "position": [0.225, 0.476],
+        "scale": 0.02,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Lv 1"
+      },
+      {
+        "kind": "slider",
+        "id": "skill_bar_Strength",
+        "position": [0.035, 0.495],
+        "size": [0.225, 0.011],
+        "color": [0.1, 0.1, 0.14],
+        "bevelColor": [0.65, 0.32, 0.15],
+        "value": 0.0
+      },
+      {
+        "kind": "label",
+        "id": "skill_name_Hitpoints",
+        "position": [0.035, 0.511],
+        "scale": 0.02,
+        "color": [0.85, 0.85, 0.9],
+        "text": "Hitpoints"
+      },
+      {
+        "kind": "label",
+        "id": "skill_lvl_Hitpoints",
+        "position": [0.225, 0.511],
+        "scale": 0.02,
+        "color": [0.8, 0.9, 1.0],
+        "text": "Lv 10"
+      },
+      {
+        "kind": "slider",
+        "id": "skill_bar_Hitpoints",
+        "position": [0.035, 0.530],
+        "size": [0.225, 0.011],
+        "color": [0.1, 0.1, 0.14],
+        "bevelColor": [0.18, 0.58, 0.28],
+        "value": 0.0
       }
     ]
   },

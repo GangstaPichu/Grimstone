@@ -50,6 +50,21 @@ constexpr const char* kSkillXpFlagKeys[kSkillCount] = {
 // (xp 1154, SKILL_XP_TABLE[9]).
 constexpr double kSkillDefaultXp[kSkillCount] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1154};
 
+// Same display-name order as kSkillXpFlagKeys/GrimstoneSkill above --
+// case-insensitively matched, mirroring the JS's own
+// `charAt(0).toUpperCase()+slice(1).toLowerCase()` capitalization dance
+// (setskill/xp, lines 172, 187) with a plain case-fold instead (this port
+// has no `p.skills` object whose exact-cased keys need matching, just this
+// file's own fixed enum). Hoisted up here (was originally defined right
+// next to the dev-console skill lookup, much further down this file) so
+// updatePlayerHud()'s SkillsPanel section (below) can use it too --
+// devConsoleToLower()/findSkillByName() still live near the dev console,
+// unaffected; only the plain array moved.
+constexpr const char* kSkillDisplayNames[kSkillCount] = {
+    "Mining", "Smithing", "Woodcutting", "Crafting", "Fishing", "Cooking", "Farming",
+    "Attack", "Defence", "Strength", "Hitpoints",
+};
+
 // js/world.js line 103 -- levels 1-30; js/ui.js's xpForLevel() (line
 // 610-614) extrapolates past the table linearly by the table's own last
 // step, which the C++ xpForLevel() below reproduces exactly.
@@ -78,6 +93,14 @@ double readFlag(const BeTileGridFrame* frame, const char* key, double defaultVal
         if (std::strcmp(key, frame->flags[i].key) == 0) return frame->flags[i].value;
     return defaultValue;
 }
+
+// Forward-declared here (real definition, and handleDevConsoleToggle()'s own
+// doc comment on the fixed keysDown table, live much further down this
+// file) so updatePlayerHud()'s SkillsPanel toggle -- which needs to run
+// BEFORE handleDevConsoleToggle() is defined, since updatePlayerHud() itself
+// is defined and called earlier in this file's own top-to-bottom layout --
+// can reuse the identical helper rather than a second copy.
+bool isKeyDown(const BeTileGridFrame* frame, const char* name);
 
 // String-store twin of readFlag() above (BeTileGridFrame::strings,
 // TileGridStringStore.h) -- returns nullptr (not "", which would be
@@ -4509,10 +4532,63 @@ void handleRightClickMenu(BeTileGridFrame* frame) {
 // line 345) rather than inventing a new "active skill" concept this port
 // has no other use for -- js/ui.js's own production HUD already treats
 // combat level as ITS summary line, not a per-skill XP readout, so this
-// reuses that same real precedent instead of guessing at a new one. The
-// full per-skill XP-bar list (js/ui.js's separate, toggleable skills-panel,
-// updateSkillDisplay() etc.) is a substantially larger, separately-scoped
-// UI surface and is explicitly left for a future pass.
+// reuses that same real precedent instead of guessing at a new one.
+//
+// **Second pass (this one) closes the previously-deferred half**: js/ui.js's
+// separate skills panel (`#skills-panel`, buildSkillsPanel()/
+// updateSkillDisplay(), lines 42-60 and 484-609) is read in full before
+// writing any of what follows. What it actually is, checked rather than
+// assumed:
+//   - A persistent LEFT-side panel, NOT a modal/dialog -- it sits alongside
+//     the rest of the page the whole time a game is loaded. It is
+//     collapsible (skillsToggleBtn's ◀/▶ click, applySkillsState()) but its
+//     OWN real default, read from applySkillsState(localStorage.getItem(
+//     'grimstone_skills_collapsed') === '1') on a fresh browser with no
+//     stored preference, is EXPANDED, not collapsed. So "always visible
+//     alongside the rest of the HUD" is the right shape here, not a
+//     separate dialog-stack layout -- and TileGrid::hudLayoutName
+//     (TileGrid.h) is a SINGLE persistent-overlay slot per grid anyway (see
+//     its own doc comment), so a second "SkillsPanel" UILayout could never
+//     coexist with PlayerHUD as two simultaneously-active hud overlays even
+//     if it were built that way. This pass therefore extends the SAME
+//     PlayerHUD UILayout (content/ui-layouts.json) with the skill rows,
+//     authored `"visible": true` by default (UILayout.cpp's own
+//     `el.value("visible", true)` -- matching the JS's real fresh-browser
+//     default of expanded, not an invented "start hidden" guess) --
+//     matching this file's own "one central funnel" (zoneSlugToTileGrid())
+//     convention that hudLayoutName's own doc comment already documents.
+//   - Per skill: buildSkillsPanel() (line 491) shows a name label, a level
+//     number (`sk.lvl`, with a small equipment-bonus superscript this pass
+//     does NOT reproduce -- see below), and an XP progress bar toward next
+//     level (`skill-xp-fill`, width% = `(sk.xp-xpForLevel(sk.lvl)) /
+//     (xpForLevel(sk.lvl+1)-xpForLevel(sk.lvl)) * 100`, clamped to 100).
+//     ALL 11 skills at once, in one non-scrolling, non-paginated list (no
+//     pagination/scroll code anywhere in buildSkillsPanel()) -- so the new
+//     `SkillsPanel`-shaped section below authors exactly 11 rows, matching
+//     BattleMenu's own real Slider-element precedent (content/
+//     ui-layouts.json, `battle_player_hp_bar`/`battle_enemy_hp_bar`) for the
+//     bar itself.
+//   - Clicking a skill row additionally opens a floating tooltip
+//     (showSkillTooltip(), line 513) listing level milestones and live
+//     equipment-bonus lines (getEquipBonuses(), SKILL_BONUS_MAP). That
+//     tooltip -- and the equipment-bonus superscript on the level number it
+//     shares data with -- is real UI surface this port has no equivalent
+//     equipment-stat-bonus system for today (checked: no getEquipBonuses()
+//     analog anywhere in this file), and is a SEPARATE, follow-up-sized gap
+//     from "show the 11 skills' level+XP bar," not a one-line addition to
+//     it -- deliberately deferred here, same as this section's own prior
+//     "explicitly left for a future pass" note used to read, just narrowed
+//     to name the real remaining piece instead of the whole panel.
+//   - Toggle: js's own click-driven ◀/▶ button has no direct analog on this
+//     engine's fixed keysDown table (no mouse-hover/click-on-a-HUD-element
+//     primitive exists for this, unlike interactive dialog/battle Labels,
+//     which route through frame->clickedUiActionId, not a plain HUD
+//     overlay). A real key toggle is substituted instead, following
+//     handleDevConsoleToggle()'s own LeftControl+<letter> edge-detected
+//     `keysDown` pattern exactly (own "was down last frame" flag, toggling
+//     once per press, not once per frame held) -- LeftControl+K
+//     (kSkillsPanelToggleKey below), distinct from dev console's
+//     LeftControl+L. See handleSkillsPanelToggle() below.
 int playerHudCombatLevel(const BeTileGridFrame* frame) {
     const int atk = readSkillLevel(frame, GrimstoneSkill::Attack);
     const int def = readSkillLevel(frame, GrimstoneSkill::Defence);
@@ -4533,6 +4609,120 @@ std::string& hudCombatTextScratch() {
     return text;
 }
 
+// ---- Skills panel (js/ui.js's buildSkillsPanel()/updateSkillDisplay(),
+// closing the second half of this section's own doc comment above) ----
+constexpr const char* kSkillsPanelBgElementId = "skills_panel_bg";
+constexpr const char* kSkillsPanelTitleElementId = "skills_panel_title";
+constexpr const char* kSkillsPanelToggleKey = "K"; // + LeftControl -- see this section's own doc comment above
+constexpr const char* kSkillsPanelOpenFlag = "skills_panel_open";
+
+// Own "was the combo down last frame" edge-detect flag, same shape
+// handleDevConsoleToggle() below uses for its own LeftControl+L combo --
+// kept as a real per-frame flag (not a static local) since this whole file
+// keeps no persistent struct of its own, the same reasoning
+// handleFarmGrowthTick() already established and handleDevConsoleToggle()
+// reuses.
+void handleSkillsPanelToggle(BeTileGridFrame* frame) {
+    const bool comboDown = isKeyDown(frame, "LeftControl") && isKeyDown(frame, kSkillsPanelToggleKey);
+    const bool wasDown = readFlag(frame, "skills_panel_toggle_key_was_down", 0.0) != 0.0;
+    queueFlagSet("skills_panel_toggle_key_was_down", comboDown ? 1.0 : 0.0);
+
+    if (comboDown && !wasDown) {
+        // Default (flag never set) is OPEN -- matches js's own real
+        // fresh-browser default (applySkillsState() with no stored
+        // 'grimstone_skills_collapsed' preference is expanded), see this
+        // section's own doc comment above.
+        const bool currentlyOpen = readFlag(frame, kSkillsPanelOpenFlag, 1.0) != 0.0;
+        queueFlagSet(kSkillsPanelOpenFlag, currentlyOpen ? 0.0 : 1.0);
+    }
+}
+
+bool skillsPanelOpen(const BeTileGridFrame* frame) { return readFlag(frame, kSkillsPanelOpenFlag, 1.0) != 0.0; }
+
+// Element ids for each of the 11 skill rows, same order as
+// kSkillDisplayNames/GrimstoneSkill/kSkillXpFlagKeys above -- built once
+// into static storage (not re-concatenated every frame) since these are the
+// SAME 11 fixed strings on every single frame this runs.
+struct SkillPanelRowIds {
+    std::string nameId;
+    std::string lvlId;
+    std::string barId;
+};
+const std::vector<SkillPanelRowIds>& skillPanelRowIds() {
+    static const std::vector<SkillPanelRowIds> ids = [] {
+        std::vector<SkillPanelRowIds> v;
+        v.reserve(kSkillCount);
+        for (int i = 0; i < kSkillCount; ++i) {
+            const std::string name = kSkillDisplayNames[i];
+            v.push_back({"skill_name_" + name, "skill_lvl_" + name, "skill_bar_" + name});
+        }
+        return v;
+    }();
+    return ids;
+}
+
+// Pushes one visible/hasVisible-only override for `elementId` -- used for
+// every element in the panel whose ONLY per-frame concern is show/hide
+// (the background panel, the title, and each row's name label, none of
+// which have any other live value).
+void pushVisibleOnly(const char* elementId, bool visible) {
+    BeUiElementOverride ov{};
+    ov.elementId = elementId;
+    ov.hasVisible = 1;
+    ov.visible = visible ? 1 : 0;
+    uiOverrideBuffer().push_back(ov);
+}
+
+// Builds this frame's 11 skill rows (level text + XP-bar value), plus the
+// panel background/title, ALL gated on the same show/hide flag --
+// js/ui.js's own buildSkillsPanel() shows every skill at once with no
+// pagination (checked, see this section's own doc comment above), so this
+// mirrors that shape exactly rather than inventing paging this port has no
+// other precedent for. Appends into the SAME uiOverrideBuffer()
+// updatePlayerHud() (below) itself pushes the gold/combat overrides
+// into -- called FROM updatePlayerHud(), before that function re-derives
+// frame->requestedUiElementOverrides/Count from the buffer's own current
+// data()/size(), so no separate re-derivation is needed here (matching
+// handleRightClickMenu()'s/updatePlayerHud()'s own "one re-derive per
+// frame, after every append" discipline -- see this section's own doc
+// comment above for why re-deriving from anything OTHER than the buffer's
+// own live data()/size() would risk a dangling pointer after a push_back
+// reallocates).
+void updateSkillsPanel(BeTileGridFrame* frame) {
+    handleSkillsPanelToggle(frame);
+    const bool open = skillsPanelOpen(frame);
+
+    pushVisibleOnly(kSkillsPanelBgElementId, open);
+    pushVisibleOnly(kSkillsPanelTitleElementId, open);
+
+    for (int i = 0; i < kSkillCount; ++i) {
+        const auto& ids = skillPanelRowIds()[static_cast<size_t>(i)];
+        pushVisibleOnly(ids.nameId.c_str(), open);
+
+        const GrimstoneSkill skill = static_cast<GrimstoneSkill>(i);
+        const int level = readSkillLevel(frame, skill);
+        const double xp = readSkillXp(frame, skill);
+        const double baseXp = xpForLevel(level);
+        const double neededXp = xpForLevel(level + 1) - baseXp;
+        const double progress = neededXp > 0.0 ? std::clamp((xp - baseXp) / neededXp, 0.0, 1.0) : 1.0;
+
+        BeUiElementOverride lvlOv{};
+        lvlOv.elementId = ids.lvlId.c_str(); // skillPanelRowIds()'s own static vector -- stable for the program's whole lifetime, no interning needed
+        lvlOv.text = internString("Lv " + std::to_string(level));
+        lvlOv.hasVisible = 1;
+        lvlOv.visible = open ? 1 : 0;
+        uiOverrideBuffer().push_back(lvlOv);
+
+        BeUiElementOverride barOv{};
+        barOv.elementId = ids.barId.c_str();
+        barOv.hasValue = 1;
+        barOv.value = progress;
+        barOv.hasVisible = 1;
+        barOv.visible = open ? 1 : 0;
+        uiOverrideBuffer().push_back(barOv);
+    }
+}
+
 void updatePlayerHud(BeTileGridFrame* frame) {
     const double gold = readFlag(frame, kPlayerGoldFlag, 0.0);
     hudGoldTextScratch() = "Gold: " + std::to_string(static_cast<int>(gold));
@@ -4547,6 +4737,8 @@ void updatePlayerHud(BeTileGridFrame* frame) {
     combatOv.elementId = kHudCombatElementId;
     combatOv.text = hudCombatTextScratch().c_str();
     uiOverrideBuffer().push_back(combatOv);
+
+    updateSkillsPanel(frame);
 
     // Re-derive from the buffer's own current state rather than
     // incrementing whatever handleRightClickMenu() already set -- see this
@@ -4737,17 +4929,6 @@ std::vector<std::string> devConsoleSplitWhitespace(const std::string& s) {
     }
     return parts;
 }
-
-// Same display-name order as kSkillXpFlagKeys/GrimstoneSkill above --
-// case-insensitively matched, mirroring the JS's own
-// `charAt(0).toUpperCase()+slice(1).toLowerCase()` capitalization dance
-// (setskill/xp, lines 172, 187) with a plain case-fold instead (this port
-// has no `p.skills` object whose exact-cased keys need matching, just this
-// file's own fixed enum).
-constexpr const char* kSkillDisplayNames[kSkillCount] = {
-    "Mining", "Smithing", "Woodcutting", "Crafting", "Fishing", "Cooking", "Farming",
-    "Attack", "Defence", "Strength", "Hitpoints",
-};
 
 bool findSkillByName(const std::string& name, GrimstoneSkill* outSkill) {
     const std::string lower = devConsoleToLower(name);
