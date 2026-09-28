@@ -858,6 +858,313 @@ bool requestZoneSwap(BeTileGridFrame* frame, const std::string& targetZone) {
 // requests it.
 const std::string& activeZoneId() { return zonetransition::activeZoneIdRef(); }
 
+// ======= Character creation (js/character.js) =======
+// PORTING_PLAN.md's own js/character.js row named this exact gap: the
+// classes/origins/appearance screen that runs once, before a fresh
+// character's first playthrough, was never ported -- this port's skill/XP
+// core (xpForLevel()/levelForXp() above, all 11 skills as real flags) has
+// existed since early in this port, but nothing ever drove the one-time
+// choice that seeds it with the JS's own class/origin bonuses.
+//
+// **Read in full before writing any of this, per this pass's own task
+// framing**: js/character.js's CLASSES (7 entries)/ORIGINS (9 entries)
+// arrays are the real, mechanical data -- each grants a real skill-LEVEL
+// bonus (`bonus: {SkillName: N}`, applied via beginAdventure()'s own
+// `p.skills[k].lvl = Math.max(1, (p.skills[k].lvl||1) + v)`, NOT an XP
+// grant), a real starting-item grant (`gear: [...]`), and sometimes a
+// real starting-gold grant (`origin.gold`) or a real `startEquip` weapon/
+// armor item. SKIN_TONES/HAIR_COLORS/HAIR_STYLES and the free-text name
+// field are purely cosmetic -- js/render.js reads `p.appearance` to
+// pixel-paint a canvas avatar every frame, and this port's 2D TileGridHost
+// has no equivalent primitive at all (grepped GameModuleApi.h/
+// TileGridHostRunner.cpp for any player-sprite-tint/color field -- zero
+// hits), so there is no way to make a skin-tone/hair choice actually
+// CHANGE anything the player sees in this engine. Per this pass's own
+// task framing, that's fine: appearance is recorded as flags for
+// completeness/future use (see recordDefaultAppearance() below) rather
+// than faked with a UI this engine can't back.
+//
+// **A REAL, structural gap this pass found and is NOT working around**:
+// js/character.js's mage class and "arcane" origin both grant a `Magic`
+// skill bonus -- but this port's own GrimstoneSkill enum (top of this
+// file, mirrored from js/world.js's SKILL_XP_TABLE) has exactly the 11
+// skills js/world.js's own GAME_DEFAULT_SKILLS actually defines, and
+// Magic is not one of them (grepped: no "Magic"/"magic_xp" flag key
+// anywhere in this file). There is no skill to grant that bonus TO. Per
+// this pass's own task framing ("read carefully, don't assume"), that
+// bonus is simply DROPPED for both the mage class and the arcane origin
+// -- documented here, not silently swallowed -- while every other bonus
+// each one grants (Crafting/Hitpoints for mage, Crafting for arcane)
+// still applies in full.
+//
+// **UI, and why this reuses DialogueTree rather than a new UILayout**:
+// content/ui-layouts.json's existing entries establish a real "author a
+// UILayout, drive it via requestedPushDialog/clickedUiActionId" pattern
+// (DialogueTemplate/DevConsoleTemplate/RightClickMenu/PlayerHUD, read in
+// full before writing this) -- but the Bank system below (startBankDialogue()'s
+// own doc comment) already answered the identical "many fixed choices, no
+// free-text entry primitive on a DialogueChoice" question this screen
+// asks, by building a real, working DialogueTree instead of a bespoke
+// UILayout screen, reusing the ALREADY-authored, already-load-verified
+// "DialogueTemplate" layout every other dialogue tree in this file renders
+// through. A brand-new CharacterCreation UILayout would just be a second,
+// parallel implementation of exactly what DialogueTemplate already does
+// (a speaker Label, a body Label, up to kMaxDialogueChoices=4 choice
+// Labels) for no real gain -- so `content/dialogue-trees.json` gains one
+// new tree, "character_creation", instead. DialogueTree.h's own
+// kMaxDialogueChoices=4 is a real, checked ABI limit (this file's own
+// "no separate Trade entry" note near handleRightClickMenu() below
+// already found the identical limit), which is why 7 classes/9 origins
+// are PAGINATED across several "More paths.../More origins..." nodes
+// rather than offered on one screen -- there is no name-entry step (no
+// ABI field anywhere stores a player NAME at all, checked, zero hits --
+// js/character.js's own name field has nowhere on this ABI to go, so it
+// is not ported).
+//
+// **Gate, and the "first frame ever" signal**: there is no ABI field
+// anywhere naming "this is a fresh save" (checked GameModuleApi.h for
+// anything resembling "newGame"/"freshSave"/"isNewCharacter" -- zero
+// hits, the same kind of gap zonetransition::resumedActiveZoneFromSave()
+// above already worked around with its OWN persisted signal). This
+// reuses that shape but through the FLAG store (not a process-lifetime-
+// only static bool) specifically because "have I created my character
+// yet" has to survive a save/resume, not just this one process's
+// lifetime -- a static bool would re-offer character creation on every
+// relaunch of an already-created save. kCharacterCreatedFlag is this
+// plugin's own signal, set exactly once, on the frame the player
+// finishes the flow.
+namespace cc {
+
+constexpr const char* kCharacterCreatedFlag = "character_created";
+constexpr const char* kDialogueTreeName = "character_creation";
+
+// One skill-level delta -- terminated lists below use amount 0 as "unused
+// slot" rather than a sentinel skill, since GrimstoneSkill has no natural
+// "none" value of its own.
+struct SkillDelta {
+    GrimstoneSkill skill;
+    int amount;
+};
+
+// ---- Class bonuses (js/character.js's CLASSES array, lines 2-64) ----
+// gear[]/startEquip[] are granted IDENTICALLY, both as plain inventory
+// items -- this port has no equipment-slot system of any kind (the same
+// "no equipment-bonus/temp-buff system" gap handleCombatAttack() above
+// already documents), so there is nowhere else for a "weapon"/"body"
+// startEquip item to go.
+struct ClassDef {
+    const char* nodeId; // matches a cc_class_* node id in content/dialogue-trees.json
+    SkillDelta bonuses[4];
+    int bonusCount;
+    const char* gear[3];
+    int gearCount;
+    const char* startEquip[2]; // nullptr entries skipped -- not every class authors one
+};
+
+constexpr ClassDef kClassDefs[] = {
+    {"cc_class_warrior",
+     {{GrimstoneSkill::Attack, 5}, {GrimstoneSkill::Strength, 5}, {GrimstoneSkill::Defence, 3}, {GrimstoneSkill::Hitpoints, 3}},
+     4,
+     {"bronze_bar", nullptr, nullptr},
+     1,
+     {"bronze_sword", "leather_body"}},
+    {"cc_class_ranger",
+     {{GrimstoneSkill::Attack, 3}, {GrimstoneSkill::Woodcutting, 5}, {GrimstoneSkill::Fishing, 3}, {GrimstoneSkill::Hitpoints, 2}},
+     4,
+     {"normal_log", "raw_fish", nullptr},
+     2,
+     {"crude_bow", "leather_body"}},
+    {"cc_class_miner",
+     {{GrimstoneSkill::Mining, 5}, {GrimstoneSkill::Smithing, 5}, {GrimstoneSkill::Hitpoints, 2}}, // 4th slot zero-inits, unused (bonusCount 3)
+     3,
+     {"copper_ore", "copper_ore", "iron_ore"},
+     3,
+     {"wooden_club", "wooden_shield"}},
+    {"cc_class_rogue",
+     {{GrimstoneSkill::Attack, 4}, {GrimstoneSkill::Strength, 4}, {GrimstoneSkill::Crafting, 4}, {GrimstoneSkill::Hitpoints, 2}},
+     4,
+     {"goblin_hide", "coins", nullptr},
+     2,
+     {nullptr, nullptr}}, // js's own CLASSES entry has no startEquip for this class
+    {"cc_class_cook",
+     {{GrimstoneSkill::Cooking, 6}, {GrimstoneSkill::Fishing, 4}, {GrimstoneSkill::Hitpoints, 5}}, // 4th slot unused
+     3,
+     {"raw_fish", "raw_salmon", nullptr},
+     2,
+     {nullptr, nullptr}},
+    {"cc_class_farmhand",
+     {{GrimstoneSkill::Farming, 8}, {GrimstoneSkill::Cooking, 3}, {GrimstoneSkill::Hitpoints, 4}}, // 4th slot unused
+     3,
+     {"cooked_chicken", "cooked_pork", nullptr},
+     2,
+     {"wooden_club", nullptr}},
+    {"cc_class_mage",
+     // js's own CLASSES entry also grants "Magic: 8" here -- dropped, see
+     // this namespace's own doc comment above for why (no such skill
+     // exists in this port).
+     {{GrimstoneSkill::Crafting, 3}, {GrimstoneSkill::Hitpoints, 2}}, // 3rd/4th slots unused
+     2,
+     {"rune_fire", "rune_fire", "rune_heal"},
+     3,
+     {"old_staff", nullptr}},
+};
+constexpr int kClassDefCount = sizeof(kClassDefs) / sizeof(kClassDefs[0]);
+
+// ---- Origin bonuses (js/character.js's ORIGINS array, lines 66-76) ----
+struct OriginDef {
+    const char* nodeId; // matches a cc_origin_* node id in content/dialogue-trees.json
+    SkillDelta bonuses[2];
+    int bonusCount;
+    int gold; // 0 = none granted
+};
+
+constexpr OriginDef kOriginDefs[] = {
+    {"cc_origin_valley", {{GrimstoneSkill::Fishing, 5}}, 1, 0}, // 2nd slot unused
+    {"cc_origin_highlands", {{GrimstoneSkill::Mining, 5}, {GrimstoneSkill::Strength, 2}}, 2, 0},
+    {"cc_origin_exile", {{GrimstoneSkill::Crafting, 2}}, 1, 30}, // 2nd slot unused
+    {"cc_origin_orphan", {{GrimstoneSkill::Crafting, 5}, {GrimstoneSkill::Attack, 2}}, 2, 0},
+    {"cc_origin_soldier", {{GrimstoneSkill::Attack, 3}, {GrimstoneSkill::Defence, 3}}, 2, 0},
+    {"cc_origin_herbalist", {{GrimstoneSkill::Farming, 4}, {GrimstoneSkill::Cooking, 4}}, 2, 0},
+    {"cc_origin_pilgrim", {{GrimstoneSkill::Woodcutting, 3}, {GrimstoneSkill::Fishing, 3}}, 2, 0},
+    {"cc_origin_cursed", {{GrimstoneSkill::Hitpoints, 6}, {GrimstoneSkill::Attack, 1}}, 2, 0},
+    // js's own ORIGINS entry also grants "Magic: 8" here -- dropped, same
+    // reason as the mage class above; Crafting: 2 still applies.
+    {"cc_origin_arcane", {{GrimstoneSkill::Crafting, 2}}, 1, 0}, // 2nd slot unused
+};
+constexpr int kOriginDefCount = sizeof(kOriginDefs) / sizeof(kOriginDefs[0]);
+
+// Applies one skill-LEVEL bonus (not an xp grant) the same way
+// beginAdventure()'s own `Math.max(1, currLvl + v)` does: reads the
+// CURRENT level (already reflecting any earlier class bonus, since class
+// is always applied on an earlier real frame than origin -- a player
+// click, not this same update -- so the host has already drained and
+// persisted that SET before origin's own applySkillLevelBonus() call
+// ever reads it back), adds the delta, and SETs (not increments) the xp
+// flag to that level's own xpForLevel() -- exact and idempotent, and
+// matches the JS's own level-based (not xp-based) bonus semantics
+// precisely.
+void applySkillLevelBonus(const BeTileGridFrame* frame, GrimstoneSkill skill, int amount) {
+    int newLevel = readSkillLevel(frame, skill) + amount;
+    if (newLevel < 1) newLevel = 1;
+    queueFlagSet(kSkillXpFlagKeys[static_cast<int>(skill)], xpForLevel(newLevel));
+}
+
+void applyClassChoice(BeTileGridFrame* frame, const ClassDef& def) {
+    for (int i = 0; i < def.bonusCount; ++i) applySkillLevelBonus(frame, def.bonuses[i].skill, def.bonuses[i].amount);
+    for (int i = 0; i < def.gearCount; ++i) queueItemGrant(def.gear[i], 1);
+    for (const char* item : def.startEquip)
+        if (item != nullptr) queueItemGrant(item, 1);
+}
+
+void applyOriginChoice(BeTileGridFrame* frame, const OriginDef& def) {
+    for (int i = 0; i < def.bonusCount; ++i) applySkillLevelBonus(frame, def.bonuses[i].skill, def.bonuses[i].amount);
+    if (def.gold > 0) {
+        // kPlayerGoldFlag itself is defined much further down (near the
+        // bank system, which is where the "player_gold" wallet concept
+        // was first introduced -- see its own doc comment there), so this
+        // repeats its exact literal value rather than forward-declaring
+        // it, the same "no dependency worth restructuring the file for"
+        // call this section makes throughout.
+        BeFlagUpdate goldUpdate;
+        goldUpdate.key = "player_gold";
+        goldUpdate.value = static_cast<double>(def.gold);
+        goldUpdate.mode = 1; // INCREMENT
+        flagUpdateBuffer().push_back(goldUpdate);
+    }
+}
+
+// ---- Appearance (js/character.js's SKIN_TONES/HAIR_COLORS/HAIR_STYLES,
+// lines 78-90) ----
+// No UI offers a real choice here (see this namespace's own doc comment
+// above for why) -- recorded as the JS's own real DEFAULT charCreate
+// state (skinIdx:0, hairColorIdx:0, hairStyleIdx:0, matching both
+// js/character.js's initial `charCreate` object AND js/save-load.js's own
+// migration fallback for an old save with none, line 18) purely for
+// completeness/future use, exactly per this pass's own task framing
+// ("record the CHOICE as a flag... without trying to fake a visual
+// change this engine can't render").
+void recordDefaultAppearance() {
+    queueFlagSet("cc_appearance_skin_idx", 0.0);
+    queueFlagSet("cc_appearance_hair_color_idx", 0.0);
+    queueFlagSet("cc_appearance_hair_style_idx", 0.0);
+}
+
+// Heals the player up to whatever new max Hitpoints just produced --
+// mirrors js/character.js's own beginAdventure() closing lines
+// (`p.maxHp = p.skills.Hitpoints.lvl * 3; p.hp = p.maxHp;`).
+// syncHitpointsMaxHealth() (top of this file, runs every frame) already
+// derives playerMaxHealth from the Hitpoints skill level and requests it
+// via requestedSetMaxHealth -- but that write-back only clamps
+// playerHealth DOWN when the max shrinks (its own doc comment,
+// GameModuleApi.h), it never tops health UP when the max grows, so a
+// fresh character's Hitpoints bonus needs its own explicit heal-to-full
+// here, the same way js's own beginAdventure() always sets hp = maxHp
+// unconditionally.
+void healToNewMax(BeTileGridFrame* frame) {
+    const int hpLevel = readSkillLevel(frame, GrimstoneSkill::Hitpoints);
+    const float newMax = static_cast<float>(hpLevel) * 3.0f;
+    if (newMax > frame->playerHealth) frame->requestedHealthDelta = newMax - frame->playerHealth;
+}
+
+const ClassDef* findClassByNodeId(const char* nodeId) {
+    for (int i = 0; i < kClassDefCount; ++i)
+        if (std::strcmp(kClassDefs[i].nodeId, nodeId) == 0) return &kClassDefs[i];
+    return nullptr;
+}
+const OriginDef* findOriginByNodeId(const char* nodeId) {
+    for (int i = 0; i < kOriginDefCount; ++i)
+        if (std::strcmp(kOriginDefs[i].nodeId, nodeId) == 0) return &kOriginDefs[i];
+    return nullptr;
+}
+
+// Same "gate on ARRIVING at a specific destination node while
+// clickedUiActionId is non-empty this exact frame" pattern
+// applyAldermastDialogueSideEffects() below already establishes (see its
+// own doc comment for why -- activeDialogueNodeId already reflects the
+// node the click just advanced TO, not the one it was clicked FROM).
+// Every class/origin leaf node here is only ever reachable via forward
+// navigation (no "back" choice anywhere in content/dialogue-trees.json's
+// "character_creation" tree), so each one fires exactly once by
+// construction -- no extra idempotency guard is needed beyond the outer
+// kCharacterCreatedFlag gate in maybeOfferCharacterCreation() below,
+// which stops this tree from ever being pushed again once it's done.
+void applyCharacterCreationEffects(BeTileGridFrame* frame) {
+    if (frame->activeDialogueTreeName == nullptr || std::strcmp(frame->activeDialogueTreeName, kDialogueTreeName) != 0) return;
+    if (frame->clickedUiActionId == nullptr || frame->clickedUiActionId[0] == '\0') return;
+    if (frame->activeDialogueNodeId == nullptr) return;
+
+    if (const ClassDef* def = findClassByNodeId(frame->activeDialogueNodeId)) {
+        applyClassChoice(frame, *def);
+        return;
+    }
+    if (const OriginDef* def = findOriginByNodeId(frame->activeDialogueNodeId)) {
+        applyOriginChoice(frame, *def);
+        return;
+    }
+    if (std::strcmp(frame->activeDialogueNodeId, "cc_confirm") == 0) {
+        recordDefaultAppearance();
+        healToNewMax(frame);
+        queueFlagSet(kCharacterCreatedFlag, 1.0);
+        toastScratch() = "Your adventure in Ashenveil begins.";
+        frame->requestedToastText = toastScratch().c_str();
+    }
+}
+
+// Pushes the character-creation tree every frame the flag isn't set yet
+// AND nothing else already has the dialog stack -- so closing it early
+// (Escape, same as any other dialogue) simply reopens it next frame,
+// making the flow effectively mandatory before anything else can be
+// done, matching js/character.js's own "you cannot start the game
+// without finishing this screen" flow (goToCharCreate()/beginAdventure()
+// have no "skip" path at all).
+void maybeOfferCharacterCreation(BeTileGridFrame* frame) {
+    if (readFlag(frame, kCharacterCreatedFlag, 0.0) != 0.0) return;
+    if (frame->activeDialogLayoutName != nullptr && frame->activeDialogLayoutName[0] != '\0') return;
+    frame->requestedPushDialog = "dialogue:character_creation";
+}
+
+} // namespace cc
+
 // ======= Day/Night cycle + Weather =======
 // Transcribed from js/world.js's day/night tracking (lines 1-96) and
 // js/effects.js's Weather module (lines 608-888). Both are pure
@@ -3776,6 +4083,8 @@ void updateGrimstoneRuntime(BeTileGridFrame* frame) {
     uiOverrideBuffer().clear();
 
     syncHitpointsMaxHealth(frame);
+    cc::maybeOfferCharacterCreation(frame); // before every other system -- mandatory on a fresh save, see its own doc comment above
+    cc::applyCharacterCreationEffects(frame);
     handleZoneTransition(frame); // before every other system -- see its own doc comment above
     daynight::updateDayNightCycle(frame); // per-frame, not gated on interactPressed
     daynight::updateWeather(frame);       // per-frame, not gated on interactPressed -- reads activeZoneId(), so after handleZoneTransition()

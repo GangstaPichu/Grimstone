@@ -654,5 +654,209 @@
         ]
       }
     ]
+  },
+  {
+    "name": "character_creation",
+    "startNodeId": "cc_intro",
+    "nodes": [
+      {
+        "id": "cc_intro",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Before you take your first step into Ashenveil, you must choose your calling. Every path grants its own strengths and starting gear -- choose the one that calls to you.",
+        "choices": [
+          { "text": "Warrior -- iron and brute force", "targetNodeId": "cc_class_warrior" },
+          { "text": "Ranger -- swift and deadly from the shadows", "targetNodeId": "cc_class_ranger" },
+          { "text": "Prospector -- wealth waits beneath the stone", "targetNodeId": "cc_class_miner" },
+          { "text": "More paths...", "targetNodeId": "cc_class_page2" }
+        ]
+      },
+      {
+        "id": "cc_class_page2",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "There are other callings still. Choose one, or see what remains.",
+        "choices": [
+          { "text": "Shadowblade -- strikes once, and it is enough", "targetNodeId": "cc_class_rogue" },
+          { "text": "Alchemist -- life-saving concoctions from raw ingredients", "targetNodeId": "cc_class_cook" },
+          { "text": "Farmhand -- knows the soil and the seasons", "targetNodeId": "cc_class_farmhand" },
+          { "text": "One path remains...", "targetNodeId": "cc_class_page3" }
+        ]
+      },
+      {
+        "id": "cc_class_page3",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "One calling remains, for those touched by the arcane.",
+        "choices": [
+          { "text": "Arcane Mage -- the runes answered, and now they always will", "targetNodeId": "cc_class_mage" }
+        ]
+      },
+      {
+        "id": "cc_class_warrior",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Warrior. A battle-hardened fighter who charges into the fray. Masters of brute force and iron defence.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_origin_page1" }
+        ]
+      },
+      {
+        "id": "cc_class_ranger",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Ranger. A wanderer of the wilds who hunts from the shadows. Swift and deadly, masters of the hunt.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_origin_page1" }
+        ]
+      },
+      {
+        "id": "cc_class_miner",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Prospector. A hardy digger who knows every vein of ore in the rock. Wealth waits beneath the stone.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_origin_page1" }
+        ]
+      },
+      {
+        "id": "cc_class_rogue",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Shadowblade. A creature of darkness, lurking in fog and silence. They strike once -- and it is enough.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_origin_page1" }
+        ]
+      },
+      {
+        "id": "cc_class_cook",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Alchemist. Part chef, part herbalist. Transforms raw ingredients into life-saving concoctions.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_origin_page1" }
+        ]
+      },
+      {
+        "id": "cc_class_farmhand",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Farmhand. Raised on the land, calloused hands and a strong back. Knows the soil, the seasons, and which plants will kill you.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_origin_page1" }
+        ]
+      },
+      {
+        "id": "cc_class_mage",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Arcane Mage. You came to the arcane through study, obsession, or accident. Either way, the runes answered -- and now they always will.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_origin_page1" }
+        ]
+      },
+      {
+        "id": "cc_origin_page1",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "And where do you come from? Your origin shapes you too.",
+        "choices": [
+          { "text": "Valley Born -- a gentle start", "targetNodeId": "cc_origin_valley" },
+          { "text": "Highlander -- forged in the high crags", "targetNodeId": "cc_origin_highlands" },
+          { "text": "Exiled Noble -- coin, if little else", "targetNodeId": "cc_origin_exile" },
+          { "text": "More origins...", "targetNodeId": "cc_origin_page2" }
+        ]
+      },
+      {
+        "id": "cc_origin_page2",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "There are other origins still. Choose one, or see what remains.",
+        "choices": [
+          { "text": "Street Orphan -- learned to take what you needed", "targetNodeId": "cc_origin_orphan" },
+          { "text": "Veteran -- has seen real battle", "targetNodeId": "cc_origin_soldier" },
+          { "text": "Hedge Witch -- knows what grows and what heals", "targetNodeId": "cc_origin_herbalist" },
+          { "text": "More origins...", "targetNodeId": "cc_origin_page3" }
+        ]
+      },
+      {
+        "id": "cc_origin_page3",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "The last origins remain.",
+        "choices": [
+          { "text": "Wandering Pilgrim -- has walked every road", "targetNodeId": "cc_origin_pilgrim" },
+          { "text": "Cursed Bloodline -- starts in darkness", "targetNodeId": "cc_origin_cursed" },
+          { "text": "Arcane Touched -- the runes noticed you too", "targetNodeId": "cc_origin_arcane" }
+        ]
+      },
+      {
+        "id": "cc_origin_valley",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Valley Born. +5 Fishing, gentle start.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_confirm" }
+        ]
+      },
+      {
+        "id": "cc_origin_highlands",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Highlander. +5 Mining, +2 Strength.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_confirm" }
+        ]
+      },
+      {
+        "id": "cc_origin_exile",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Exiled Noble. +30 starting gold, +2 Crafting.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_confirm" }
+        ]
+      },
+      {
+        "id": "cc_origin_orphan",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Street Orphan. +5 Crafting, +2 Attack.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_confirm" }
+        ]
+      },
+      {
+        "id": "cc_origin_soldier",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Veteran. +3 Attack & Defence.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_confirm" }
+        ]
+      },
+      {
+        "id": "cc_origin_herbalist",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Hedge Witch. +4 Farming, +4 Cooking.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_confirm" }
+        ]
+      },
+      {
+        "id": "cc_origin_pilgrim",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Wandering Pilgrim. +3 Woodcutting, +3 Fishing.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_confirm" }
+        ]
+      },
+      {
+        "id": "cc_origin_cursed",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Cursed Bloodline. +6 Hitpoints, starts in darkness.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_confirm" }
+        ]
+      },
+      {
+        "id": "cc_origin_arcane",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Arcane Touched. +8 Magic, +2 Crafting.",
+        "choices": [
+          { "text": "Continue", "targetNodeId": "cc_confirm" }
+        ]
+      },
+      {
+        "id": "cc_confirm",
+        "speaker": "A Voice Beyond the Veil",
+        "text": "Your path is set. Take up your gear, and step into Ashenveil.",
+        "choices": [
+          { "text": "Begin your adventure" }
+        ]
+      }
+    ]
   }
 ]
