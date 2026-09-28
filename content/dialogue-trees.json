@@ -616,13 +616,52 @@
         "text": "Here's what I've got on tap tonight.",
         "choices": [
           { "text": "Pale Ale -- 4g", "targetNodeId": "pale_ale_buy_result" },
+          { "text": "Dark Stout -- 7g", "targetNodeId": "dark_stout_buy_result" },
           { "text": "Ashenveil Mead -- 10g", "targetNodeId": "ashenveil_mead_buy_result" },
+          { "text": "More on tap...", "targetNodeId": "bram_menu_page2" }
+        ]
+      },
+      {
+        "id": "bram_menu_page2",
+        "speaker": "Bram",
+        "text": "Still more where that came from.",
+        "choices": [
+          { "text": "Witchwood Brew -- 14g", "targetNodeId": "witchwood_brew_buy_result" },
+          { "text": "Ironpeak Lager -- 9g", "targetNodeId": "ironpeak_lager_buy_result" },
           { "text": "Inn Stew -- 8g", "targetNodeId": "inn_stew_buy_result" },
+          { "text": "More on tap...", "targetNodeId": "bram_menu_page3" }
+        ]
+      },
+      {
+        "id": "bram_menu_page3",
+        "speaker": "Bram",
+        "text": "Kitchen's got a bit more too.",
+        "choices": [
+          { "text": "Roast Leg -- 12g", "targetNodeId": "roast_leg_buy_result" },
+          { "text": "Ash Bread -- 3g", "targetNodeId": "ash_bread_buy_result" },
+          { "text": "Smoked Fish -- 6g", "targetNodeId": "smoked_fish_buy_result" },
+          { "text": "One more thing...", "targetNodeId": "bram_menu_page4" }
+        ]
+      },
+      {
+        "id": "bram_menu_page4",
+        "speaker": "Bram",
+        "text": "And last but not least.",
+        "choices": [
+          { "text": "Mushroom Pie -- 11g", "targetNodeId": "mushroom_pie_buy_result" },
           { "text": "Back to Bram", "targetNodeId": "greet" }
         ]
       },
       {
         "id": "pale_ale_buy_result",
+        "speaker": "Bram",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "bram_menu" }
+        ]
+      },
+      {
+        "id": "dark_stout_buy_result",
         "speaker": "Bram",
         "text": "One moment...",
         "choices": [
@@ -638,11 +677,59 @@
         ]
       },
       {
+        "id": "witchwood_brew_buy_result",
+        "speaker": "Bram",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "bram_menu_page2" }
+        ]
+      },
+      {
+        "id": "ironpeak_lager_buy_result",
+        "speaker": "Bram",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "bram_menu_page2" }
+        ]
+      },
+      {
         "id": "inn_stew_buy_result",
         "speaker": "Bram",
         "text": "One moment...",
         "choices": [
-          { "text": "All right.", "targetNodeId": "bram_menu" }
+          { "text": "All right.", "targetNodeId": "bram_menu_page2" }
+        ]
+      },
+      {
+        "id": "roast_leg_buy_result",
+        "speaker": "Bram",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "bram_menu_page3" }
+        ]
+      },
+      {
+        "id": "ash_bread_buy_result",
+        "speaker": "Bram",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "bram_menu_page3" }
+        ]
+      },
+      {
+        "id": "smoked_fish_buy_result",
+        "speaker": "Bram",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "bram_menu_page3" }
+        ]
+      },
+      {
+        "id": "mushroom_pie_buy_result",
+        "speaker": "Bram",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "bram_menu_page4" }
         ]
       }
     ]
@@ -785,10 +872,95 @@
         "speaker": "Dorin",
         "text": "Have a look at what I've got.",
         "choices": [
+          { "text": "Wooden Club -- 8g", "targetNodeId": "wooden_club_buy_result" },
           { "text": "Bronze Sword -- 40g", "targetNodeId": "bronze_sword_buy_result" },
+          { "text": "Iron Sword -- 120g", "targetNodeId": "iron_sword_buy_result" },
+          { "text": "More wares...", "targetNodeId": "dorin_buy_menu_page2" }
+        ]
+      },
+      {
+        "id": "dorin_buy_menu_page2",
+        "speaker": "Dorin",
+        "text": "Plenty more armour where that came from.",
+        "choices": [
+          { "text": "War Axe -- 95g", "targetNodeId": "war_axe_buy_result" },
+          { "text": "Steel Sword -- 280g", "targetNodeId": "steel_sword_buy_result" },
+          { "text": "Bone Dagger -- 60g", "targetNodeId": "bone_dagger_buy_result" },
+          { "text": "More wares...", "targetNodeId": "dorin_buy_menu_page3" }
+        ]
+      },
+      {
+        "id": "dorin_buy_menu_page3",
+        "speaker": "Dorin",
+        "text": "Still got a few pieces left.",
+        "choices": [
+          { "text": "Wooden Shield -- 15g", "targetNodeId": "wooden_shield_buy_result" },
+          { "text": "Bronze Shield -- 55g", "targetNodeId": "bronze_shield_buy_result" },
+          { "text": "Iron Shield -- 140g", "targetNodeId": "iron_shield_buy_result" },
+          { "text": "More wares...", "targetNodeId": "dorin_buy_menu_page4" }
+        ]
+      },
+      {
+        "id": "dorin_buy_menu_page4",
+        "speaker": "Dorin",
+        "text": "Getting to the good stuff now.",
+        "choices": [
+          { "text": "Kite Shield -- 320g", "targetNodeId": "kite_shield_buy_result" },
+          { "text": "Leather Coif -- 20g", "targetNodeId": "leather_coif_buy_result" },
+          { "text": "Bronze Helm -- 50g", "targetNodeId": "bronze_helm_buy_result" },
+          { "text": "More wares...", "targetNodeId": "dorin_buy_menu_page5" }
+        ]
+      },
+      {
+        "id": "dorin_buy_menu_page5",
+        "speaker": "Dorin",
+        "text": "Halfway through the rack.",
+        "choices": [
+          { "text": "Iron Helm -- 130g", "targetNodeId": "iron_helm_buy_result" },
+          { "text": "Steel Helm -- 300g", "targetNodeId": "steel_helm_buy_result" },
+          { "text": "Leather Body -- 30g", "targetNodeId": "leather_body_buy_result" },
+          { "text": "More wares...", "targetNodeId": "dorin_buy_menu_page6" }
+        ]
+      },
+      {
+        "id": "dorin_buy_menu_page6",
+        "speaker": "Dorin",
+        "text": "A bit more heavy gear.",
+        "choices": [
+          { "text": "Bronze Plate -- 80g", "targetNodeId": "bronze_plate_buy_result" },
+          { "text": "Iron Plate -- 200g", "targetNodeId": "iron_plate_buy_result" },
+          { "text": "Steel Plate -- 450g", "targetNodeId": "steel_plate_buy_result" },
+          { "text": "More wares...", "targetNodeId": "dorin_buy_menu_page7" }
+        ]
+      },
+      {
+        "id": "dorin_buy_menu_page7",
+        "speaker": "Dorin",
+        "text": "Almost through the lot.",
+        "choices": [
+          { "text": "Leather Legs -- 25g", "targetNodeId": "leather_legs_buy_result" },
+          { "text": "Bronze Legs -- 65g", "targetNodeId": "bronze_legs_buy_result" },
+          { "text": "Iron Legs -- 160g", "targetNodeId": "iron_legs_buy_result" },
+          { "text": "More wares...", "targetNodeId": "dorin_buy_menu_page8" }
+        ]
+      },
+      {
+        "id": "dorin_buy_menu_page8",
+        "speaker": "Dorin",
+        "text": "Last of it, plus something to eat.",
+        "choices": [
+          { "text": "Steel Legs -- 360g", "targetNodeId": "steel_legs_buy_result" },
+          { "text": "Cooked Trout -- 12g", "targetNodeId": "cooked_trout_buy_result" },
           { "text": "Cooked Salmon -- 20g", "targetNodeId": "cooked_salmon_buy_result" },
-          { "text": "Hoe -- 35g", "targetNodeId": "hoe_buy_result" },
           { "text": "Back to trading", "targetNodeId": "dorin_trade_menu" }
+        ]
+      },
+      {
+        "id": "wooden_club_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu" }
         ]
       },
       {
@@ -800,7 +972,7 @@
         ]
       },
       {
-        "id": "cooked_salmon_buy_result",
+        "id": "iron_sword_buy_result",
         "speaker": "Dorin",
         "text": "One moment...",
         "choices": [
@@ -808,11 +980,171 @@
         ]
       },
       {
-        "id": "hoe_buy_result",
+        "id": "war_axe_buy_result",
         "speaker": "Dorin",
         "text": "One moment...",
         "choices": [
-          { "text": "All right.", "targetNodeId": "dorin_buy_menu" }
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page2" }
+        ]
+      },
+      {
+        "id": "steel_sword_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page2" }
+        ]
+      },
+      {
+        "id": "bone_dagger_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page2" }
+        ]
+      },
+      {
+        "id": "wooden_shield_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page3" }
+        ]
+      },
+      {
+        "id": "bronze_shield_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page3" }
+        ]
+      },
+      {
+        "id": "iron_shield_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page3" }
+        ]
+      },
+      {
+        "id": "kite_shield_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page4" }
+        ]
+      },
+      {
+        "id": "leather_coif_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page4" }
+        ]
+      },
+      {
+        "id": "bronze_helm_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page4" }
+        ]
+      },
+      {
+        "id": "iron_helm_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page5" }
+        ]
+      },
+      {
+        "id": "steel_helm_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page5" }
+        ]
+      },
+      {
+        "id": "leather_body_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page5" }
+        ]
+      },
+      {
+        "id": "bronze_plate_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page6" }
+        ]
+      },
+      {
+        "id": "iron_plate_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page6" }
+        ]
+      },
+      {
+        "id": "steel_plate_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page6" }
+        ]
+      },
+      {
+        "id": "leather_legs_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page7" }
+        ]
+      },
+      {
+        "id": "bronze_legs_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page7" }
+        ]
+      },
+      {
+        "id": "iron_legs_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page7" }
+        ]
+      },
+      {
+        "id": "steel_legs_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page8" }
+        ]
+      },
+      {
+        "id": "cooked_trout_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page8" }
+        ]
+      },
+      {
+        "id": "cooked_salmon_buy_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_buy_menu_page8" }
         ]
       },
       {
@@ -820,10 +1152,51 @@
         "speaker": "Dorin",
         "text": "What are you selling?",
         "choices": [
+          { "text": "Bones -- 5g", "targetNodeId": "bones_sell_result" },
           { "text": "Goblin Hide -- 8g", "targetNodeId": "goblin_hide_sell_result" },
+          { "text": "Bronze Bar -- 20g", "targetNodeId": "bronze_bar_sell_result" },
+          { "text": "More I'll take...", "targetNodeId": "dorin_sell_menu_page2" }
+        ]
+      },
+      {
+        "id": "dorin_sell_menu_page2",
+        "speaker": "Dorin",
+        "text": "I'll take more than that.",
+        "choices": [
+          { "text": "Iron Bar -- 30g", "targetNodeId": "iron_bar_sell_result" },
+          { "text": "Gold Bar -- 55g", "targetNodeId": "gold_bar_sell_result" },
+          { "text": "Mithril Bar -- 90g", "targetNodeId": "mithril_bar_sell_result" },
+          { "text": "More I'll take...", "targetNodeId": "dorin_sell_menu_page3" }
+        ]
+      },
+      {
+        "id": "dorin_sell_menu_page3",
+        "speaker": "Dorin",
+        "text": "Still buying.",
+        "choices": [
+          { "text": "Coal -- 8g", "targetNodeId": "coal_sell_result" },
+          { "text": "Copper Ore -- 4g", "targetNodeId": "copper_ore_sell_result" },
           { "text": "Iron Ore -- 7g", "targetNodeId": "iron_ore_sell_result" },
+          { "text": "More I'll take...", "targetNodeId": "dorin_sell_menu_page4" }
+        ]
+      },
+      {
+        "id": "dorin_sell_menu_page4",
+        "speaker": "Dorin",
+        "text": "Last of what I'm after.",
+        "choices": [
+          { "text": "Normal Log -- 3g", "targetNodeId": "normal_log_sell_result" },
           { "text": "Oak Log -- 6g", "targetNodeId": "oak_log_sell_result" },
+          { "text": "Willow Log -- 12g", "targetNodeId": "willow_log_sell_result" },
           { "text": "Back to trading", "targetNodeId": "dorin_trade_menu" }
+        ]
+      },
+      {
+        "id": "bones_sell_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu" }
         ]
       },
       {
@@ -835,7 +1208,7 @@
         ]
       },
       {
-        "id": "iron_ore_sell_result",
+        "id": "bronze_bar_sell_result",
         "speaker": "Dorin",
         "text": "One moment...",
         "choices": [
@@ -843,11 +1216,75 @@
         ]
       },
       {
+        "id": "iron_bar_sell_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu_page2" }
+        ]
+      },
+      {
+        "id": "gold_bar_sell_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu_page2" }
+        ]
+      },
+      {
+        "id": "mithril_bar_sell_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu_page2" }
+        ]
+      },
+      {
+        "id": "coal_sell_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu_page3" }
+        ]
+      },
+      {
+        "id": "copper_ore_sell_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu_page3" }
+        ]
+      },
+      {
+        "id": "iron_ore_sell_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu_page3" }
+        ]
+      },
+      {
+        "id": "normal_log_sell_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu_page4" }
+        ]
+      },
+      {
         "id": "oak_log_sell_result",
         "speaker": "Dorin",
         "text": "One moment...",
         "choices": [
-          { "text": "All right.", "targetNodeId": "dorin_sell_menu" }
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu_page4" }
+        ]
+      },
+      {
+        "id": "willow_log_sell_result",
+        "speaker": "Dorin",
+        "text": "One moment...",
+        "choices": [
+          { "text": "All right.", "targetNodeId": "dorin_sell_menu_page4" }
         ]
       }
     ]

@@ -4016,12 +4016,23 @@ void applyNpcSellSideEffect(BeTileGridFrame* frame, const NpcShopItem& item) {
     frame->requestedDialogueTextOverride = dialogueOverrideScratch().c_str();
 }
 
-// Bram's curated 3-of-10 INNKEEPER_SHOP_CONFIG.buyStock subset (js/npcs.js
-// lines 1092-1113).
+// Bram's FULL INNKEEPER_SHOP_CONFIG.buyStock (js/npcs.js lines 1092-1113,
+// all 10 real buyStock entries) -- was a curated 3-of-10 subset; now
+// paginated across bram_menu/bram_menu_page2/3/4 (3 per page, matching
+// this port's own established character-creation pagination pattern,
+// kMaxDialogueChoices=4 per node) per this pass's own scope decision
+// (see PORTING_PLAN.md).
 constexpr NpcShopItem kBramShopItems[] = {
     {"pale_ale", "Pale Ale", 4.0},
+    {"dark_stout", "Dark Stout", 7.0},
     {"ashenveil_mead", "Ashenveil Mead", 10.0},
+    {"witchwood_brew", "Witchwood Brew", 14.0},
+    {"ironpeak_lager", "Ironpeak Lager", 9.0},
     {"inn_stew", "Inn Stew", 8.0},
+    {"roast_leg", "Roast Leg", 12.0},
+    {"ash_bread", "Ash Bread", 3.0},
+    {"smoked_fish", "Smoked Fish", 6.0},
+    {"mushroom_pie", "Mushroom Pie", 11.0},
 };
 constexpr int kBramShopItemCount = sizeof(kBramShopItems) / sizeof(kBramShopItems[0]);
 
@@ -4039,19 +4050,57 @@ void applyBramDialogueSideEffects(BeTileGridFrame* frame) {
     }
 }
 
-// Dorin's curated 3-buy/3-sell MERCHANT_SHOP_CONFIG subset (js/npcs.js
-// lines 947-1024) -- buy prices from buyStock, sell prices from
-// sellAccepts (both real entries, not invented).
+// Dorin's expanded MERCHANT_SHOP_CONFIG subset (js/npcs.js lines 947-1024)
+// -- was a curated 3-buy/3-sell subset out of 60+ real entries; now the
+// FULL Weapons/Shields/Helmets/Body Armour/Legs/Food buy categories (22
+// gear items, lines 955-980, + 2 food items, line 985-986 -- 24 total,
+// paginated 3-per-page across dorin_buy_menu/_page2../_page8) and a full
+// "raw materials" sell category (bones/hides/bars/ores/logs, lines
+// 996-1007 -- 12 items, paginated across dorin_sell_menu/_page2/3/4).
+// Ammo (2, bulk arrow bundles) and Farming (6, hoe+seeds) on the buy side,
+// and fish/crops (15) on the sell side, are still a deliberate cut for
+// dialogue-tree-size scope -- see PORTING_PLAN.md for the judgement call
+// and line citations.
 constexpr NpcShopItem kDorinBuyItems[] = {
+    {"wooden_club", "Wooden Club", 8.0},
     {"bronze_sword", "Bronze Sword", 40.0},
+    {"iron_sword", "Iron Sword", 120.0},
+    {"war_axe", "War Axe", 95.0},
+    {"steel_sword", "Steel Sword", 280.0},
+    {"bone_dagger", "Bone Dagger", 60.0},
+    {"wooden_shield", "Wooden Shield", 15.0},
+    {"bronze_shield", "Bronze Shield", 55.0},
+    {"iron_shield", "Iron Shield", 140.0},
+    {"kite_shield", "Kite Shield", 320.0},
+    {"leather_coif", "Leather Coif", 20.0},
+    {"bronze_helm", "Bronze Helm", 50.0},
+    {"iron_helm", "Iron Helm", 130.0},
+    {"steel_helm", "Steel Helm", 300.0},
+    {"leather_body", "Leather Body", 30.0},
+    {"bronze_plate", "Bronze Plate", 80.0},
+    {"iron_plate", "Iron Plate", 200.0},
+    {"steel_plate", "Steel Plate", 450.0},
+    {"leather_legs", "Leather Legs", 25.0},
+    {"bronze_legs", "Bronze Legs", 65.0},
+    {"iron_legs", "Iron Legs", 160.0},
+    {"steel_legs", "Steel Legs", 360.0},
+    {"cooked_trout", "Cooked Trout", 12.0},
     {"cooked_salmon", "Cooked Salmon", 20.0},
-    {"hoe", "Hoe", 35.0},
 };
 constexpr int kDorinBuyItemCount = sizeof(kDorinBuyItems) / sizeof(kDorinBuyItems[0]);
 constexpr NpcShopItem kDorinSellItems[] = {
+    {"bones", "Bones", 5.0},
     {"goblin_hide", "Goblin Hide", 8.0},
+    {"bronze_bar", "Bronze Bar", 20.0},
+    {"iron_bar", "Iron Bar", 30.0},
+    {"gold_bar", "Gold Bar", 55.0},
+    {"mithril_bar", "Mithril Bar", 90.0},
+    {"coal", "Coal", 8.0},
+    {"copper_ore", "Copper Ore", 4.0},
     {"iron_ore", "Iron Ore", 7.0},
+    {"normal_log", "Normal Log", 3.0},
     {"oak_log", "Oak Log", 6.0},
+    {"willow_log", "Willow Log", 12.0},
 };
 constexpr int kDorinSellItemCount = sizeof(kDorinSellItems) / sizeof(kDorinSellItems[0]);
 
