@@ -1,0 +1,2192 @@
+{
+  "kinds": [
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.25,
+        0.6000000238418579,
+        0.25
+      ],
+      "displayName": "Grass",
+      "footstep": "Concrete",
+      "id": "grass",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.41999998688697815,
+        0.2800000011920929
+      ],
+      "displayName": "Dirt",
+      "footstep": "Concrete",
+      "id": "dirt",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.550000011920929,
+        0.5799999833106995
+      ],
+      "displayName": "Stone Floor",
+      "footstep": "Concrete",
+      "id": "stone_floor",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": true,
+      "animationFrameSeconds": 0.6000000238418579,
+      "animationFrames": [
+        [
+          0.20000000298023224,
+          0.41999998688697815,
+          0.75
+        ],
+        [
+          0.23999999463558197,
+          0.5,
+          0.8399999737739563
+        ]
+      ],
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.20000000298023224,
+        0.41999998688697815,
+        0.75
+      ],
+      "displayName": "Water",
+      "footstep": "Concrete",
+      "id": "water",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.15000000596046448,
+        0.3499999940395355,
+        0.15000000596046448
+      ],
+      "displayName": "Dark Grass",
+      "footstep": "Concrete",
+      "id": "dark_grass",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.7200000286102295,
+        0.44999998807907104,
+        0.20000000298023224
+      ],
+      "displayName": "Copper Ore",
+      "footstep": "Concrete",
+      "id": "copper_ore_node",
+      "shape": "Circle",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.550000011920929,
+        0.6000000238418579
+      ],
+      "displayName": "Iron Ore",
+      "footstep": "Concrete",
+      "id": "iron_ore_node",
+      "shape": "Circle",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.7799999713897705,
+        0.6000000238418579,
+        0.1599999964237213
+      ],
+      "displayName": "Gold Ore",
+      "footstep": "Concrete",
+      "id": "gold_ore_node",
+      "shape": "Circle",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.3499999940395355,
+        0.550000011920929,
+        0.75
+      ],
+      "displayName": "Mithril Ore",
+      "footstep": "Concrete",
+      "id": "mithril_ore_node",
+      "shape": "Circle",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.15000000596046448,
+        0.15000000596046448,
+        0.15000000596046448
+      ],
+      "displayName": "Coal",
+      "footstep": "Concrete",
+      "id": "coal_node",
+      "shape": "Circle",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.20000000298023224,
+        0.44999998807907104,
+        0.1599999964237213
+      ],
+      "displayName": "Oak Tree",
+      "footstep": "Concrete",
+      "id": "oak_tree",
+      "shape": "Circle",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.2199999988079071,
+        0.41999998688697815,
+        0.23999999463558197
+      ],
+      "displayName": "Willow Tree",
+      "footstep": "Concrete",
+      "id": "willow_tree",
+      "shape": "Circle",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.11999999731779099,
+        0.3799999952316284,
+        0.14000000059604645
+      ],
+      "displayName": "Tree",
+      "footstep": "Concrete",
+      "id": "normal_tree",
+      "shape": "Circle",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.20000000298023224,
+        0.44999998807907104,
+        0.6499999761581421
+      ],
+      "displayName": "Fishing Spot",
+      "footstep": "Concrete",
+      "id": "fishing_spot",
+      "shape": "Circle",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.15000000596046448,
+        0.3499999940395355,
+        0.6000000238418579
+      ],
+      "displayName": "Fishing Spot (Deep)",
+      "footstep": "Concrete",
+      "id": "fishing_spot_2",
+      "shape": "Circle",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.3499999940395355,
+        0.550000011920929,
+        0.25
+      ],
+      "displayName": "Goblin",
+      "footstep": "Concrete",
+      "id": "goblin_spawn",
+      "shape": "Triangle",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.75
+      ],
+      "displayName": "Skeleton",
+      "footstep": "Concrete",
+      "id": "skeleton_spawn",
+      "shape": "Triangle",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.44999998807907104,
+        0.41999998688697815,
+        0.4000000059604645
+      ],
+      "displayName": "Wolf",
+      "footstep": "Concrete",
+      "id": "wolf_spawn",
+      "shape": "Triangle",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.3499999940395355,
+        0.30000001192092896,
+        0.2800000011920929
+      ],
+      "displayName": "Smelter",
+      "footstep": "Concrete",
+      "id": "smelter",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.75,
+        0.3499999940395355,
+        0.11999999731779099
+      ],
+      "displayName": "Cooking Fire",
+      "footstep": "Concrete",
+      "id": "cooking_fire",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.6000000238418579,
+        0.44999998807907104,
+        0.25
+      ],
+      "displayName": "Shop",
+      "footstep": "Concrete",
+      "id": "shop",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": true,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.44999998807907104,
+        0.44999998807907104,
+        0.47999998927116394
+      ],
+      "displayName": "Wall",
+      "footstep": "Concrete",
+      "id": "wall",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.30000001192092896,
+        0.2800000011920929,
+        0.30000001192092896
+      ],
+      "displayName": "Dungeon Floor",
+      "footstep": "Concrete",
+      "id": "dungeon_floor",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.6499999761581421,
+        0.3499999940395355,
+        0.8500000238418579
+      ],
+      "displayName": "Exit Portal",
+      "footstep": "Concrete",
+      "id": "exit",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.30000001192092896,
+        0.75
+      ],
+      "displayName": "Return Portal",
+      "footstep": "Concrete",
+      "id": "exit_return",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.5299999713897705,
+        0.5
+      ],
+      "displayName": "Cobblestone",
+      "footstep": "Concrete",
+      "id": "cobble",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.3499999940395355,
+        0.20000000298023224
+      ],
+      "displayName": "Inn (legacy)",
+      "footstep": "Concrete",
+      "id": "inn",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.4000000059604645,
+        0.3799999952316284,
+        0.4000000059604645
+      ],
+      "displayName": "Blacksmith (legacy)",
+      "footstep": "Concrete",
+      "id": "blacksmith",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.44999998807907104,
+        0.44999998807907104,
+        0.550000011920929
+      ],
+      "displayName": "Town Well",
+      "footstep": "Concrete",
+      "id": "town_well",
+      "shape": "Circle",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.3499999940395355,
+        0.3199999928474426,
+        0.20000000298023224
+      ],
+      "displayName": "Lamppost",
+      "footstep": "Concrete",
+      "id": "lamppost",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.3499999940395355,
+        0.3499999940395355,
+        0.550000011920929
+      ],
+      "displayName": "Guard NPC",
+      "footstep": "Concrete",
+      "id": "npc_guard",
+      "shape": "Triangle",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.6499999761581421,
+        0.5,
+        0.20000000298023224
+      ],
+      "displayName": "Merchant NPC",
+      "footstep": "Concrete",
+      "id": "npc_merchant",
+      "shape": "Triangle",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.699999988079071,
+        0.550000011920929,
+        0.44999998807907104
+      ],
+      "displayName": "Villager NPC",
+      "footstep": "Concrete",
+      "id": "npc_villager",
+      "shape": "Triangle",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.6000000238418579,
+        0.4000000059604645,
+        0.30000001192092896
+      ],
+      "displayName": "Innkeeper NPC",
+      "footstep": "Concrete",
+      "id": "npc_innkeeper",
+      "shape": "Triangle",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.5,
+        0.3499999940395355,
+        0.20000000298023224
+      ],
+      "displayName": "Inn Door",
+      "footstep": "Concrete",
+      "id": "inn_door",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.5,
+        0.44999998807907104
+      ],
+      "displayName": "Exit Interior",
+      "footstep": "Concrete",
+      "id": "exit_interior",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.44999998807907104,
+        0.3199999928474426,
+        0.18000000715255737
+      ],
+      "displayName": "Table",
+      "footstep": "Concrete",
+      "id": "table",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.41999998688697815,
+        0.30000001192092896,
+        0.1599999964237213
+      ],
+      "displayName": "Barrel",
+      "footstep": "Concrete",
+      "id": "barrel",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.25,
+        0.30000001192092896
+      ],
+      "displayName": "Bed",
+      "footstep": "Concrete",
+      "id": "bed",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.3499999940395355,
+        0.23999999463558197,
+        0.14000000059604645
+      ],
+      "displayName": "Bookshelf",
+      "footstep": "Concrete",
+      "id": "bookshelf",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.8500000238418579,
+        0.75,
+        0.4000000059604645
+      ],
+      "displayName": "Candle Stand",
+      "footstep": "Concrete",
+      "id": "candle",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.4000000059604645,
+        0.15000000596046448
+      ],
+      "displayName": "Chest",
+      "footstep": "Concrete",
+      "id": "chest",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.44999998807907104,
+        0.3499999940395355,
+        0.2199999988079071
+      ],
+      "displayName": "Notice Board",
+      "footstep": "Concrete",
+      "id": "notice_board",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.4000000059604645,
+        0.2800000011920929,
+        0.1599999964237213
+      ],
+      "displayName": "Workbench",
+      "footstep": "Concrete",
+      "id": "workbench",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.44999998807907104,
+        0.44999998807907104,
+        0.47999998927116394
+      ],
+      "displayName": "Gravestone",
+      "footstep": "Concrete",
+      "id": "grave",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": true,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.4000000059604645,
+        0.3199999928474426,
+        0.20000000298023224
+      ],
+      "displayName": "Fence",
+      "footstep": "Concrete",
+      "id": "fence",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.3499999940395355,
+        0.20000000298023224
+      ],
+      "displayName": "House (Variant A)",
+      "footstep": "Concrete",
+      "id": "house_a",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.30000001192092896,
+        0.3499999940395355,
+        0.550000011920929
+      ],
+      "displayName": "House (Variant B)",
+      "footstep": "Concrete",
+      "id": "house_b",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.25,
+        0.2199999988079071,
+        0.2800000011920929
+      ],
+      "displayName": "House (Variant C)",
+      "footstep": "Concrete",
+      "id": "house_c",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.8500000238418579,
+        0.3499999940395355,
+        0.550000011920929
+      ],
+      "displayName": "Flower",
+      "footstep": "Concrete",
+      "id": "flower",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.44999998807907104,
+        0.3499999940395355,
+        0.20000000298023224
+      ],
+      "displayName": "Sign",
+      "footstep": "Concrete",
+      "id": "sign",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.20000000298023224,
+        0.41999998688697815,
+        0.18000000715255737
+      ],
+      "displayName": "Bush",
+      "footstep": "Concrete",
+      "id": "bush",
+      "shape": "Circle",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.20000000298023224,
+        0.6499999761581421
+      ],
+      "displayName": "Chapel Portal",
+      "footstep": "Concrete",
+      "id": "chapel_portal",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.30000001192092896,
+        0.15000000596046448,
+        0.3499999940395355
+      ],
+      "displayName": "Cultist",
+      "footstep": "Concrete",
+      "id": "cultist",
+      "shape": "Triangle",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.3499999940395355,
+        0.30000001192092896,
+        0.3499999940395355
+      ],
+      "displayName": "Altar",
+      "footstep": "Concrete",
+      "id": "altar",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.4000000059604645,
+        0.4000000059604645,
+        0.44999998807907104
+      ],
+      "displayName": "Pillar",
+      "footstep": "Concrete",
+      "id": "pillar",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.30000001192092896,
+        0.699999988079071
+      ],
+      "displayName": "Chapel Rune",
+      "footstep": "Concrete",
+      "id": "chapel_rune",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.3499999940395355,
+        0.44999998807907104,
+        0.30000001192092896
+      ],
+      "displayName": "Zombie",
+      "footstep": "Concrete",
+      "id": "zombie",
+      "shape": "Triangle",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.25,
+        0.2199999988079071,
+        0.25
+      ],
+      "displayName": "Stairs Down",
+      "footstep": "Concrete",
+      "id": "dungeon_stair_down",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.30000001192092896,
+        0.2800000011920929,
+        0.30000001192092896
+      ],
+      "displayName": "Stairs Up",
+      "footstep": "Concrete",
+      "id": "dungeon_stair_up",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.30000001192092896,
+        0.25,
+        0.20000000298023224
+      ],
+      "displayName": "Dungeon Door",
+      "footstep": "Concrete",
+      "id": "dungeon_door",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.8999999761581421,
+        0.550000011920929,
+        0.15000000596046448
+      ],
+      "displayName": "Dungeon Torch",
+      "footstep": "Concrete",
+      "id": "dungeon_torch",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.2199999988079071,
+        0.20000000298023224,
+        0.23999999463558197
+      ],
+      "displayName": "Crypt Stair",
+      "footstep": "Concrete",
+      "id": "crypt_stair",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.15000000596046448,
+        0.11999999731779099,
+        0.20000000298023224
+      ],
+      "displayName": "Shadow Walker",
+      "footstep": "Concrete",
+      "id": "shadow_walker",
+      "shape": "Triangle",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.25,
+        0.44999998807907104,
+        0.30000001192092896
+      ],
+      "displayName": "Forest Portal",
+      "footstep": "Concrete",
+      "id": "forest_portal",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.3499999940395355,
+        0.25,
+        0.550000011920929
+      ],
+      "displayName": "Wizard Door",
+      "footstep": "Concrete",
+      "id": "wizard_door",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.44999998807907104,
+        0.30000001192092896,
+        0.6499999761581421
+      ],
+      "displayName": "Wizard NPC",
+      "footstep": "Concrete",
+      "id": "npc_wizard",
+      "shape": "Triangle",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.44999998807907104,
+        0.3499999940395355,
+        0.75
+      ],
+      "displayName": "Arcane Circle",
+      "footstep": "Concrete",
+      "id": "arcane_circle",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.3499999940395355,
+        0.3499999940395355,
+        0.4000000059604645
+      ],
+      "displayName": "Telescope",
+      "footstep": "Concrete",
+      "id": "telescope",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.3499999940395355,
+        0.44999998807907104,
+        0.3499999940395355
+      ],
+      "displayName": "Potion Rack",
+      "footstep": "Concrete",
+      "id": "potion_rack",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.3499999940395355,
+        0.6499999761581421
+      ],
+      "displayName": "Spell Tome",
+      "footstep": "Concrete",
+      "id": "spell_tome",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.6499999761581421,
+        0.8500000238418579
+      ],
+      "displayName": "Crystal Ball",
+      "footstep": "Concrete",
+      "id": "crystal_ball",
+      "shape": "Circle",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.20000000298023224,
+        0.20000000298023224,
+        0.2199999988079071
+      ],
+      "displayName": "Cauldron",
+      "footstep": "Concrete",
+      "id": "cauldron",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.4000000059604645,
+        0.3799999952316284,
+        0.36000001430511475
+      ],
+      "displayName": "Stone Rubble",
+      "footstep": "Concrete",
+      "id": "stone_rubble",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.4000000059604645,
+        0.4000000059604645,
+        0.41999998688697815
+      ],
+      "displayName": "Cracked Wall",
+      "footstep": "Concrete",
+      "id": "cracked_wall",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.6499999761581421,
+        0.25
+      ],
+      "displayName": "Farm Portal",
+      "footstep": "Concrete",
+      "id": "farm_portal",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.75,
+        0.6499999761581421,
+        0.25
+      ],
+      "displayName": "Hay Bale",
+      "footstep": "Concrete",
+      "id": "hay_bale",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.44999998807907104,
+        0.3499999940395355,
+        0.20000000298023224
+      ],
+      "displayName": "Fence Post",
+      "footstep": "Concrete",
+      "id": "fence_post",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.4000000059604645,
+        0.44999998807907104,
+        0.550000011920929
+      ],
+      "displayName": "Water Trough",
+      "footstep": "Concrete",
+      "id": "water_trough",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.41999998688697815,
+        0.20000000298023224
+      ],
+      "displayName": "Scarecrow",
+      "footstep": "Concrete",
+      "id": "scarecrow",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.75,
+        0.6499999761581421,
+        0.25
+      ],
+      "displayName": "Wheat Crop",
+      "footstep": "Concrete",
+      "id": "crop_wheat",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.3499999940395355,
+        0.3499999940395355
+      ],
+      "displayName": "Turnip Crop",
+      "footstep": "Concrete",
+      "id": "crop_turnip",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.6499999761581421,
+        0.550000011920929,
+        0.44999998807907104
+      ],
+      "displayName": "Windmill",
+      "footstep": "Concrete",
+      "id": "windmill",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.41999998688697815,
+        0.25
+      ],
+      "displayName": "Farmer NPC",
+      "footstep": "Concrete",
+      "id": "npc_farmer",
+      "shape": "Triangle",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.8500000238418579,
+        0.800000011920929,
+        0.699999988079071
+      ],
+      "displayName": "Chicken",
+      "footstep": "Concrete",
+      "id": "animal_chicken",
+      "shape": "Circle",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.8500000238418579,
+        0.6000000238418579,
+        0.6000000238418579
+      ],
+      "displayName": "Pig",
+      "footstep": "Concrete",
+      "id": "animal_pig",
+      "shape": "Circle",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.800000011920929,
+        0.75,
+        0.699999988079071
+      ],
+      "displayName": "Cow",
+      "footstep": "Concrete",
+      "id": "animal_cow",
+      "shape": "Circle",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.44999998807907104,
+        0.25,
+        0.20000000298023224
+      ],
+      "displayName": "Roof (Left)",
+      "footstep": "Concrete",
+      "id": "roof_l",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.5,
+        0.2800000011920929,
+        0.2199999988079071
+      ],
+      "displayName": "Roof (Middle)",
+      "footstep": "Concrete",
+      "id": "roof_m",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.44999998807907104,
+        0.25,
+        0.20000000298023224
+      ],
+      "displayName": "Roof (Right)",
+      "footstep": "Concrete",
+      "id": "roof_r",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.4000000059604645,
+        0.2199999988079071,
+        0.18000000715255737
+      ],
+      "displayName": "Roof (Chimney)",
+      "footstep": "Concrete",
+      "id": "roof_chimney",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.41999998688697815,
+        0.2800000011920929
+      ],
+      "displayName": "Wall (Door)",
+      "footstep": "Concrete",
+      "id": "bwall_door",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.6000000238418579,
+        0.5,
+        0.30000001192092896
+      ],
+      "displayName": "Wall (Window)",
+      "footstep": "Concrete",
+      "id": "bwall_win",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.75,
+        0.3499999940395355,
+        0.15000000596046448
+      ],
+      "displayName": "Wall (Forge)",
+      "footstep": "Concrete",
+      "id": "bwall_forge",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.6000000238418579,
+        0.44999998807907104,
+        0.30000001192092896
+      ],
+      "displayName": "Wall (Awning)",
+      "footstep": "Concrete",
+      "id": "bwall_awning",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.5,
+        0.47999998927116394
+      ],
+      "displayName": "Wall (Plain)",
+      "footstep": "Concrete",
+      "id": "bwall_plain",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.5,
+        0.4699999988079071,
+        0.44999998807907104
+      ],
+      "displayName": "Wall (Side)",
+      "footstep": "Concrete",
+      "id": "bwall_side",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.41999998688697815,
+        0.2800000011920929
+      ],
+      "displayName": "Dock Plank",
+      "footstep": "Concrete",
+      "id": "dock_plank",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.44999998807907104,
+        0.3199999928474426,
+        0.18000000715255737
+      ],
+      "displayName": "Small Table",
+      "footstep": "Concrete",
+      "id": "small_table",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.3499999940395355,
+        0.23999999463558197,
+        0.1599999964237213
+      ],
+      "displayName": "Wardrobe",
+      "footstep": "Concrete",
+      "id": "wardrobe",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.25,
+        0.15000000596046448
+      ],
+      "displayName": "Fireplace",
+      "footstep": "Concrete",
+      "id": "fireplace",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.25,
+        0.44999998807907104,
+        0.20000000298023224
+      ],
+      "displayName": "Plant",
+      "footstep": "Concrete",
+      "id": "plant",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.3499999940395355,
+        0.25,
+        0.15000000596046448
+      ],
+      "displayName": "Tilled Soil",
+      "footstep": "Concrete",
+      "id": "tilled_soil",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.3499999940395355,
+        0.550000011920929,
+        0.25
+      ],
+      "displayName": "Seedling",
+      "footstep": "Concrete",
+      "id": "seedling",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.44999998807907104,
+        0.6000000238418579,
+        0.25
+      ],
+      "displayName": "Growing Crop",
+      "footstep": "Concrete",
+      "id": "crop_growing",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.75,
+        0.6499999761581421,
+        0.25
+      ],
+      "displayName": "Wheat (Homestead)",
+      "footstep": "Concrete",
+      "id": "home_wheat",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.3499999940395355,
+        0.3499999940395355
+      ],
+      "displayName": "Turnip (Homestead)",
+      "footstep": "Concrete",
+      "id": "home_turnip",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.8500000238418579,
+        0.44999998807907104,
+        0.20000000298023224
+      ],
+      "displayName": "Carrot (Homestead)",
+      "footstep": "Concrete",
+      "id": "home_carrot",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.6499999761581421,
+        0.5,
+        0.30000001192092896
+      ],
+      "displayName": "Potato (Homestead)",
+      "footstep": "Concrete",
+      "id": "home_potato",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.699999988079071,
+        0.4000000059604645,
+        0.550000011920929
+      ],
+      "displayName": "Onion (Homestead)",
+      "footstep": "Concrete",
+      "id": "home_onion",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.44999998807907104,
+        0.30000001192092896
+      ],
+      "displayName": "Butter Churn",
+      "footstep": "Concrete",
+      "id": "butter_churn",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.550000011920929,
+        0.44999998807907104,
+        0.20000000298023224
+      ],
+      "displayName": "Caravan Portal",
+      "footstep": "Concrete",
+      "id": "caravan_portal",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.30000001192092896,
+        0.30000001192092896,
+        0.3199999928474426
+      ],
+      "displayName": "Anvil",
+      "footstep": "Concrete",
+      "id": "anvil",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.75,
+        0.7200000286102295,
+        0.6200000047683716
+      ],
+      "displayName": "Ash Grass",
+      "footstep": "Concrete",
+      "id": "ash_grass",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.6499999761581421,
+        0.6200000047683716,
+        0.550000011920929
+      ],
+      "displayName": "Ash Tree",
+      "footstep": "Concrete",
+      "id": "ash_tree",
+      "shape": "Circle",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.2800000011920929,
+        0.25,
+        0.30000001192092896
+      ],
+      "displayName": "Library Stairs Down",
+      "footstep": "Concrete",
+      "id": "library_stair_down",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.30000001192092896,
+        0.2800000011920929,
+        0.3199999928474426
+      ],
+      "displayName": "Library Stairs Up",
+      "footstep": "Concrete",
+      "id": "library_stair_up",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.44999998807907104,
+        0.10000000149011612,
+        0.10000000149011612
+      ],
+      "displayName": "Blood Trail",
+      "footstep": "Concrete",
+      "id": "blood_trail",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.75,
+        0.7200000286102295,
+        0.6200000047683716
+      ],
+      "displayName": "Dead Skeleton",
+      "footstep": "Concrete",
+      "id": "dead_skeleton_decor",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.3499999940395355,
+        0.23999999463558197,
+        0.14000000059604645
+      ],
+      "displayName": "Bookshelf (North)",
+      "footstep": "Concrete",
+      "id": "bookshelf_n",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.3499999940395355,
+        0.23999999463558197,
+        0.14000000059604645
+      ],
+      "displayName": "Bookshelf (East)",
+      "footstep": "Concrete",
+      "id": "bookshelf_e",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.3499999940395355,
+        0.23999999463558197,
+        0.14000000059604645
+      ],
+      "displayName": "Bookshelf (West)",
+      "footstep": "Concrete",
+      "id": "bookshelf_w",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.30000001192092896,
+        0.3499999940395355,
+        0.25
+      ],
+      "displayName": "Secret Bookshelf",
+      "footstep": "Concrete",
+      "id": "secret_bookshelf",
+      "shape": "Rect",
+      "solid": true,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.25,
+        0.3499999940395355,
+        0.2199999988079071
+      ],
+      "displayName": "Mossy Floor",
+      "footstep": "Concrete",
+      "id": "mossy_floor",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.75,
+        0.75,
+        0.75
+      ],
+      "displayName": "Spider Web",
+      "footstep": "Concrete",
+      "id": "spider_web",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.44999998807907104,
+        0.3499999940395355,
+        0.2199999988079071
+      ],
+      "displayName": "Book Pile",
+      "footstep": "Concrete",
+      "id": "book_pile",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.4000000059604645,
+        0.3799999952316284,
+        0.3499999940395355
+      ],
+      "displayName": "Vase",
+      "footstep": "Concrete",
+      "id": "vase",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    },
+    {
+      "animated": false,
+      "animationFrameSeconds": 0.20000000298023224,
+      "autotile": false,
+      "autotileInset": 0.30000001192092896,
+      "color": [
+        0.30000001192092896,
+        0.2800000011920929,
+        0.25999999046325684
+      ],
+      "displayName": "Secret Exit",
+      "footstep": "Concrete",
+      "id": "secret_exit",
+      "shape": "Rect",
+      "solid": false,
+      "unlit": false
+    }
+  ]
+}
