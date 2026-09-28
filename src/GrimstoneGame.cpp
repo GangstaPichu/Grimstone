@@ -1018,13 +1018,14 @@ struct EnemyCfg {
     int count;
 };
 
-// Real per-species combat/AI tuning for the four enemy kinds this file
-// paints (goblin_spawn/skeleton_spawn/wolf_spawn/zombie) -- ground truth
-// from js/activities.js's own ENEMY_DEFS (line 741-747): `hp` -> maxHealth,
-// `aggroRange` -> sightRadius, `speed` -> speed, `patrolRadius` ->
-// wanderRadius (an authored route always wins per TileAgentSpawn::
-// wanderRadius's own doc comment, but every placement below has no route,
-// so an idle enemy now actually patrols instead of standing frozen).
+// Real per-species combat/AI tuning for the six enemy kinds this file
+// paints (goblin_spawn/skeleton_spawn/wolf_spawn/zombie/cultist/
+// shadow_walker) -- ground truth from js/activities.js's own ENEMY_DEFS
+// (line 741-747): `hp` -> maxHealth, `aggroRange` -> sightRadius, `speed`
+// -> speed, `patrolRadius` -> wanderRadius (an authored route always wins
+// per TileAgentSpawn::wanderRadius's own doc comment, but every placement
+// below has no route, so an idle enemy now actually patrols instead of
+// standing frozen).
 //
 // `attackWeaponName` is a judgement call, not a direct field mapping: the
 // JS's own minDmg/maxDmg range has no matching authored weapon in
@@ -1037,6 +1038,8 @@ struct EnemyCfg {
 //   skeleton_spawn minDmg5 maxDmg12 avg8.5  -> t3(10), |10-8.5|=1.5
 //   wolf_spawn    minDmg4  maxDmg10 avg7.0  -> t2(6),  |6-7|=1.0
 //   zombie        minDmg4  maxDmg11 avg7.5  -> t2(6),  |6-7.5|=1.5 (vs t3's |10-7.5|=2.5)
+//   cultist       minDmg6  maxDmg14 avg10.0 -> t3(10), |10-10|=0
+//   shadow_walker minDmg5  maxDmg13 avg9.0  -> t3(10), |10-9|=1.0 (vs t2's |6-9|=3.0)
 struct EnemyAgentTuning {
     const char* kind; // matches this species' own registerGrimstoneTileKinds() id
     float maxHealth;
@@ -1050,6 +1053,8 @@ constexpr EnemyAgentTuning kEnemyAgentTuning[] = {
     {"skeleton_spawn", 28.0f, 6.0f, 1.4f, 3.0f, "grimstone_fists_t3"},
     {"wolf_spawn", 22.0f, 7.0f, 2.4f, 5.0f, "grimstone_fists_t2"},
     {"zombie", 35.0f, 4.0f, 0.9f, 3.0f, "grimstone_fists_t2"},
+    {"cultist", 32.0f, 7.0f, 1.6f, 5.0f, "grimstone_fists_t3"},
+    {"shadow_walker", 30.0f, 5.0f, 1.5f, 2.0f, "grimstone_fists_t3"},
 };
 constexpr int kEnemyAgentTuningCount = sizeof(kEnemyAgentTuning) / sizeof(kEnemyAgentTuning[0]);
 
@@ -1070,7 +1075,7 @@ const EnemyAgentTuning* findEnemyAgentTuning(const std::string& kind) {
 // live sprite reads as the same enemy the decorative tile used to paint,
 // not TileAgentSpawn's own generic magenta-triangle default.
 //
-// Any `tileId` outside the four species `kEnemyAgentTuning` lists (a future
+// Any `tileId` outside the six species `kEnemyAgentTuning` lists (a future
 // enemy kind added to this file without a matching tuning row, or a caller
 // passing something that isn't an enemy at all) still returns a real,
 // patrol-only spawn with the registry's own color/shape -- ReactionMode
@@ -1078,7 +1083,7 @@ const EnemyAgentTuning* findEnemyAgentTuning(const std::string& kind) {
 // GrimstoneRuntime.cpp's findEnemyDef() simply never matches it, the same
 // permissive-fallback shape idFromName() itself already uses elsewhere in
 // this file, rather than asserting on a case that isn't actually reachable
-// today (the four call sites below only ever pass a resolved enemy id).
+// today (every call site below only ever passes a resolved enemy id).
 TileAgentSpawn makeEnemyAgentSpawn(const TileKindRegistry& registry, TileKindId tileId, glm::vec2 position) {
     TileAgentSpawn spawn;
     spawn.kind = registry.nameFromId(tileId);
@@ -1711,7 +1716,11 @@ TileGrid buildStormcragLevel(const TileKindRegistry& registry) {
     }
 
     // ---- Shadow walkers scattered in the rocky mid-section -- JS lines
-    // 370-377 ----
+    // 370-377. Real agent spawns (see makeEnemyAgentSpawn()'s own doc
+    // comment), not the decorative floor tile this used to paint, same
+    // "closing the combat-recognition gap" pass buildWhisperwoodLevel()'s
+    // own shadow-walker scatter and buildChapelLevel()'s cultist scatter
+    // get below. ----
     int swPlaced = 0;
     for (int att = 0; att < 300 && swPlaced < 8; ++att) {
         const int ex = 4 + static_cast<int>(std::floor(rng.next() * (W - 8)));
@@ -1722,7 +1731,8 @@ TileGrid buildStormcragLevel(const TileKindRegistry& registry) {
         const bool nearPortalOrDoor =
             (std::abs(ex - 18) < 8 && ey < 8) || (std::abs(ex - towerX) < 10 && std::abs(ey - towerY) < 10);
         if (!nearPortalOrDoor) {
-            grid.setOverlay(ex, ey, shadowWalker);
+            grid.agentSpawns.push_back(makeEnemyAgentSpawn(
+                registry, shadowWalker, glm::vec2(static_cast<float>(ex) + 0.5f, static_cast<float>(ey) + 0.5f)));
             ++swPlaced;
         }
     }
@@ -2192,7 +2202,11 @@ TileGrid buildWhisperwoodLevel(const TileKindRegistry& registry) {
     }
 
     // ---- Shadow Walkers: reachable tile, adjacent to a tree, 7-tile
-    // Chebyshev exclusion from portals -- JS lines 646-663 ----
+    // Chebyshev exclusion from portals -- JS lines 646-663. Real agent
+    // spawns (see makeEnemyAgentSpawn()'s own doc comment), not the
+    // decorative floor tile this used to paint -- see
+    // buildStormcragLevel()'s own shadow-walker scatter for the same
+    // conversion. ----
     const std::pair<int, int> portalPositions[] = {{pathX, 0}, {southExitX, H - 1}};
     int swPlaced = 0;
     for (int att = 0; att < 600 && swPlaced < 18; ++att) {
@@ -2213,7 +2227,8 @@ TileGrid buildWhisperwoodLevel(const TileKindRegistry& registry) {
         for (const auto& p : portalPositions)
             if (std::abs(ex - p.first) <= 7 && std::abs(ey - p.second) <= 7) { tooClose = true; break; }
         if (nearTree && !tooClose) {
-            grid.setOverlay(ex, ey, shadowWalker);
+            grid.agentSpawns.push_back(makeEnemyAgentSpawn(
+                registry, shadowWalker, glm::vec2(static_cast<float>(ex) + 0.5f, static_cast<float>(ey) + 0.5f)));
             ++swPlaced;
         }
     }
@@ -3377,13 +3392,14 @@ TileGrid buildCultistCatacombs(const TileKindRegistry& registry, uint32_t seed) 
 // toggled by checkZoneExit()'s own atNight check on entry and despawned at
 // dawn -- day/night state isn't tracked by this port yet (see
 // PORTING_PLAN.md, the same gap buildShopInterior()'s own doc comment
-// already calls out for Dorin's day/night hiding). This function paints
-// all 8 CULTIST_SPAWNS positions directly as Overlay tiles, matching this
-// port's "enemy spawn = painted tile kind" convention elsewhere
-// (buildDungeonMap()'s skeleton/zombie scatter, buildWhisperwoodLevel()'s/
-// buildStormcragLevel()'s shadow-walker placements) -- i.e. always-present
-// rather than night-only, the same "pick the default/always-on state"
-// judgement buildShopInterior() already made for Dorin.
+// already calls out for Dorin's day/night hiding). This function spawns
+// all 8 CULTIST_SPAWNS positions as real agents via makeEnemyAgentSpawn()
+// -- i.e. always-present rather than night-only, the same "pick the
+// default/always-on state" judgement buildShopInterior() already made for
+// Dorin. A real, killable agent (not the decorative painted tile this used
+// to be) matches buildDungeonMap()'s skeleton/zombie agent spawns and
+// buildWhisperwoodLevel()'s/buildStormcragLevel()'s own shadow-walker agent
+// placements.
 //
 // Hidden tomb -> Cultist Catacombs: the JS hides T.CRYPT_STAIR beneath a
 // plain T.GRAVE tile in the west transept, revealed only by interacting
@@ -3559,11 +3575,17 @@ TileGrid buildChapelLevel(const TileKindRegistry& registry) {
     }
 
     // ---- Cultists (T.CULTIST) -- js/activities.js's own CULTIST_SPAWNS (8
-    // positions), always painted rather than night-only -- see this
-    // function's own doc comment above. ----
+    // positions), always present rather than night-only -- see this
+    // function's own doc comment above. Real agent spawns (see
+    // makeEnemyAgentSpawn()'s own doc comment), not the decorative floor
+    // tile this used to paint, closing the combat-recognition gap for
+    // cultist the same way this pass closes it for shadow_walker
+    // elsewhere. ----
     for (const auto& yx : {std::pair{9, 13}, std::pair{13, 26}, std::pair{17, 14}, std::pair{20, 28},
                             std::pair{11, 4}, std::pair{12, 39}, std::pair{5, 14}, std::pair{5, 27}})
-        grid.setOverlay(yx.second, yx.first, cultist);
+        grid.agentSpawns.push_back(makeEnemyAgentSpawn(
+            registry, cultist,
+            glm::vec2(static_cast<float>(yx.second) + 0.5f, static_cast<float>(yx.first) + 0.5f)));
 
     // ---- Player spawn -- makeChapelMap() returns no entryX/entryY, so
     // entering falls back to enterInterior()'s own default

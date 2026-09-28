@@ -413,6 +413,14 @@ void handleMiningAndWoodcutting(BeTileGridFrame* frame, bool forced = false) {
 // in this sandbox for exactly that reason (no engine build exists here
 // either), and this comment says so rather than claiming otherwise.
 //
+// UPDATE (later pass): this gap has since been closed incrementally --
+// GrimstoneGame.cpp's makeEnemyAgentSpawn()/kEnemyAgentTuning[] now spawn
+// real TileAgentSpawn agents for all six enemy kinds this table lists
+// (goblin_spawn/skeleton_spawn/wolf_spawn/zombie first, then cultist/
+// shadow_walker), so frame->agents is no longer empty in zones that place
+// them -- the historical claim above describes this file's state at the
+// time this combat framework was first written, not today's.
+//
 // **Judgement call on how damage is applied**: BeHitboxRequest can only name
 // a WeaponDef with a FIXED damage value (WeaponDef.h's own doc comment: "no
 // per-attack runtime concept... a weapon's active frames are the caller's
@@ -431,7 +439,8 @@ void handleMiningAndWoodcutting(BeTileGridFrame* frame, bool forced = false) {
 // a faithful per-swing roll -- e.g. a computed roll of 24 snaps to whichever
 // authored tier is nearest (21 or 28), same as any other "pick the closest
 // bucket" approximation.
-constexpr const char* kEnemyAgentKinds[] = {"goblin_spawn", "skeleton_spawn", "wolf_spawn", "zombie"};
+constexpr const char* kEnemyAgentKinds[] = {"goblin_spawn", "skeleton_spawn", "wolf_spawn", "zombie", "cultist",
+                                             "shadow_walker"};
 constexpr int kEnemyAgentKindCount = sizeof(kEnemyAgentKinds) / sizeof(kEnemyAgentKinds[0]);
 
 // ~1.5 tiles (TileGrid::tileSize defaults to 1.0 world unit) -- the "player
@@ -475,6 +484,8 @@ constexpr EnemyDef kEnemyDefs[] = {
     {"skeleton_spawn", "Skeleton", 18.0},
     {"wolf_spawn", "Wolf", 15.0},
     {"zombie", "Zombie", 20.0},
+    {"cultist", "Cultist", 22.0},
+    {"shadow_walker", "Shadow Walker", 22.0},
 };
 constexpr int kEnemyDefCount = sizeof(kEnemyDefs) / sizeof(kEnemyDefs[0]);
 
